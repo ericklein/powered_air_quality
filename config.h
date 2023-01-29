@@ -10,8 +10,6 @@
 #define WIFI        // use WiFi
 #define MQTT        // log sensor data to MQTT broker
 #define INFLUX      // Log data to InfluxDB server
-// #define DWEET       // Log data to Dweet service
-// #define THINGSPEAK  // Log data to ThingSpeak
 
 #ifdef DEBUG
   const int SAMPLE_INTERVAL = 5;  // sample interval for sensor in seconds
@@ -57,12 +55,4 @@ const int CONNECT_ATTEMPT_INTERVAL = 10;  // seconds between internet service co
 
   #define DEVICE_SITE "indoor"
   #define DEVICE_TYPE "pm25"
-#endif
-
-// Post data to the internet via dweet.io.  Set DWEET_DEVICE to be a
-// unique name you want associated with this reporting device, allowing
-// data to be easily retrieved through the web or Dweet's REST API.
-#ifdef DWEET
-  #define DWEET_HOST "dweet.io"   // Typically dweet.io
-  #define DWEET_DEVICE "makerhour-airquality"  // Must be unique across all of dweet.io
 #endif
