@@ -76,7 +76,8 @@
     if (internetAvailable)
     {
       // Adafruit_MQTT_Publish rssiLevelPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_TOPIC3, MQTT_QOS_1); // if problematic, remove QOS parameter
-      Adafruit_MQTT_Publish rssiLevelPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_TOPIC3);
+      Adafruit_MQTT_Publish rssiLevelPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_RSSI);
+
       mqttConnect();
 
       if (rssiLevelPub.publish(rssi))
@@ -96,32 +97,37 @@
   int mqttSensorUpdate(float pm25, float aqi)
   // Publishes sensor data to MQTT broker
   {
-    // Adafruit_MQTT_Publish tempPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_TOPIC1, MQTT_QOS_1); // if problematic, remove QOS parameter
-    // Adafruit_MQTT_Publish humidityPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_TOPIC2, MQTT_QOS_1);
-    Adafruit_MQTT_Publish pm25Pub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_TOPIC1);
-    Adafruit_MQTT_Publish aqiPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_TOPIC2);
-    int result = 1;
-    
-    mqttConnect();
-    // Attempt to publish sensor data
-    if(pm25Pub.publish(pm25))
+    int result = 0;
+    if (internetAvailable)
     {
-      debugMessage("MQTT publish: Temperature succeeded");
+      // Adafruit_MQTT_Publish tempPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_TOPIC1, MQTT_QOS_1); // if problematic, remove QOS parameter
+      // Adafruit_MQTT_Publish humidityPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_TOPIC2, MQTT_QOS_1);
+      Adafruit_MQTT_Publish pm25Pub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_PM25);
+      Adafruit_MQTT_Publish aqiPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_AQI);
+
+      mqttConnect();
+
+      // Attempt to publish sensor data
+      if(pm25Pub.publish(pm25))
+      {
+        debugMessage("MQTT publish: Temperature succeeded");
+        result = 1;
+      }
+      else {
+        debugMessage("MQTT publish: Temperature failed");
+      }
+      
+      if(aqiPub.publish(aqi))
+      {
+        debugMessage("MQTT publish: Humidity succeeded");
+        result = 1;
+      }
+      else {
+        debugMessage("MQTT publish: Humidity failed");
+        result = 0;
+      }
+      pm25_mqtt.disconnect();
     }
-    else {
-      debugMessage("MQTT publish: Temperature failed");
-      result = 0;
-    }
-    
-    if(aqiPub.publish(aqi))
-    {
-      debugMessage("MQTT publish: Humidity succeeded");
-    }
-    else {
-      debugMessage("MQTT publish: Humidity failed");
-      result = 0;
-    }
-    pm25_mqtt.disconnect();
     return(result);
   }
 #endif

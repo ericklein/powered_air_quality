@@ -23,7 +23,7 @@ const int CONNECT_ATTEMPT_LIMIT = 3;      // max connection attempts to internet
 const int CONNECT_ATTEMPT_INTERVAL = 10;  // seconds between internet service connect attempts
 
 // set client ID; used by mqtt and wifi
-#define CLIENT_ID "RCO2"
+#define CLIENT_ID "PM25"
 
 #ifdef MQTT
   // Adafruit I/O
@@ -31,9 +31,9 @@ const int CONNECT_ATTEMPT_INTERVAL = 10;  // seconds between internet service co
   // e.g. #define MQTT_PUB_TOPIC1   "sircoolio/feeds/pocket-office.temperature"
 
   // structure: site/room/device/data 
-  #define MQTT_PUB_TOPIC1   "7828/demo/pm25/pm25"
-  #define MQTT_PUB_TOPIC2   "7828/demo/pm25/aqi"
-  #define MQTT_PUB_TOPIC3   "7828/demo/pm25/rssi"
+  #define MQTT_PUB_PM25   "7828/demo/pm25/pm25"
+  #define MQTT_PUB_AQI    "7828/demo/pm25/aqi"
+  #define MQTT_PUB_RSSI   "7828/demo/pm25/rssi"
 #endif
 
 #ifdef INFLUX  
