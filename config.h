@@ -7,7 +7,6 @@
 
 // Step 1: Set conditional compile flags
 #define DEBUG     // Output to serial port
-#define WIFI        // use WiFi
 #define MQTT        // log sensor data to MQTT broker
 #define INFLUX      // Log data to InfluxDB server
 
@@ -20,7 +19,7 @@
 #endif
 
 const int CONNECT_ATTEMPT_LIMIT = 3;      // max connection attempts to internet services
-const int CONNECT_ATTEMPT_INTERVAL = 10;  // seconds between internet service connect attempts
+const int CONNECT_ATTEMPT_INTERVAL = 5;  // seconds between internet service connect attempts
 
 // set client ID; used by mqtt and wifi
 #define CLIENT_ID "PM25"

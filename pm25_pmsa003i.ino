@@ -11,16 +11,14 @@
 #include "config.h"
 #include "secrets.h"
 
-#ifdef WIFI
-  // ESP32 WiFi
-  #include <WiFi.h>
+// ESP32 WiFi
+#include <WiFi.h>
 
-  // ESP8266 WiFi
-  // #include <ESP8266WiFi.h>
+// ESP8266 WiFi
+// #include <ESP8266WiFi.h>
 
-  // Use WiFiClient class to create TCP connections and talk to hosts
-  WiFiClient client;
-#endif
+// Use WiFiClient class to create TCP connections and talk to hosts
+WiFiClient client;
 
 //create Plantower sensor instance
 Adafruit_PM25AQI aqi = Adafruit_PM25AQI();
@@ -53,7 +51,7 @@ unsigned long prevSampleMs  = 0;  // Timestamp for measuring elapsed sample time
 unsigned int numSamples = 0;      // Number of overall sensor readings over reporting interval
 unsigned int numReports = 0;      // Number of capture intervals observed
 
-bool internetAvailable;
+bool internetAvailable = false;
 int rssi;
 
 // External function dependencies
@@ -68,8 +66,8 @@ int rssi;
   #include <Adafruit_MQTT_Client.h>
   Adafruit_MQTT_Client pm25_mqtt(&client, MQTT_BROKER, MQTT_PORT, CLIENT_ID, MQTT_USER, MQTT_PASS);
 
-  extern int mqttDeviceWiFiUpdate(int rssi);
-  extern int mqttSensorUpdate(float pm25, float aqi);
+  extern bool mqttDeviceWiFiUpdate(int rssi);
+  extern bool mqttSensorUpdate(float pm25, float aqi);
 #endif
 
 void setup() 
@@ -80,16 +78,19 @@ void setup()
     // wait for serial port connection
     while (!Serial);
 
-    // Confirm key site configuration parameters
+    // Display key configuration parameters
     debugMessage("PM2.5 monitor started");
-    debugMessage("Client ID: " + String(CLIENT_ID));
-    debugMessage(String(SAMPLE_INTERVAL) + " second sample interval");
-    debugMessage(String(REPORT_INTERVAL) + " minute report interval");
+    debugMessage(String("Sample interval is ") + SAMPLE_INTERVAL + " seconds");
+    debugMessage(String("Report interval is ") + REPORT_INTERVAL + " minutes");
+    debugMessage(String("Internet service reconnect delay is ") + CONNECT_ATTEMPT_INTERVAL + " seconds");
   #endif
 
   initSensor();
   // Remember current clock time
   prevReportMs = prevSampleMs = millis();
+
+  if(networkConnect())
+    internetAvailable = true;
 }
 
 void loop()
@@ -100,51 +101,55 @@ void loop()
   // is it time to read the sensor
   if((currentMillis - prevSampleMs) >= (SAMPLE_INTERVAL * 1000)) // converting SAMPLE_INTERVAL into milliseconds
   {
-    if (!readSensor())
+    if (readSensor())
     {
-      // handle error condition
+      numSamples++;
+
+      // add to the running totals
+      pm25Total += sensorData.massConcentrationPm2p5;
+
+      debugMessage(String("PM2.5 reading is ") + sensorData.massConcentrationPm2p5 + " or AQI " + pm25toAQI(sensorData.massConcentrationPm2p5));
+      debugMessage(String("Particles > 0.3um / 0.1L air:") + sensorData.particles_03um);
+      debugMessage(String("Particles > 0.5um / 0.1L air:") + sensorData.particles_05um);
+      debugMessage(String("Particles > 1.0um / 0.1L air:") + sensorData.particles_10um);
+      debugMessage(String("Particles > 2.5um / 0.1L air:") + sensorData.particles_25um);
+      debugMessage(String("Particles > 5.0um / 0.1L air:") + sensorData.particles_50um);
+      debugMessage(String("Particles > 10 um / 0.1L air:") + sensorData.particles_100um);
+      debugMessage(String("Sample count is ") + numSamples);
+      debugMessage(String("Running PM25 total for this sample period is ") + pm25Total);
+
+      // Save sample time
+      prevSampleMs = currentMillis;
     }
-    numSamples++;
-
-    // add to the running totals
-    pm25Total += sensorData.massConcentrationPm2p5;
-
-    debugMessage(String("PM2.5 reading is ") + sensorData.massConcentrationPm2p5 + " or AQI " + pm25toAQI(sensorData.massConcentrationPm2p5));
-
-    debugMessage(String("PM2.5 env reading is ") + sensorData.pm25_env + " or AQI " + pm25toAQI(sensorData.pm25_env));
-    debugMessage(String("Particles > 0.3um / 0.1L air:") + sensorData.particles_03um);
-    debugMessage(String("Particles > 0.5um / 0.1L air:") + sensorData.particles_05um);
-    debugMessage(String("Particles > 1.0um / 0.1L air:") + sensorData.particles_10um);
-    debugMessage(String("Particles > 2.5um / 0.1L air:") + sensorData.particles_25um);
-    debugMessage(String("Particles > 5.0um / 0.1L air:") + sensorData.particles_50um);
-    debugMessage(String("Particles > 10 um / 0.1L air:") + sensorData.particles_100um);
-
-    // Save sample time
-    prevSampleMs = currentMillis;
+    else
+    {
+      debugMessage("Could not read PMSA003I sensor data");
+    }
   }
 
   // is it time to report averaged values
   if((currentMillis - prevReportMs) >= (REPORT_INTERVAL * 60 *1000)) // converting REPORT_INTERVAL into milliseconds
   {
-    #ifdef WIFI
-      if(networkBegin())
-      {
-        internetAvailable = true;
-      }
-    #endif
     if (numSamples != 0) 
     {
       avgPM25 = pm25Total / numSamples;
-      debugMessage(String("Average PM2.5 reading for this ") + REPORT_INTERVAL + " minute report interval  is " + avgPM25 + " or AQI " + pm25toAQI(avgPM25));
-  
-      // And store data to Influx DB    
+      debugMessage(String("Average PM2.5 reading for this ") + REPORT_INTERVAL + " minute report interval is " + avgPM25 + " or AQI " + pm25toAQI(avgPM25));
+      if (WiFi.status() != WL_CONNECTED){
+          WiFi.disconnect();
+          WiFi.reconnect();
+      }
       #ifdef INFLUX
-        post_influx(avgPM25, pm25toAQI(avgPM25), rssi);
+        // write data to influxDB
+        if (!post_influx(avgPM25, pm25toAQI(avgPM25), rssi))
+          debugMessage("Did not write to influxDB");
       #endif
 
       #ifdef MQTT
-        mqttDeviceWiFiUpdate(rssi);
-        mqttSensorUpdate(avgPM25, pm25toAQI(avgPM25));
+        // write data to MQTT broker
+        if(!mqttDeviceWiFiUpdate(rssi))
+          debugMessage("Did not write RSSI data to MQTT broker");
+        if (!mqttSensorUpdate(avgPM25, pm25toAQI(avgPM25)))
+          debugMessage("Did not write PM25 data to MQTT broker");
       #endif
 
       // Reset counters and accumulators
@@ -152,35 +157,36 @@ void loop()
       numSamples = 0;
       pm25Total = 0;
     }
+    else
+    {
+      debugMessage("No samples to average and report on");
+    }
   }
 }
 
-#ifdef WIFI
-  bool networkBegin()
+bool networkConnect()
+{
+  // set hostname has to come before WiFi.begin
+  WiFi.hostname(CLIENT_ID);
+
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  for (int tries = 1; tries <= CONNECT_ATTEMPT_LIMIT; tries++)
+  // Attempts WiFi connection, and if unsuccessful, re-attempts after CONNECT_ATTEMPT_INTERVAL second delay for CONNECT_ATTEMPT_LIMIT times
   {
-    // set hostname has to come before WiFi.begin
-    WiFi.hostname(CLIENT_ID);
-
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-    for (int tries = 1; tries <= CONNECT_ATTEMPT_LIMIT; tries++)
-    // Attempts WiFi connection, and if unsuccessful, re-attempts after CONNECT_ATTEMPT_INTERVAL second delay for CONNECT_ATTEMPT_LIMIT times
+    if (WiFi.status() == WL_CONNECTED)
     {
-      if (WiFi.status() == WL_CONNECTED)
-      {
-        rssi = abs(WiFi.RSSI());
-        debugMessage(String("WiFi IP address issued from ") + WIFI_SSID + " is " + WiFi.localIP().toString());
-        debugMessage(String("WiFi RSSI is: ") + rssi + " dBm");
-        return true;
-      }
-      debugMessage(String("Connection attempt ") + tries + " of " + CONNECT_ATTEMPT_LIMIT + " to " + WIFI_SSID + " failed, trying again in " + CONNECT_ATTEMPT_INTERVAL + " seconds");
-      // use of delay() OK as this is initialization code
-      delay(CONNECT_ATTEMPT_INTERVAL * 1000); // convered into milliseconds
+      rssi = abs(WiFi.RSSI());
+      debugMessage(String("WiFi IP address lease from ") + WIFI_SSID + " is " + WiFi.localIP().toString());
+      debugMessage(String("WiFi RSSI is: ") + rssi + " dBm");
+      return true;
     }
-    debugMessage("Failed to connect to WiFi");
-    return false;
+    debugMessage(String("Connection attempt ") + tries + " of " + CONNECT_ATTEMPT_LIMIT + " to " + WIFI_SSID + " failed");
+    // use of delay() OK as this is initialization code
+    delay(CONNECT_ATTEMPT_INTERVAL * 1000); // convered into milliseconds
   }
-#endif
+  return false;
+}
 
 int initSensor()
 {
@@ -190,7 +196,7 @@ int initSensor()
     while (1) delay(10);
   }
   debugMessage("PMSA003I initialized");
-  return 1;
+  return true;
 }
 
 int readSensor()
@@ -198,12 +204,9 @@ int readSensor()
   PM25_AQI_Data data;
   if (! aqi.read(&data)) 
   {
-    debugMessage("Could not read PMSA003I sensor data");
-    // ?? why is this here?
-    //prevSampleMs = currentMillis;
-    return 0;
+    return false;
   }
-  // successful read
+  // successful read, store data
   sensorData.massConcentrationPm1p0 = data.pm10_standard;
   sensorData.massConcentrationPm2p5 = data.pm25_standard;
   sensorData.massConcentrationPm10p0 = data.pm100_standard;
@@ -214,8 +217,7 @@ int readSensor()
   sensorData.particles_25um = data.particles_25um;
   sensorData.particles_50um = data.particles_50um;
   sensorData.particles_100um = data.particles_100um;
-  debugMessage("Successful sensor read");
-  return 1;
+  return true;
 }
 
 float pm25toAQI(float pm25)
