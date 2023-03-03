@@ -65,7 +65,7 @@ int rssi;
   // managed here (so needs to be defined here).
   #include <Adafruit_MQTT.h>
   #include <Adafruit_MQTT_Client.h>
-  Adafruit_MQTT_Client pm25_mqtt(&client, MQTT_BROKER, MQTT_PORT, CLIENT_ID, MQTT_USER, MQTT_PASS);
+  Adafruit_MQTT_Client aq_mqtt(&client, MQTT_BROKER, MQTT_PORT, CLIENT_ID, MQTT_USER, MQTT_PASS);
 
   extern bool mqttDeviceWiFiUpdate(int rssi);
   extern bool mqttSensorPM25Update(float pm25);

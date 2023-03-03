@@ -21,13 +21,13 @@ extern void debugMessage(String messageText);
   // MQTT setup
   #include <Adafruit_MQTT.h>
   #include <Adafruit_MQTT_Client.h>
-  extern Adafruit_MQTT_Client pm25_mqtt;
+  extern Adafruit_MQTT_Client aq_mqtt;
 
   void mqttConnect()
   // Connects and reconnects to MQTT broker, call as needed to maintain connection
   {  
     // exit if already connected
-    if (pm25_mqtt.connected())
+    if (aq_mqtt.connected())
     {
       debugMessage(String("Already connected to MQTT broker ") + MQTT_BROKER);
       return;
@@ -38,7 +38,7 @@ extern void debugMessage(String messageText);
     // Attempts MQTT connection, and if unsuccessful, re-attempts after CONNECT_ATTEMPT_INTERVAL second delay for CONNECT_ATTEMPT_LIMIT times
     for(int tries = 1; tries <= CONNECT_ATTEMPT_LIMIT; tries++)
     {
-      if ((mqttErr = pm25_mqtt.connect()) == 0)
+      if ((mqttErr = aq_mqtt.connect()) == 0)
       {
         debugMessage(String("Connected to MQTT broker ") + MQTT_BROKER);
         return;
@@ -54,8 +54,8 @@ extern void debugMessage(String messageText);
       //   case 6: debugMessage("Adafruit MQTT: Failed to subscribe"); break;
       //   default: debugMessage("Adafruit MQTT: GENERIC - Connection failed"); break;
       // }
-      pm25_mqtt.disconnect();
-      debugMessage(String("MQTT connection attempt ") + tries + " of " + CONNECT_ATTEMPT_LIMIT + " failed with error msg: " + pm25_mqtt.connectErrorString(mqttErr));
+      aq_mqtt.disconnect();
+      debugMessage(String("MQTT connection attempt ") + tries + " of " + CONNECT_ATTEMPT_LIMIT + " failed with error msg: " + aq_mqtt.connectErrorString(mqttErr));
       delay(CONNECT_ATTEMPT_INTERVAL*1000);
     }
   } 
@@ -65,8 +65,8 @@ extern void debugMessage(String messageText);
     bool result = false;
     if (rssi!=0)
     {
-      // Adafruit_MQTT_Publish rssiLevelPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_RSSI, MQTT_QOS_1); // if problematic, remove QOS parameter
-      Adafruit_MQTT_Publish rssiLevelPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_RSSI);
+      // Adafruit_MQTT_Publish rssiLevelPub = Adafruit_MQTT_Publish(&aq_mqtt, MQTT_PUB_RSSI, MQTT_QOS_1); // if problematic, remove QOS parameter
+      Adafruit_MQTT_Publish rssiLevelPub = Adafruit_MQTT_Publish(&aq_mqtt, MQTT_PUB_RSSI);
 
       mqttConnect();
 
@@ -87,8 +87,8 @@ extern void debugMessage(String messageText);
   // Publishes sensor data to MQTT broker
   {
     bool result = false;
-    //Adafruit_MQTT_Publish pm25Pub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_PM25, MQTT_QOS_1); // if problematic, remove QOS parameter
-    Adafruit_MQTT_Publish pm25Pub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_PM25);
+    //Adafruit_MQTT_Publish pm25Pub = Adafruit_MQTT_Publish(&aq_mqtt, MQTT_PUB_PM25, MQTT_QOS_1); // if problematic, remove QOS parameter
+    Adafruit_MQTT_Publish pm25Pub = Adafruit_MQTT_Publish(&aq_mqtt, MQTT_PUB_PM25);
 
     mqttConnect();
 
@@ -108,8 +108,8 @@ extern void debugMessage(String messageText);
   // Publishes sensor data to MQTT broker
   {
     bool result = false;
-    //Adafruit_MQTT_Publish aqiPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_AQIMQTT_QOS_1); // if problematic, remove QOS parameter
-    Adafruit_MQTT_Publish aqiPub = Adafruit_MQTT_Publish(&pm25_mqtt, MQTT_PUB_AQI);
+    //Adafruit_MQTT_Publish aqiPub = Adafruit_MQTT_Publish(&aq_mqtt, MQTT_PUB_AQIMQTT_QOS_1); // if problematic, remove QOS parameter
+    Adafruit_MQTT_Publish aqiPub = Adafruit_MQTT_Publish(&aq_mqtt, MQTT_PUB_AQI);
 
     mqttConnect();
     
