@@ -8,7 +8,9 @@
 // Adafruit PMSA003I
 #include "Adafruit_PM25AQI.h"
 
+// hardware and internet configuration parameters
 #include "config.h"
+// private credentials for network, MQTT
 #include "secrets.h"
 
 // ESP32 WiFi
@@ -51,7 +53,6 @@ unsigned long prevSampleMs  = 0;  // Timestamp for measuring elapsed sample time
 unsigned int numSamples = 0;      // Number of overall sensor readings over reporting interval
 unsigned int numReports = 0;      // Number of capture intervals observed
 
-bool internetAvailable = false;
 int rssi;
 
 // External function dependencies
@@ -67,7 +68,8 @@ int rssi;
   Adafruit_MQTT_Client pm25_mqtt(&client, MQTT_BROKER, MQTT_PORT, CLIENT_ID, MQTT_USER, MQTT_PASS);
 
   extern bool mqttDeviceWiFiUpdate(int rssi);
-  extern bool mqttSensorUpdate(float pm25, float aqi);
+  extern bool mqttSensorPM25Update(float pm25);
+  extern bool mqttSensorAQIUpdate(float aqi);
 #endif
 
 void setup() 
@@ -85,12 +87,13 @@ void setup()
     debugMessage(String("Internet service reconnect delay is ") + CONNECT_ATTEMPT_INTERVAL + " seconds");
   #endif
 
+  // FIX: handle error condition
   initSensor();
+
   // Remember current clock time
   prevReportMs = prevSampleMs = millis();
 
-  if(networkConnect())
-    internetAvailable = true;
+  networkConnect();
 }
 
 void loop()
@@ -130,14 +133,17 @@ void loop()
   // is it time to report averaged values
   if((currentMillis - prevReportMs) >= (REPORT_INTERVAL * 60 *1000)) // converting REPORT_INTERVAL into milliseconds
   {
-    if (numSamples != 0) 
+    if (WiFi.status() != WL_CONNECTED){
+        WiFi.disconnect();
+        WiFi.reconnect();
+    }
+    if ((numSamples != 0) && (WiFi.status() = WL_CONNECTED))
     {
       avgPM25 = pm25Total / numSamples;
       debugMessage(String("Average PM2.5 reading for this ") + REPORT_INTERVAL + " minute report interval is " + avgPM25 + " or AQI " + pm25toAQI(avgPM25));
-      if (WiFi.status() != WL_CONNECTED){
-          WiFi.disconnect();
-          WiFi.reconnect();
-      }
+      
+      // reconnect to WiFi if needed
+
       #ifdef INFLUX
         // write data to influxDB
         if (!post_influx(avgPM25, pm25toAQI(avgPM25), rssi))
@@ -148,8 +154,10 @@ void loop()
         // write data to MQTT broker
         if(!mqttDeviceWiFiUpdate(rssi))
           debugMessage("Did not write RSSI data to MQTT broker");
-        if (!mqttSensorUpdate(avgPM25, pm25toAQI(avgPM25)))
-          debugMessage("Did not write PM25 data to MQTT broker");
+         if (!mqttSensorPM25Update(avgPM25))
+          debugMessage("Did not write PM25 data to MQTT broker");       
+        if (!mqttSensorAQIUpdate(pm25toAQI(avgPM25)))
+          debugMessage("Did not write AQI data to MQTT broker");
       #endif
 
       // Reset counters and accumulators
@@ -159,7 +167,10 @@ void loop()
     }
     else
     {
-      debugMessage("No samples to average and report on");
+      if (numSamples != 0)
+        debugMessage("No samples to average and report on");
+      else
+        debugMessage("WiFi disconnected, not reporting sample data");
     }
   }
 }
@@ -188,7 +199,7 @@ bool networkConnect()
   return false;
 }
 
-int initSensor()
+bool initSensor()
 {
   if (! aqi.begin_I2C()) 
   {
@@ -199,7 +210,7 @@ int initSensor()
   return true;
 }
 
-int readSensor()
+bool readSensor()
 {
   PM25_AQI_Data data;
   if (! aqi.read(&data)) 

@@ -27,7 +27,7 @@ const int CONNECT_ATTEMPT_INTERVAL = 5;  // seconds between internet service con
 #ifdef MQTT
   // Adafruit I/O
   // structure: username/feeds/groupname.feedname or username/feeds/feedname
-  // e.g. #define MQTT_PUB_TOPIC1   "sircoolio/feeds/pocket-office.temperature"
+  // e.g. #define MQTT_PUB_TEMPF   "sircoolio/feeds/pocket-office.tempf"
 
   // structure: site/room/device/data 
   #define MQTT_PUB_PM25   "7828/demo/pm25/pm25"
