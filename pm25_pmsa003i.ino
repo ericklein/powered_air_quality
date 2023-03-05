@@ -53,7 +53,7 @@ unsigned long prevSampleMs  = 0;  // Timestamp for measuring elapsed sample time
 unsigned int numSamples = 0;      // Number of overall sensor readings over reporting interval
 unsigned int numReports = 0;      // Number of capture intervals observed
 
-int rssi;
+int rssi = 0; // WiFi RSSI value
 
 // External function dependencies
 #ifdef INFLUX
@@ -137,7 +137,7 @@ void loop()
         WiFi.disconnect();
         WiFi.reconnect();
     }
-    if ((numSamples != 0) && (WiFi.status() = WL_CONNECTED))
+    if ((numSamples != 0) && (WiFi.status() == WL_CONNECTED))
     {
       avgPM25 = pm25Total / numSamples;
       debugMessage(String("Average PM2.5 reading for this ") + REPORT_INTERVAL + " minute report interval is " + avgPM25 + " or AQI " + pm25toAQI(avgPM25));
