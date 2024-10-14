@@ -1,5 +1,5 @@
 /*
-  Project Name:   AQ_powered
+  Project Name:   Powered Air Quality
   Description:    write PM2.5 sensor data to MQTT broker
 */
 

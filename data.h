@@ -1,5 +1,5 @@
 /*
-  Project:      AQ_powered
+  Project:      Powered Air Quality
   Description:  data pair configuration
 */
 

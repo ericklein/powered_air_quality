@@ -1,5 +1,5 @@
 /*
-  Project:		AQ_powered
+  Project:		Powered Air Quality
   Description:	private configuration data template that needs to be saved as secrets.h after github cloning the project
 */
 

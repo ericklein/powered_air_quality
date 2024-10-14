@@ -1,5 +1,5 @@
-ø/*
-  Project:      AQ_powered
+/*
+  Project:      Powered Air Quality
   Description:  write PM2.5 sensor data to InfluxDB
 
   See README.md for target information and revision history
@@ -44,8 +44,8 @@
     bool result = false;
 
     // InfluxDB Data point, binds to InfluxDB 'measurement' to use for data. See config.h for value used
-    Point dbenvdata(INFLUX_ENV_MEASUREMENT);
-    Point dbdevdata(INFLUX_DEV_MEASUREMENT);
+    Point dbenvdata(influxEnvMeasurement);
+    Point dbdevdata(influxDevMeasurement);
 
     if (rssi!=0)
     {
