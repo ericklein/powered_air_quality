@@ -7,9 +7,10 @@
 // comment out to turn off; 1 = summary, 2 = verbose
 #define DEBUG 2
 
-// Configuration Step 2: simulate hardware inputs, returning random but plausible values
+// Configuration Step 2: simulate WiFi and sensor hardware,
+// returning random but plausible values
 // comment out to turn off
-// #define SENSOR_SIMULATE
+#define HARDWARE_SIMULATE
 
 // Configuration Step 3: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
@@ -35,7 +36,7 @@ const uint8_t screenCount = 5;
 #define TFT_BACKLIGHT 25
 
 // screen layout assists in pixels
-const uint16_t xMargins = 5;
+const uint16_t xMargins = 10;
 const uint16_t yMargins = 2;
 const uint16_t wifiBarWidth = 3;
 const uint16_t wifiBarHeightIncrement = 3;
@@ -51,26 +52,24 @@ const uint16_t wifiBarSpacing = 5;
 #endif
 
 // Simulation values
-#ifdef SENSOR_SIMULATE
+#ifdef HARDWARE_SIMULATE
   const uint16_t sensorTempMin =      1500; // will be divided by 100.0 to give floats
   const uint16_t sensorTempMax =      2500;
   const uint16_t sensorHumidityMin =  500; // will be divided by 100.0 to give floats
   const uint16_t sensorHumidityMax =  9500;
 
-  //sensorData.massConcentrationPm1p0 = random(0, 360) / 10.0;
+  // IMPROVEMENT: SWAG on values, check docs
+  // Question : is owmAirQuality.aqi uint8_t or uint16_t?
+  const uint8_t OWMAQIMin = 0; 
+  const uint8_t OWMAQIMax = 10;
+  const uint16_t OWMPM25Min = 0;  // will be divided by 100.0 to give float
+  const uint16_t OWMPM25Max = 250000; // will be divided by 100.0 to give float
+
+  const uint8_t networkRSSIMin = 30;
+  const uint8_t networkRSSIMax = 90;
+
   const uint16_t sensorPM2p5Min = 0;
   const uint16_t sensorPM2p5Max = 360;
-
-  sensorData.massConcentrationPm2p5 = random(0, 360) / 10.0;
-  //sensorData.massConcentrationPm4p0 = random(0, 720) / 10.0;
-  //sensorData.massConcentrationPm10p0 = random(0, 1550) / 10.0;
-  // testing range is 5 to 95
-  sensorData.ambientHumidity = 5 + (random(0, 900) / 10.0);
-  // keep this value in C, not F. Converted after sensorPM25Read()
-  // testing range is 15 to 25
-  sensorData.ambientTemperatureF = 15.0 + (random(0, 101) / 10.0);
-  sensorData.vocIndex = random(0, 500) / 10.0;
-  sensorData.noxIndex = random(0, 2500) / 10.0; 
 #endif
 
 // CO2 sensor
@@ -95,6 +94,11 @@ const uint16_t co2Color[3] = {
 const uint16_t sensorCO2Min =      400;
 const uint16_t sensorCO2Max =      2000;
 const uint16_t sensorTempCOffset = 0; // in C
+
+// if using OWM aqi value, these are the European standards-body conversions from numeric valeu
+// const String aqiEuropeanLabels[5] = { "Good", "Fair", "Moderate", "Poor", "Very Poor" };
+// US standards-body conversions from numeric value
+const String aqiUSALabels[6] = {"Good", "Moderate", "Unhealthy (SG)", "Unhealthy", "Very Unhealthy", "Hazardous"};
 
 // Data endpoints
 #ifdef INFLUX  
