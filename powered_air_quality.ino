@@ -235,7 +235,6 @@ void setup()
   }
 
   // buttonOne.setDebounceTime(buttonDebounceDelay); 
-  networkConnect();
 }
 
 void loop()
@@ -261,6 +260,9 @@ void loop()
       // TODO: what else to do here
     }
     sensorCO2Read();
+
+    // ensure network connection specified in config.h
+    networkConnect();
 
     // Get local weather and air quality info from Open Weather Map
     if (!OWMCurrentWeatherRead()) {
@@ -346,19 +348,22 @@ void screenCurrentInfo()
 {
   // screen layout assists in pixels
   const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
+  const uint16_t yStatus = (display.height() * 7 / 8);  
   const uint16_t yTemperature = 35;
   const uint16_t yLegend = 105;
   const uint16_t legendHeight = 10;
   const uint16_t legendWidth = 5;
-  const uint16_t xPMCircle = 46;
+  const uint16_t xPMCircle = 50;
   const uint16_t yPMCircle = 75;
-  const uint16_t circleRadius = 31;
+  const uint16_t circleRadius = 30;
   const uint16_t xPMLabel = 33;
   const uint16_t yPMLabel = 110;
   const uint16_t xPMValue = 40;
   const uint16_t yPMValue = 80;
+  const uint16_t xWeatherIcon = ((display.width() / 4) * 3);
+  const uint16_t yWeatherIcon = 160;
   const uint16_t yCO2 = 160;
-  const uint16_t ySparkline = 40;
+  // const uint16_t ySparkline = 40;
 
   debugMessage("screenCurrentInfo() start", 1);
 
@@ -366,12 +371,12 @@ void screenCurrentInfo()
   display.fillScreen(ILI9341_BLACK);
 
   // borders
-  // display.drawFastHLine(0, yStatus, display.width(), GxEPD_BLACK);
+  display.drawFastHLine(0, yStatus, display.width(), ILI9341_WHITE);
   // splitting sensor vs. outside values
-  display.drawFastVLine((display.width() / 2), 0, display.height(), ILI9341_WHITE);
+  display.drawFastVLine((display.width() / 2), 0, yStatus, ILI9341_WHITE);
 
   // screen helper routines
-  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
+  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (display.height() - (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
 
   // Indoor
   // Indoor temp
@@ -462,7 +467,7 @@ void screenCurrentInfo()
   // display.print("VoC"); 
 
   // pm25 level
-  display.setFont(&FreeSans9pt7b);
+  display.setFont();
   display.setCursor(xPMValue,yPMValue);
   display.print(int(sensorData.massConcentrationPm2p5));
 
@@ -507,7 +512,7 @@ void screenCurrentInfo()
   if (owmCurrentData.humidity != 10000) {
     display.setFont(&FreeSans12pt7b);
     display.setCursor(xOutdoorMargin + 60, yTemperature);
-    if ((sensorData.ambientHumidity<40) || (sensorData.ambientHumidity>60))
+    if ((owmCurrentData.humidity<40) || (owmCurrentData.humidity>60))
       display.setTextColor(ILI9341_RED);
     else
       display.setTextColor(ILI9341_GREEN);
@@ -539,7 +544,7 @@ void screenCurrentInfo()
   if (weatherIcon != ")") {
     // display icon
     display.setFont(&meteocons20pt7b);
-    display.setCursor((display.width() * 17 / 20), (display.height() / 2) + 10);
+    display.setCursor(xWeatherIcon, yWeatherIcon);
     display.print(weatherIcon);
   }
   debugMessage("screenCurrentInfo() end", 1);
@@ -582,29 +587,22 @@ void screenGraph()
 void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
 // helper function for screenXXX() routines that draws WiFi signal strength
 {
-  #ifdef SCREEN
-    // screen layout assists in pixels
-    const uint16_t wifiBarWidth = 3;
-    const uint16_t wifiBarHeightIncrement = 3;
-    const uint16_t wifiBarSpacing = 5;
-
-    if (hardwareData.rssi != 0) {
-      // Convert RSSI values to a 5 bar visual indicator
-      // >90 means no signal
-      uint8_t barCount = constrain((6 - ((hardwareData.rssi / 10) - 3)), 0, 5);
-      if (barCount > 0) {
-        // <50 rssi value = 5 bars, each +10 rssi value range = one less bar
-        // draw bars to represent WiFi strength
-        for (uint8_t loop = 1; loop <= barCount; loop++) {
-          display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, GxEPD_BLACK);
-        }
-        debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
-      } else {
-        // you could do a visual representation of no WiFi strength here
-        debugMessage("RSSI too low, no display", 1);
+  if (hardwareData.rssi != 0) {
+    // Convert RSSI values to a 5 bar visual indicator
+    // >90 means no signal
+    uint8_t barCount = constrain((6 - ((hardwareData.rssi / 10) - 3)), 0, 5);
+    if (barCount > 0) {
+      // <50 rssi value = 5 bars, each +10 rssi value range = one less bar
+      // draw bars to represent WiFi strength
+      for (uint8_t loop = 1; loop <= barCount; loop++) {
+        display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, ILI9341_WHITE);
       }
+      debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
+    } else {
+      // you could do a visual representation of no WiFi strength here
+      debugMessage("RSSI too low, no display", 1);
     }
-  #endif
+  }
 }
 
 void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String messageText)
@@ -807,6 +805,7 @@ void networkSimulate()
 {
   // IMPROVEMENT : simulate IP address?
   hardwareData.rssi = random(networkRSSIMin, networkRSSIMax);
+  debugMessage(String("SIMULATED WiFi RSSI: ") + hardwareData.rssi,1);
 }
 
 bool networkConnect() 
