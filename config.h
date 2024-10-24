@@ -51,7 +51,7 @@ const uint16_t wifiBarSpacing = 5;
   const uint8_t sensorReportInterval = 15; // Interval at which samples are averaged & reported in minutes)
 #endif
 
-// Simulation values
+// Simulation boundary values
 #ifdef HARDWARE_SIMULATE
   const uint16_t sensorTempMin =      1500; // will be divided by 100.0 to give floats
   const uint16_t sensorTempMax =      2500;
@@ -59,11 +59,13 @@ const uint16_t wifiBarSpacing = 5;
   const uint16_t sensorHumidityMax =  9500;
 
   // IMPROVEMENT: SWAG on values, check docs
-  // Question : is owmAirQuality.aqi uint8_t or uint16_t?
-  const uint8_t OWMAQIMin = 0; 
-  const uint8_t OWMAQIMax = 10;
+  const uint8_t OWMAQIMin = 0;
+  // European AQI values 
+  const uint8_t OWMAQIMax = 5;
+  // US AQI values 
+  // const uint8_t OWMAQIMax = 6;
   const uint16_t OWMPM25Min = 0;  // will be divided by 100.0 to give float
-  const uint16_t OWMPM25Max = 250000; // will be divided by 100.0 to give float
+  const uint32_t OWMPM25Max = 250000; // will be divided by 100.0 to give float
 
   const uint8_t networkRSSIMin = 30;
   const uint8_t networkRSSIMax = 90;
@@ -71,6 +73,11 @@ const uint16_t wifiBarSpacing = 5;
   const uint16_t sensorPM2p5Min = 0;
   const uint16_t sensorPM2p5Max = 360;
 #endif
+
+// Open Weather Map parameters
+#define OWM_SERVER      "http://api.openweathermap.org/data/2.5/"
+#define OWM_WEATHER_PATH  "weather?"
+#define OWM_AQM_PATH    "air_pollution?"
 
 // CO2 sensor
 // Define CO2 values that constitute Red (Alarm) & Yellow (Warning) values
@@ -96,9 +103,15 @@ const uint16_t sensorCO2Max =      2000;
 const uint16_t sensorTempCOffset = 0; // in C
 
 // if using OWM aqi value, these are the European standards-body conversions from numeric valeu
-// const String aqiEuropeanLabels[5] = { "Good", "Fair", "Moderate", "Poor", "Very Poor" };
+const String aqiEuropeanLabels[5] = { "Good", "Fair", "Moderate", "Poor", "Very Poor" };
 // US standards-body conversions from numeric value
-const String aqiUSALabels[6] = {"Good", "Moderate", "Unhealthy (SG)", "Unhealthy", "Very Unhealthy", "Hazardous"};
+// const String aqiUSALabels[6] = {"Good", "Moderate", "Unhealthy (SG)", "Unhealthy", "Very Unhealthy", "Hazardous"};
+
+// Time
+// NTP time parameters
+const String networkNTPAddress = "pool.ntp.org";
+const String networkTimeZone = "PST8PDT,M3.2.0,M11.1.0"; // America/Los_Angeles
+const String weekDays[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
 
 // Data endpoints
 #ifdef INFLUX  

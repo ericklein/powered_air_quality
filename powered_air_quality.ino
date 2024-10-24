@@ -190,6 +190,9 @@ void setup()
     // wait for serial port connection
     while (!Serial);
 
+    // generate random numbers for every boot cycle
+    randomSeed(analogRead(0));
+
     // Display key configuration parameters
     debugMessage("Powered Air Quality monitor started",1);
     debugMessage(String("Sample interval is ") + sensorSampleInterval + " seconds",1);
@@ -350,18 +353,22 @@ void screenCurrentInfo()
   const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
   const uint16_t yStatus = (display.height() * 7 / 8);  
   const uint16_t yTemperature = 35;
-  const uint16_t yLegend = 105;
   const uint16_t legendHeight = 10;
   const uint16_t legendWidth = 5;
-  const uint16_t xPMCircle = 50;
+  const uint16_t xLegend = ((display.width() / 2) - xMargins - legendWidth);
+  const uint16_t yLegend = 100;
+  const uint16_t xIndoorPMCircle = (display.width() / 4);
+  const uint16_t xOutdoorPMCircle = ((display.width() / 4) * 3);
   const uint16_t yPMCircle = 75;
   const uint16_t circleRadius = 30;
-  const uint16_t xPMLabel = 33;
-  const uint16_t yPMLabel = 110;
-  const uint16_t xPMValue = 40;
-  const uint16_t yPMValue = 80;
+  const uint16_t xPMLabel = ((display.width() / 2) - 25);
+  const uint16_t yPMLabel = 112;
+  // const uint16_t xIndoorPMValue = xIndoorPMCircle;
+  // const uint16_t xOutdoorPMValue = xOutdoorPMCircle;
+  // const uint16_t yPMValue = yPMCircle;
+  const uint16_t yAQIValue = 160;
   const uint16_t xWeatherIcon = ((display.width() / 4) * 3);
-  const uint16_t yWeatherIcon = 160;
+  const uint16_t yWeatherIcon = 200;
   const uint16_t yCO2 = 160;
   // const uint16_t ySparkline = 40;
 
@@ -397,92 +404,59 @@ void screenCurrentInfo()
   // original icon ratio was 5:7?
   display.drawBitmap(xMargins + 90, yTemperature - 21, epd_bitmap_humidity_icon_sm4, 20, 28, ILI9341_WHITE);
 
-  // pm25 legend
-  display.fillRect(xMargins,yLegend,legendWidth,legendHeight,ILI9341_BLUE);
-  display.fillRect(xMargins,yLegend-legendHeight,legendWidth,legendHeight,ILI9341_GREEN);
-  display.fillRect(xMargins,(yLegend-(2*legendHeight)),legendWidth,legendHeight,ILI9341_YELLOW);
-  display.fillRect(xMargins,(yLegend-(3*legendHeight)),legendWidth,legendHeight,ILI9341_ORANGE);
-  display.fillRect(xMargins,(yLegend-(4*legendHeight)),legendWidth,legendHeight,ILI9341_RED);
-  display.fillRect(xMargins,(yLegend-(5*legendHeight)),legendWidth,legendHeight,ILI9341_MAGENTA);
+  // PM2.5 legend
+  display.fillRect(xLegend,yLegend,legendWidth,legendHeight,ILI9341_BLUE);
+  display.fillRect(xLegend,yLegend-legendHeight,legendWidth,legendHeight,ILI9341_GREEN);
+  display.fillRect(xLegend,(yLegend-(2*legendHeight)),legendWidth,legendHeight,ILI9341_YELLOW);
+  display.fillRect(xLegend,(yLegend-(3*legendHeight)),legendWidth,legendHeight,ILI9341_ORANGE);
+  display.fillRect(xLegend,(yLegend-(4*legendHeight)),legendWidth,legendHeight,ILI9341_RED);
+  display.fillRect(xLegend,(yLegend-(5*legendHeight)),legendWidth,legendHeight,ILI9341_MAGENTA);
 
-  // pm25 level circle
-  switch (int(sensorData.massConcentrationPm2p5/50))
-  {
-    case 0: // good
-      display.fillCircle(xPMCircle,yPMCircle,circleRadius,ILI9341_BLUE);
-      break;
-    case 1: // moderate
-      display.fillCircle(xPMCircle,yPMCircle,circleRadius,ILI9341_GREEN);
-      break;
-    case 2: // unhealthy for sensitive groups
-      display.fillCircle(xPMCircle,yPMCircle,circleRadius,ILI9341_YELLOW);
-      break;
-    case 3: // unhealthy
-      display.fillCircle(xPMCircle,yPMCircle,circleRadius,ILI9341_ORANGE);
-      break;
-    case 4: // very unhealthy
-      display.fillCircle(xPMCircle,yPMCircle,circleRadius,ILI9341_RED);
-      break;
-    case 5: // very unhealthy
-      display.fillCircle(xPMCircle,yPMCircle,circleRadius,ILI9341_RED);
-      break;
-    default: // >=6 is hazardous
-      display.fillCircle(xPMCircle,yPMCircle,circleRadius,ILI9341_MAGENTA);
-      break;
-  }
-
-  // // VoC level circle
-  // switch (int(sensorData.vocIndex/100))
-  // {
-  //   case 0: // great
-  //     display.fillCircle(114,75,31,ILI9341_BLUE);
-  //     break;
-  //   case 1: // good
-  //     display.fillCircle(114,75,31,ILI9341_GREEN);
-  //     break;
-  //   case 2: // moderate
-  //     display.fillCircle(114,75,31,ILI9341_YELLOW);
-  //     break;
-  //   case 3: // 
-  //     display.fillCircle(114,75,31,ILI9341_ORANGE);
-  //     break;
-  //   case 4: // bad
-  //     display.fillCircle(114,75,31,ILI9341_RED);
-  //     break;
-  // }
-
-  // // VoC legend
-  // display.fillRect(display.width()-xMargins,yLegend,legendWidth,legendHeight,ILI9341_BLUE);
-  // display.fillRect(display.width()-xMargins,yLegend-legendHeight,legendWidth,legendHeight,ILI9341_GREEN);
-  // display.fillRect(display.width()-xMargins,(yLegend-(2*legendHeight)),legendWidth,legendHeight,ILI9341_YELLOW);
-  // display.fillRect(display.width()-xMargins,(yLegend-(3*legendHeight)),legendWidth,legendHeight,ILI9341_ORANGE);
-  // display.fillRect(display.width()-xMargins,(yLegend-(4*legendHeight)),legendWidth,legendHeight,ILI9341_RED);
-
-  // circle labels
+  // PM2.5 label
   display.setTextColor(ILI9341_WHITE);
   display.setFont();
   display.setCursor(xPMLabel,yPMLabel);
   display.print("PM2.5");
-  // display.setCursor(106,110);
-  // display.print("VoC"); 
 
-  // pm25 level
+  // Indoor PM2.5 circle
+  switch (int(sensorData.massConcentrationPm2p5/50))
+  {
+    case 0: // good
+      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_BLUE);
+      break;
+    case 1: // moderate
+      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_GREEN);
+      break;
+    case 2: // unhealthy for sensitive groups
+      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_YELLOW);
+      break;
+    case 3: // unhealthy
+      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_ORANGE);
+      break;
+    case 4: // very unhealthy
+      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
+      break;
+    case 5: // very unhealthy
+      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
+      break;
+    default: // >=6 is hazardous
+      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_MAGENTA);
+      break;
+  }
+
+  // Indoor PM2.5 value
   display.setFont();
-  display.setCursor(xPMValue,yPMValue);
+  display.setCursor(xIndoorPMCircle,yPMCircle);
   display.print(int(sensorData.massConcentrationPm2p5));
 
-  // VoC level
-  // display.setCursor(100,80);
-  // display.print(int(sensorData.vocIndex));
-
-  // CO2 level
+  // Indoor CO2 level
   // CO2 label line
   display.setFont(&FreeSans12pt7b);
   display.setCursor(xMargins, yCO2);
   display.print("CO");
-  display.setCursor(xMargins + 50, yCO2);
+  display.setCursor(xMargins + 55, yCO2);
   display.setTextColor(co2Color[co2Range(sensorData.ambientCO2)]);  // Use highlight color look-up table
-  display.print(": " + String(co2Labels[co2Range(sensorData.ambientCO2)]));
+  display.print(String(co2Labels[co2Range(sensorData.ambientCO2)]));
   // subscript
   display.setFont(&FreeSans9pt7b);
   display.setTextColor(ILI9341_WHITE);
@@ -520,22 +494,50 @@ void screenCurrentInfo()
     display.drawBitmap(xOutdoorMargin + 90, yTemperature - 21, epd_bitmap_humidity_icon_sm4, 20, 28, ILI9341_WHITE);
   }
 
-  // Outside air quality index (AQI) + PM25 value
+  // Outside PM2.5
+  // PM2.5 circle
+  switch (int(owmAirQuality.pm25/50))
+  {
+    case 0: // good
+      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_BLUE);
+      break;
+    case 1: // moderate
+      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_GREEN);
+      break;
+    case 2: // unhealthy for sensitive groups
+      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_YELLOW);
+      break;
+    case 3: // unhealthy
+      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_ORANGE);
+      break;
+    case 4: // very unhealthy
+      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
+      break;
+    case 5: // very unhealthy
+      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
+      break;
+    default: // >=6 is hazardous
+      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_MAGENTA);
+      break;
+  }
+
+  // PM2.5 value
+  display.setFont();
+  display.setCursor(xOutdoorPMCircle,yPMCircle);
+  display.setTextColor(ILI9341_WHITE);
+  display.print(int(owmAirQuality.pm25));
+
+  // Outside air quality index (AQI)
   if (owmAirQuality.aqi != 10000) {
     // main line
     display.setFont(&FreeSans9pt7b);
-    display.setCursor(xOutdoorMargin, yLegend);
+    display.setCursor(xOutdoorMargin, yAQIValue);
     display.setTextColor(ILI9341_WHITE);
     // European standards-body AQI value
-    //display.print(aqiEuropeanLabels[(owmAirQuality.aqi-1)]);
-
+    display.print(aqiEuropeanLabels[(owmAirQuality.aqi)]);
     // US standards-body AQI value
-    display.print(aqiUSALabels[aqiUSLabelValue(owmAirQuality.pm25)]);
+    // display.print(aqiUSALabels[aqiUSLabelValue(owmAirQuality.pm25)]);
     display.print(" AQI");
-    // value line
-    display.setFont();
-    display.setCursor((xOutdoorMargin + 20), (yLegend + 3));
-    display.print("(" + String(owmAirQuality.pm25) + ")");
   }
 
     // weather icon
@@ -584,6 +586,42 @@ void screenGraph()
   debugMessage("screenGraph end",1);
 }
 
+// void screenVO2()
+// {
+//     // VoC level circle
+//   switch (int(sensorData.vocIndex/100))
+//   {
+//     case 0: // great
+//       display.fillCircle(114,75,31,ILI9341_BLUE);
+//       break;
+//     case 1: // good
+//       display.fillCircle(114,75,31,ILI9341_GREEN);
+//       break;
+//     case 2: // moderate
+//       display.fillCircle(114,75,31,ILI9341_YELLOW);
+//       break;
+//     case 3: // 
+//       display.fillCircle(114,75,31,ILI9341_ORANGE);
+//       break;
+//     case 4: // bad
+//       display.fillCircle(114,75,31,ILI9341_RED);
+//       break;
+//   }
+
+//   // VoC legend
+//   display.fillRect(display.width()-xMargins,yLegend,legendWidth,legendHeight,ILI9341_BLUE);
+//   display.fillRect(display.width()-xMargins,yLegend-legendHeight,legendWidth,legendHeight,ILI9341_GREEN);
+//   display.fillRect(display.width()-xMargins,(yLegend-(2*legendHeight)),legendWidth,legendHeight,ILI9341_YELLOW);
+//   display.fillRect(display.width()-xMargins,(yLegend-(3*legendHeight)),legendWidth,legendHeight,ILI9341_ORANGE);
+//   display.fillRect(display.width()-xMargins,(yLegend-(4*legendHeight)),legendWidth,legendHeight,ILI9341_RED);
+//   display.setCursor(106,110);
+//   display.print("VoC"); 
+
+//   VoC level
+//   display.setCursor(100,80);
+//   display.print(int(sensorData.vocIndex));
+// }
+
 void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
 // helper function for screenXXX() routines that draws WiFi signal strength
 {
@@ -617,19 +655,71 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
   #endif
 }
 
-void OWMCurrentWeatherSimulate()
-// Simulates Open Weather Map (OWM) Current Weather data
-{
-  // Improvement - variable length names
-  owmCurrentData.cityName = "Pleasantville";
-  // Temperature
-  owmCurrentData.tempF = ((random(sensorTempMin,sensorTempMax) / 100.0) * 1.8) + 32;
-  // Humidity
-  owmCurrentData.humidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
-  // IMPROVEMENT - variable icons
-  owmCurrentData.icon = "09d";
-  debugMessage(String("SIMULATED OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
-}
+// Hardware simulation routines
+#ifdef HARDWARE_SIMULATE
+  void OWMCurrentWeatherSimulate()
+  // Simulates Open Weather Map (OWM) Current Weather data
+  {
+    // Improvement - variable length names
+    owmCurrentData.cityName = "Pleasantville";
+    // Temperature
+    owmCurrentData.tempF = ((random(sensorTempMin,sensorTempMax) / 100.0) * 1.8) + 32;
+    // Humidity
+    owmCurrentData.humidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
+    // IMPROVEMENT - variable icons
+    owmCurrentData.icon = "09d";
+    debugMessage(String("SIMULATED OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
+  }
+
+  void OWMAirPollutionSimulate()
+  // Simulates Open Weather Map (OWM) Air Pollution data
+  {
+    owmAirQuality.aqi = random(OWMAQIMin, OWMAQIMax);  // overrides error code value
+    owmAirQuality.pm25 = random(OWMPM25Min, OWMPM25Max) / 100.0;
+    debugMessage(String("SIMULATED OWM PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
+  }
+
+  void networkSimulate()
+  // Simulates successful WiFi connection data
+  {
+    // IMPROVEMENT : simulate IP address?
+    hardwareData.rssi = random(networkRSSIMin, networkRSSIMax);
+    debugMessage(String("SIMULATED WiFi RSSI: ") + hardwareData.rssi,1);
+  }
+
+  void  sensorPMSimulate()
+  // Simulates sensor reading from PMSA003I sensor
+  {
+    // tempF and humidity come from SCD40 simulation
+
+    // Common to PMSA003I and SEN5x
+    //sensorData.massConcentrationPm1p0 = random(0, 360) / 10.0;
+    //sensorData.massConcentrationPm10p0 = random(0, 1550) / 10.0;
+    sensorData.massConcentrationPm2p5 = random(sensorPM2p5Min, sensorPM2p5Max) / 10.0;
+
+    // PMSA003I specific values
+
+    // SEN5x specific values
+    // sensorData.massConcentrationPm4p0 = random(0, 720) / 10.0;
+    // sensorData.vocIndex = random(0, 500) / 10.0;
+    // sensorData.noxIndex = random(0, 2500) / 10.0;
+
+    debugMessage(String("SIMULATED PM2.5: ")+sensorData.massConcentrationPm2p5+" ppm",1); 
+  }
+
+  void sensorCO2Simulate()
+  // Simulate ranged data from the SCD40
+  // Improvement - implement stable, rapid rise and fall 
+  {
+    // Temperature in Fahrenheit
+    sensorData.ambientTemperatureF = ((random(sensorTempMin,sensorTempMax) / 100.0)*1.8)+32.0;
+    // Humidity
+    sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
+    // CO2
+    sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
+    debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+  }
+#endif
 
 bool OWMCurrentWeatherRead()
 // Gets Open Weather Map Current Weather data
@@ -697,14 +787,6 @@ bool OWMCurrentWeatherRead()
     }
     return false;
   #endif
-}
-
-void OWMAirPollutionSimulate()
-// Simulates Open Weather Map (OWM) Air Pollution data
-{
-  owmAirQuality.aqi = random(OWMAQIMin, OWMAQIMax);  // overrides error code value
-  owmAirQuality.pm25 = random(OWMPM25Min, OWMPM25Max) / 100.0;
-  debugMessage(String("SIMULATED OWM PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
 }
 
 bool OWMAirPollutionRead()
@@ -798,14 +880,6 @@ String OWMtoMeteoconIcon(String icon)
   // Nothing matched
   debugMessage("OWM icon not matched to Meteocon, why?", 1);
   return ")";
-}
-
-void networkSimulate()
-// Simulates successful WiFi connection data
-{
-  // IMPROVEMENT : simulate IP address?
-  hardwareData.rssi = random(networkRSSIMin, networkRSSIMax);
-  debugMessage(String("SIMULATED WiFi RSSI: ") + hardwareData.rssi,1);
 }
 
 bool networkConnect() 
@@ -994,26 +1068,6 @@ bool sensorPMInit()
   #endif
 }
 
-void  sensorPMSimulate()
-// Simulates sensor reading from PMSA003I sensor
-{
-  // tempF and humidity come from SCD40 simulation
-
-  // Common to PMSA003I and SEN5x
-  //sensorData.massConcentrationPm1p0 = random(0, 360) / 10.0;
-  //sensorData.massConcentrationPm10p0 = random(0, 1550) / 10.0;
-  sensorData.massConcentrationPm2p5 = random(sensorPM2p5Min, sensorPM2p5Max) / 10.0;
-
-  // PMSA003I specific values
-
-  // SEN5x specific values
-  // sensorData.massConcentrationPm4p0 = random(0, 720) / 10.0;
-  // sensorData.vocIndex = random(0, 500) / 10.0;
-  // sensorData.noxIndex = random(0, 2500) / 10.0;
-
-  debugMessage(String("SIMULATED PM2.5: ")+sensorData.massConcentrationPm2p5+" ppm",1); 
-}
-
 bool sensorPMRead()
 {
   #ifdef HARDWARE_SIMULATE
@@ -1165,19 +1219,6 @@ bool sensorCO2Read()
   return(true);
 }
 
-void sensorCO2Simulate()
-// Simulate ranged data from the SCD40
-// Improvement - implement stable, rapid rise and fall 
-{
-  // Temperature in Fahrenheit
-  sensorData.ambientTemperatureF = ((random(sensorTempMin,sensorTempMax) / 100.0)*1.8)+32.0;
-  // Humidity
-  sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
-  // CO2
-  sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
-  debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
-}
-
 uint8_t co2Range(uint16_t value)
 // places CO2 value into a three band range for labeling and coloring. See config.h for more information
 {
@@ -1197,8 +1238,7 @@ uint8_t aqiUSLabelValue(float pm25)
   else if (pm25 <= 55.4) return (2);
   else if (pm25 <= 150.4) return (3);
   else if (pm25 <= 250.4) return (4);
-  else if (pm25 <= 500.4) return (5);
-  else return (6);  // AQI above 500 not recognized
+  else return (5); // AQI above 500 not recognized
 }
 
 float pm25toAQI(float pm25)

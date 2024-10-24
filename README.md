@@ -1,13 +1,13 @@
 # Powered Air Quality
 
 ### Purpose
-Powered Air Quality samples and displays temperature, humidity, CO2 (carbon dioxide), and PM2.5 particulate levels. It can log this data to a number of network endpoints.
+Powered Air Quality samples and displays temperature, humidity, CO2, and airborne particulate levels. It can also log this data to a number of network endpoints.
 
 ### Features
 
 ### Target configuration
-- Important access settings like WiFi SSID and password, ThingSpeak keys, and InfluxDB credentials are contained in a `secrets.h` file that is not included in this repo.  Instead you'll find the file `secrets_template.h`, which should be copied to `secrets.h` and then edited to supply the right access credentials and configuration values to match your deployment environment.
-- See config.h for parameter configuration
+- Important access settings for WiFi (SSID and password), network endpoints (MQTT, InfluxDB), and location information are contained in a `secrets.h` file that is not included in this repo.  Instead you'll find the file `secrets_template.h`, which should be copied to `secrets.h` and then edited to supply the right access credentials and configuration values to match your deployment environment.
+- See config.h for device parameter configuration instructions
 
 ### Bill of Materials (BOM)
 - MCU
@@ -17,13 +17,6 @@ Powered Air Quality samples and displays temperature, humidity, CO2 (carbon diox
         - ESP32 based boards
 - environment sensor
     - [SCD40 True CO2, Temperature and Humidity Sensor](https://www.adafruit.com/product/5187)
-- Battery (monitor)
-    - define battery size in Step 2 of config.h
-    - batteryRead() looks for LC709203F, then tries to use supported board's voltage monitor GPIO pin
-        - if neither is found, battery voltage is not displayed or reported
-    - Supported hardware
-        -   [LC709203F battery voltage monitor](https://www.adafruit.com/product/4712)
-        - [Adafruit batteries](https://www.adafruit.com/product/2011)
 - Screen
     - Supported hardware
         - 1.54" e-paper display with 200x200 pixels
@@ -65,8 +58,9 @@ Powered Air Quality samples and displays temperature, humidity, CO2 (carbon diox
     - set appropriate parameters in config.h and secrets.h
     - Technical References
         - https://hackaday.com/2017/10/31/review-iot-data-logging-services-with-mqtt/
-- Influx
-- DWEET
+- InfluxDB
+    - uncomment #define INFLUX
+    - set appropriate parameters in config.h and secrets.h
 
 ### Information Sources
 - NTP
