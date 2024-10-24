@@ -190,9 +190,6 @@ void setup()
     // wait for serial port connection
     while (!Serial);
 
-    // generate random numbers for every boot cycle
-    randomSeed(analogRead(0));
-
     // Display key configuration parameters
     debugMessage("Powered Air Quality monitor started",1);
     debugMessage(String("Sample interval is ") + sensorSampleInterval + " seconds",1);
@@ -200,6 +197,12 @@ void setup()
       debugMessage(String("Report interval is ") + sensorReportInterval + " minutes",1);
     #endif
     debugMessage(String("Internet reconnect delay is ") + networkConnectAttemptInterval + " seconds",1);
+  #endif
+
+  #ifdef HARDWARE_SIMULATE
+    // generate random numbers for every boot cycle
+    // used by HARDWARE_SIUMLATE
+    randomSeed(analogRead(0));
   #endif
 
   // initialize screen first to display hardware error messages
