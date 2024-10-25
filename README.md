@@ -1,77 +1,89 @@
 # Powered Air Quality
+AI: PUT HERO SHOT HERE
 
-### Purpose
-Powered Air Quality samples and displays temperature, humidity, CO2, and airborne particulate levels. It can also log this data to a number of network endpoints.
+## Purpose
+Powered Air Quality, aka PAQ, samples and displays temperature, humidity, CO2 (carbon dioxide), and air particulate levels. If PAQ is connected to WiFi, it can log this information to a number of network endpoints, and it displays local outdoor weather and air quality information to compliment the indoor sensor information. PAQ requires an AC power source.
 
-### Features
+PAQ was created to answer three primary questions:
+- Is the co2 level in the room good?
+- What is the particulate count in the air outside, and how much of that got into the room? This is particularly relevant during fire season.
+- When we use the gas stove or the central heater, how does it change our indoor air quality?
 
-### Target configuration
-- Important access settings for WiFi (SSID and password), network endpoints (MQTT, InfluxDB), and location information are contained in a `secrets.h` file that is not included in this repo.  Instead you'll find the file `secrets_template.h`, which should be copied to `secrets.h` and then edited to supply the right access credentials and configuration values to match your deployment environment.
-- See config.h for device parameter configuration instructions
-
-### Bill of Materials (BOM)
-- MCU
-    - ESP32
-- WiFi
-    - Supported hardware
-        - ESP32 based boards
-- environment sensor
-    - [SCD40 True CO2, Temperature and Humidity Sensor](https://www.adafruit.com/product/5187)
-- Screen
-    - Supported hardware
-        - 1.54" e-paper display with 200x200 pixels
-            - [Adafruit 1.54" Monochrome ePaper Display, 200x200 with SSD1681](https://www.adafruit.com/product/4196)
-        - [Adafruit eInk Breakout Friend with 32KB SRAM](https://www.adafruit.com/product/4224)
-            - bare epd display
-    - Technical References
-        - https://cdn-learn.adafruit.com/downloads/pdf/adafruit-gfx-graphics-library.pdf
-
-### Pinouts
-- Optional LC709203F
-    - Stemma QT cable between MCU board and LC709203F board
-    - Battery connected to LC709203F board
-    - Power connector between LC709203F board and MCU board
-    - 10K thermistor between thermistor pin and ground pin on LC709203F board (required to measure battery temperature)
-- SPDT switch (on/off)
-    - MCU EN to SPD rightmost pin
-    - MCU GND to SPD
-- SCD40
+## Associated projects
+PAQ has a number of sibling projects that share many common hardware and code attributes. Those are:
+- [Air Quality](https://github.com/ericklein/air_quality) has the same functionality as PAQ minus air particulate measurement. It is powered by a battery
+- [RCO2](https://github.com/ericklein/rco2) is a small, portable version of Air Quality that only samples and displays air quality levels.
+- [Badge](https://github.com/ericklein/badge) is RCO2 in a badge form factor capable of displaying additional information beyond air quality levels.
+## Features
+AI : ADD DOCUMENTATION
+## Target configuration
+- Set parameter configuration using config.h
+- Private configuration settings including WiFi SSID/password and network endpoint credentials are contained in a `secrets.h` file that is not included in this repo.  Instead you'll find the file `secrets_template.h`, which should be copied to `secrets.h` and then edited to supply the right access credentials and configuration values to match your deployment environment.
+## Bill of Materials (BOM)
+### MCU
+- AI : ADD DOCUMENTATION
+### WiFi
+- AI : ADD DOCUMENTATION
+    - any ESP32
+### Sensors
+- [SCD40 temp/humidity/CO2 sensor](https://www.adafruit.com/product/5187)
+    can use any SCD40 connected over i2c
+- Particulate sensor over i2c
+    - SEN54
+        - AI: ADD DOCUMENTATION
+    - PM0003sa
+        - AI: ADD DOCUMENTATION
+### Screen
+- AI : ADD DOCUMENTATION
+    - any screen with ILI9341 driver
+### Buttons/Switches
+- AI : ADD DOCUMENTATION
+## Pinouts
+- SCD40, SEN54, PMS003a
     - Stemma QT cable between MCU board and SCD40 board
-- EPD screen
-    - EPD VIN to MCU 3V
-    - EPD GND to MCU GND
-    - EPD SCK to MCU SCK
-    - EPD MISO to MCU MISO
-    - EPD MOSI to MCU MOSI
-    - see config.h for these pins
-        - EPD ECS
-        - EPD D/C
-        - EPD SRCS
-        - EPD RST
-        - EPD BUSY
-
-### Supported Internet Services for data logging
-- The routines that post data to back end services are generalized as much as practical, though do need to be customized to match the data fieles of interest both within the scope of the project and based on what users want to report and monitor.  Configuration values in config.h help with basic customization, e.g. name of the device, tags to use for Influx data, though in some cases code may need to be modified in the associated post routine.
-
-- MQTT Broker
-    - uncomment #define MQTT
-    - set appropriate parameters in config.h and secrets.h
+        - or connect 3.3v/5v, GND, SDA, SCL on both sides
+## Supported network endpoints
+### MQTT
+- uncomment #define MQTT in config.h
+- set appropriate parameters in config.h and secrets.h
     - Technical References
         - https://hackaday.com/2017/10/31/review-iot-data-logging-services-with-mqtt/
-- InfluxDB
-    - uncomment #define INFLUX
-    - set appropriate parameters in config.h and secrets.h
-
-### Information Sources
-- NTP
-    - https://github.com/PaulStoffregen/Time/tree/master/examples/TimeNTP
-- Sensors 
-    - https://cdn-learn.adafruit.com/assets/assets/000/104/015/original/Sensirion_CO2_Sensors_SCD4x_Datasheet.pdf?1629489682
-    - https://github.com/Sensirion/arduino-i2c-scd4x
-    - https://github.com/sparkfun/SparkFun_SCD4x_Arduino_Library
-    - https://emariete.com/en/sensor-co2-sensirion-scd40-scd41-2/
-
-### Issues and Feature Requests
-- See GitHub Issues for project
-
-### .plan (big ticket items)
+### Hassio MQTT
+- AI: ADD DOCUMENTATION
+### InfluxDB
+- AI: ADD DOCUMENTATION
+## Issues and Feature Requests
+- [Github Issues](https://github.com/ericklein/powered_air_quality/issues)
+## .plan (big ticket items)
+- [WiFI Manager](https://github.com/tzapu/WiFiManager) support
+- OTA firmware update support
+- button support to cycle through multiple information screens
+## Supporting Material
+### Screen
+- https://cdn-learn.adafruit.com/downloads/pdf/adafruit-gfx-graphics-library.pdf
+### Temperature and Humdity
+- [Ideal indoor humidity](https://iaq.works/humidity/indoor-humidity-level-why-is-the-40-60-range-ideal/)
+### CO2 (Carbon Dioxide)
+#### Scales
+We currently use the following scale:
+- <800 - Good
+- 800-999 - So-So
+- 1000+ - Poor
+##### Alternate ideas
+- ![Example 1](readme/co2_scale_1.png)
+- ![Example 2](readme/co2_scale_2.png)
+- ![Example 3](readme/co2_scale_3.jpg)
+#### Impact on health
+- [CO2 and indoor air quality](readme/CO2_and_indoor_air_quality.pdf)
+#### Sensors
+- [CO2 sensor types](https://www.airgradient.com/blog/co2-sensors-photo-acoustic-vs-ndir-updated/)
+- SCD40 sensor
+    - [SCD40 datasheet](readme/Sensirion_CO2_Sensors_SCD4x_Datasheet.pdf)
+### AQI
+- [AQI Overview](readme/aqi_overview.md)
+- [Open Weather Map Air Pollution API](https://openweathermap.org/api/air-pollution)
+- [OSHA Air Quality](readme/OSHA_Indoor_Air_Quality.pdf)
+- [Great site for air quality info](https://itsairborne.com/)
+- [NYT on indoor gas stoves](https://www.nytimes.com/2023/01/29/climate/gas-stove-health.html)
+#### Sensors
+[SEN54](readme/Sensirion_Datasheet_Environmental_Node_SEN5x.pdf)

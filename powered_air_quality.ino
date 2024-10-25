@@ -36,7 +36,7 @@
 // ezButton buttonOne(buttonD1Pin);
 
 // screen support
-// 3.2″ ILI9341 320x240 color TFT w/resistive touch screen
+// 3.2″ 320x240 color TFT w/resistive touch screen, ILI9341 driver
 #include "Adafruit_ILI9341.h"
 Adafruit_ILI9341 display = Adafruit_ILI9341(tft8bitbus, TFT_D0, TFT_WR, TFT_DC, TFT_CS, TFT_RST, TFT_RD);
 
