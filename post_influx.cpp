@@ -70,15 +70,15 @@
       dbdevdata.addTag(TAG_KEY_LOCATION, DEVICE_LOCATION);
       dbdevdata.addTag(TAG_KEY_ROOM, DEVICE_ROOM);
 
-      // Attempts influxDB connection, and if unsuccessful, re-attempts after CONNECT_ATTEMPT_INTERVAL second delay for CONNECT_ATTEMPT_LIMIT times
-      for (int tries = 1; tries <= CONNECT_ATTEMPT_LIMIT; tries++) {
+      // Attempts influxDB connection, and if unsuccessful, re-attempts after networkConnectAttemptInterval second delay for networkConnectAttempLimit times
+      for (int tries = 1; tries <= networkConnectAttempLimit; tries++) {
         if (dbclient.validateConnection()) {
           debugMessage(String("Connected to InfluxDB: ") + dbclient.getServerUrl(),1);
           result = true;
           break;
         }
-        debugMessage(String("influxDB connection attempt ") + tries + " of " + CONNECT_ATTEMPT_LIMIT + " failed with error msg: " + dbclient.getLastErrorMessage(),1);
-        delay(CONNECT_ATTEMPT_INTERVAL*1000);
+        debugMessage(String("influxDB connection attempt ") + tries + " of " + networkConnectAttempLimit + " failed with error msg: " + dbclient.getLastErrorMessage(),1);
+        delay(networkConnectAttemptInterval*1000);
       }
       if (result)
       {

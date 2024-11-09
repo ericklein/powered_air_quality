@@ -10,14 +10,20 @@
 // Configuration Step 2: simulate WiFi and sensor hardware,
 // returning random but plausible values
 // comment out to turn off
-#define HARDWARE_SIMULATE
+// #define HARDWARE_SIMULATE
 
 // Configuration Step 3: Set network data endpoints
+// HARDWARE_SIMULATE can not be defined if any network data endpoints are defined
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
 // #define INFLUX // Log data to InfluxDB server
 
 // Configuration variables that are less likely to require changes
+
+// CYD specific i2c pin configuration
+// used in Wire.begin()
+#define CYD_SDA 22
+#define CYD_SCL 27
 
 // Buttons
 // const uint8_t buttonD1Pin = 1; // initially LOW
@@ -27,13 +33,14 @@
 const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
 const uint8_t screenCount = 5;
 
-#define TFT_D0        34 // Data bit 0 pin (MUST be on PORT byte boundary)
-#define TFT_WR        26 // Write-strobe pin (CCL-inverted timer output)
-#define TFT_DC        10 // Data/command pin
-#define TFT_CS        11 // Chip-select pin
-#define TFT_RST       24 // Reset pin
-#define TFT_RD         9 // Read-strobe pin
-#define TFT_BACKLIGHT 25
+// CYD
+#define TFT_BACKLIGHT 21
+#define TFT_CS 15
+#define TFT_DC 2
+#define TFT_MISO 12
+#define TFT_MOSI 13
+#define TFT_SCLK 14
+#define TFT_RST -1
 
 // screen layout assists in pixels
 const uint16_t xMargins = 10;
@@ -53,9 +60,9 @@ const uint16_t wifiBarSpacing = 5;
 
 // Simulation boundary values
 #ifdef HARDWARE_SIMULATE
-  const uint16_t sensorTempMin =      1500; // will be divided by 100.0 to give floats
+  const uint16_t sensorTempMin =      1500; // in Celcius, divided by 100.0 to give floats
   const uint16_t sensorTempMax =      2500;
-  const uint16_t sensorHumidityMin =  500; // will be divided by 100.0 to give floats
+  const uint16_t sensorHumidityMin =  500; // RH%, divided by 100.0 to give floats
   const uint16_t sensorHumidityMax =  9500;
 
   // IMPROVEMENT: SWAG on values, check docs
@@ -98,9 +105,9 @@ const uint16_t co2Color[3] = {
     0xF800    // RED = "Poor"
   };
 
-const uint16_t sensorCO2Min =      400;
-const uint16_t sensorCO2Max =      2000;
-const uint16_t sensorTempCOffset = 0; // in C
+const uint16_t sensorCO2Min =      400;   // in ppm
+const uint16_t sensorCO2Max =      2000;  // in ppm
+const uint16_t sensorTempCOffset = 0;     // in Celcius
 
 // if using OWM aqi value, these are the European standards-body conversions from numeric valeu
 const String aqiEuropeanLabels[5] = { "Good", "Fair", "Moderate", "Poor", "Very Poor" };

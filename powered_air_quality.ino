@@ -13,10 +13,13 @@
 #ifndef HARDWARE_SIMULATE
   // sensor support
   // instanstiate pm hardware object
-  #include "Adafruit_PM25AQI.h"
-  Adafruit_PM25AQI pmSensor = Adafruit_PM25AQI();
+  // #include "Adafruit_PM25AQI.h"
+  // Adafruit_PM25AQI pmSensor = Adafruit_PM25AQI();
 
-  // instanstiate scd40 hardware object
+  #include <SensirionI2CSen5x.h>
+  SensirionI2CSen5x pmSensor;
+
+  // instanstiate SCD4X hardware object
   #include <SensirionI2CScd4x.h>
   SensirionI2CScd4x co2Sensor;
 
@@ -25,26 +28,28 @@
     #include <ESP8266WiFi.h>
   #elif defined(ESP32)
     #include <WiFi.h>
-    #include <HTTPClient.h>
-  #else
-    #include <WiFiNINA.h> // PyPortal
   #endif
+  #include <HTTPClient.h>
+  WiFiClient client;   // used by OWM and MQTT
 #endif
 
-// button support
-// #include <ezButton.h>
-// ezButton buttonOne(buttonD1Pin);
+#include <SPI.h>
+// Note: the ESP32 has 2 SPI ports, to have ESP32-2432S028R work with the TFT and Touch on different SPI ports each needs to be defined and passed to the library
+SPIClass hspi = SPIClass(HSPI);
+// SPIClass vspi = SPIClass(VSPI);
 
 // screen support
 // 3.2″ 320x240 color TFT w/resistive touch screen, ILI9341 driver
 #include "Adafruit_ILI9341.h"
-Adafruit_ILI9341 display = Adafruit_ILI9341(tft8bitbus, TFT_D0, TFT_WR, TFT_DC, TFT_CS, TFT_RST, TFT_RD);
+
+Adafruit_ILI9341 display = Adafruit_ILI9341(&hspi, TFT_DC, TFT_CS, TFT_RST);
+// works without SPIClass call, slower
+// Adafruit_ILI9341 display = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_MOSI, TFT_SCLK, TFT_RST, TFT_MISO);
 
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSans12pt7b.h>
 // #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSans24pt7b.h>
-
 #include "Fonts/meteocons20pt7b.h"
 #include "Fonts/meteocons16pt7b.h"
 #include "Fonts/meteocons12pt7b.h"
@@ -56,10 +61,13 @@ Adafruit_ILI9341 display = Adafruit_ILI9341(tft8bitbus, TFT_D0, TFT_WR, TFT_DC, 
 #include "glyphs.h"
 
 #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
-  WiFiClient client;
   // NTP setup using Esperiff library
   #include <time.h>
 #endif
+
+// button support
+// #include <ezButton.h>
+// ezButton buttonOne(buttonD1Pin);
 
 // external function dependencies
 #ifdef INFLUX
@@ -67,11 +75,6 @@ Adafruit_ILI9341 display = Adafruit_ILI9341(tft8bitbus, TFT_D0, TFT_WR, TFT_DC, 
 #endif
 
 #ifdef MQTT
-  // MQTT uses WiFiClient class to create TCP connections
-  WiFiClient client;
-  #include <HTTPClient.h>
-
-
   // MQTT interface depends on the underlying network client object, which is defined and
   // managed here (so needs to be defined here).
   #include <Adafruit_MQTT.h>
@@ -84,7 +87,7 @@ Adafruit_ILI9341 display = Adafruit_ILI9341(tft8bitbus, TFT_D0, TFT_WR, TFT_DC, 
   extern bool mqttSensorPM25Update(float pm25);
   extern bool mqttSensorAQIUpdate(float aqi);
   // extern bool mqttSensorVOCIndexUpdate(float vocIndex);
-  extern bool mqttSensorCO2Update(uint16_t co2)
+  extern bool mqttSensorCO2Update(uint16_t co2);
   #ifdef HASSIO_MQTT
     extern void hassio_mqtt_publish(float pm25, float aqi, float temperatureF, float vocIndex, float humidity, uint16_t co2ß);
   #endif
@@ -95,20 +98,20 @@ Adafruit_ILI9341 display = Adafruit_ILI9341(tft8bitbus, TFT_D0, TFT_WR, TFT_DC, 
 // environment sensor data
 typedef struct envData
 {
-  // SCD40 data
-  float ambientHumidity;      // RH [%]
+  // SCD4X data
   float ambientTemperatureF;
-  uint16_t  ambientCO2;
+  float ambientHumidity;      // RH [%]
+  uint16_t  ambientCO2;       // ppm
 
   // Common data to PMSA003I and SEN5x
-  float massConcentrationPm2p5;       // PM2.5 [µg/m³]
-  // float massConcentrationPm1p0;    // PM1.0 [µg/m³], NAN if unknown
-  // float massConcentrationPm10p0;   // PM10.0 [µg/m³], NAN if unknown
+  float massConcentrationPm2p5;   // PM2.5 [µg/m³]
+  float massConcentrationPm1p0;   // PM1.0 [µg/m³], NAN if unknown
+  float massConcentrationPm10p0;  // PM10.0 [µg/m³], NAN if unknown
 
   // SEN5x specific data
-  // float massConcentrationPm4p0;   // PM4.0 [µg/m³], NAN if unknown
-  // float vocIndex;                 // Sensiron VOC Index, NAN in unknown
-  // float noxIndex;                 // NAN for unsupported devices (SEN54), also NAN for first 10-11 seconds
+  float massConcentrationPm4p0;   // PM4.0 [µg/m³], NAN if unknown
+  float vocIndex;                 // Sensiron VOC Index, NAN in unknown
+  float noxIndex;                 // NAN for unsupported devices (SEN5x), also NAN for first 10-11 seconds
 
   // PMSA003I specific data
   // uint16_t pm10_env;         // Environmental PM1.0
@@ -122,6 +125,21 @@ typedef struct envData
   // unit16_t particles_100um;  //< 10.0um Particle Count
 } envData;
 envData sensorData;
+
+float humidityTotal = 0;  // running total of humidity over report interval
+float temperatureFTotal = 0;     // running total of temperature over report interval
+float vocTotal = 0;       // running total of VOC over report interval
+float avgtemperatureF = 0;       // average temperature over report interval
+float avgHumidity = 0;    // average humidity over report interval
+float avgVOC = 0;         // average VOC over report interval
+
+float pm25Total = 0;  // running total of humidity over report interval
+float avgPM25;        // average PM2.5 over report interval
+
+unsigned long prevReportMs = 0;  // Timestamp for measuring elapsed capture time
+unsigned long prevSampleMs = 0;  // Timestamp for measuring elapsed sample time
+unsigned int numSamples = 0;     // Number of overall sensor readings over reporting interval
+unsigned int numReports = 0;     // Number of capture intervals observed
 
 // hardware status data
 typedef struct hdweData
@@ -189,55 +207,41 @@ void setup()
     Serial.begin(115200);
     // wait for serial port connection
     while (!Serial);
-
     // Display key configuration parameters
-    debugMessage("Powered Air Quality monitor started",1);
-    debugMessage(String("Sample interval is ") + sensorSampleInterval + " seconds",1);
+    debugMessage(String("Starting Powered Air Quality with ") + sensorSampleInterval + " second sample interval",1);
     #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
       debugMessage(String("Report interval is ") + sensorReportInterval + " minutes",1);
     #endif
     debugMessage(String("Internet reconnect delay is ") + networkConnectAttemptInterval + " seconds",1);
   #endif
 
-  #ifdef HARDWARE_SIMULATE
-    // generate random numbers for every boot cycle
-    // used by HARDWARE_SIUMLATE
-    randomSeed(analogRead(0));
-  #endif
+  // generate random numbers for every boot cycle
+  randomSeed(analogRead(0));
 
   // initialize screen first to display hardware error messages
   pinMode(TFT_BACKLIGHT, OUTPUT);
   digitalWrite(TFT_BACKLIGHT, HIGH);
 
-  // pinMode(TFT_RST, OUTPUT);
-  // digitalWrite(TFT_RST, HIGH);
-  // delay(10);
-  // digitalWrite(TFT_RST, LOW);
-  // delay(10);
-  // digitalWrite(TFT_RST, HIGH);
-  // delay(10);
-
   display.begin();
+  display.setRotation(screenRotation);
   display.setTextWrap(false);
   display.fillScreen(ILI9341_BLACK);
-  display.setRotation(screenRotation);
 
   hardwareData.rssi = 0;            // 0 = no WiFi
 
   // Initialize PM25 sensor
   if (!sensorPMInit()) {
     debugMessage("Environment sensor failed to initialize", 1);
-    screenAlert("NO PM25 sensor");
+    screenAlert("No SEN5X");
   }
 
-  // Initialize CO2 sensor
+  // Initialize SCD4X
   if (!sensorCO2Init()) {
     debugMessage("Environment sensor failed to initialize",1);
-    screenAlert("No SCD40");
+    screenAlert("No SCD4X");
     // This error often occurs right after a firmware flash and reset.
     // Hardware deep sleep typically resolves it, so quickly cycle the hardware
-    //powerDisable(hardwareRebootInterval);
-    while(1);
+    powerDisable(hardwareRebootInterval);
   }
 
   // buttonOne.setDebounceTime(buttonDebounceDelay); 
@@ -262,7 +266,7 @@ void loop()
   {
     if (!sensorPMRead())
     {
-      debugMessage("Could not read PMSA003I sensor data",1);
+      debugMessage("Could not read SEN5x sensor data",1);
       // TODO: what else to do here
     }
     sensorCO2Read();
@@ -306,7 +310,8 @@ void loop()
         #ifdef MQTT
           if (!mqttDeviceWiFiUpdate(hardwareData.rssi))
               debugMessage("Did not write device data to MQTT broker",1);
-          if ((!mqttSensorTemperatureFUpdate(avgtemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorAQIUpdate(pm25toAQI(avgPM25))) || (!mqttSensorVOCIndexUpdate(avgVOC)))
+          // if ((!mqttSensorTemperatureFUpdate(avgtemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorAQIUpdate(pm25toAQI(avgPM25))) || (!mqttSensorVOCIndexUpdate(avgVOC)))
+          if ((!mqttSensorTemperatureFUpdate(avgtemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorAQIUpdate(pm25toAQI(avgPM25))))
               debugMessage("Did not write environment data to MQTT broker",1);
           #ifdef HASSIO_MQTT
             debugMessage("Establishing MQTT for Home Assistant",1);
@@ -497,41 +502,42 @@ void screenCurrentInfo()
     display.drawBitmap(xOutdoorMargin + 90, yTemperature - 21, epd_bitmap_humidity_icon_sm4, 20, 28, ILI9341_WHITE);
   }
 
-  // Outside PM2.5
-  // PM2.5 circle
-  switch (int(owmAirQuality.pm25/50))
-  {
-    case 0: // good
-      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_BLUE);
-      break;
-    case 1: // moderate
-      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_GREEN);
-      break;
-    case 2: // unhealthy for sensitive groups
-      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_YELLOW);
-      break;
-    case 3: // unhealthy
-      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_ORANGE);
-      break;
-    case 4: // very unhealthy
-      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
-      break;
-    case 5: // very unhealthy
-      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
-      break;
-    default: // >=6 is hazardous
-      display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_MAGENTA);
-      break;
-  }
-
-  // PM2.5 value
-  display.setFont();
-  display.setCursor(xOutdoorPMCircle,yPMCircle);
-  display.setTextColor(ILI9341_WHITE);
-  display.print(int(owmAirQuality.pm25));
-
-  // Outside air quality index (AQI)
   if (owmAirQuality.aqi != 10000) {
+
+    // Outside PM2.5
+    // PM2.5 circle
+    switch (int(owmAirQuality.pm25/50))
+    {
+      case 0: // good
+        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_BLUE);
+        break;
+      case 1: // moderate
+        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_GREEN);
+        break;
+      case 2: // unhealthy for sensitive groups
+        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_YELLOW);
+        break;
+      case 3: // unhealthy
+        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_ORANGE);
+        break;
+      case 4: // very unhealthy
+        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
+        break;
+      case 5: // very unhealthy
+        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
+        break;
+      default: // >=6 is hazardous
+        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_MAGENTA);
+        break;
+    }
+
+    // PM2.5 value
+    display.setFont();
+    display.setCursor(xOutdoorPMCircle,yPMCircle);
+    display.setTextColor(ILI9341_WHITE);
+    display.print(int(owmAirQuality.pm25));
+
+    // Outside air quality index (AQI)
     // main line
     display.setFont(&FreeSans9pt7b);
     display.setCursor(xOutdoorMargin, yAQIValue);
@@ -541,16 +547,16 @@ void screenCurrentInfo()
     // US standards-body AQI value
     // display.print(aqiUSALabels[aqiUSLabelValue(owmAirQuality.pm25)]);
     display.print(" AQI");
-  }
 
     // weather icon
-  String weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
-  // if getMeteoIcon doesn't have a matching symbol, skip display
-  if (weatherIcon != ")") {
-    // display icon
-    display.setFont(&meteocons20pt7b);
-    display.setCursor(xWeatherIcon, yWeatherIcon);
-    display.print(weatherIcon);
+    String weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
+    // if getMeteoIcon doesn't have a matching symbol, skip display
+    if (weatherIcon != ")") {
+      // display icon
+      display.setFont(&meteocons20pt7b);
+      display.setCursor(xWeatherIcon, yWeatherIcon);
+      display.print(weatherIcon);
+    }
   }
   debugMessage("screenCurrentInfo() end", 1);
 }
@@ -693,25 +699,25 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
   void  sensorPMSimulate()
   // Simulates sensor reading from PMSA003I sensor
   {
-    // tempF and humidity come from SCD40 simulation
+    // tempF and humidity come from SCD4X simulation
 
     // Common to PMSA003I and SEN5x
-    //sensorData.massConcentrationPm1p0 = random(0, 360) / 10.0;
-    //sensorData.massConcentrationPm10p0 = random(0, 1550) / 10.0;
+    sensorData.massConcentrationPm1p0 = random(0, 360) / 10.0;
+    sensorData.massConcentrationPm10p0 = random(0, 1550) / 10.0;
     sensorData.massConcentrationPm2p5 = random(sensorPM2p5Min, sensorPM2p5Max) / 10.0;
 
     // PMSA003I specific values
 
     // SEN5x specific values
-    // sensorData.massConcentrationPm4p0 = random(0, 720) / 10.0;
-    // sensorData.vocIndex = random(0, 500) / 10.0;
-    // sensorData.noxIndex = random(0, 2500) / 10.0;
+    sensorData.massConcentrationPm4p0 = random(0, 720) / 10.0;
+    sensorData.vocIndex = random(0, 500) / 10.0;
+    sensorData.noxIndex = random(0, 2500) / 10.0;
 
     debugMessage(String("SIMULATED PM2.5: ")+sensorData.massConcentrationPm2p5+" ppm",1); 
   }
 
   void sensorCO2Simulate()
-  // Simulate ranged data from the SCD40
+  // Simulate ranged data from the SCD4X
   // Improvement - implement stable, rapid rise and fall 
   {
     // Temperature in Fahrenheit
@@ -720,7 +726,7 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
     sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
     // CO2
     sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
-    debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+    debugMessage(String("SIMULATED SCD4X: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
   }
 #endif
 
@@ -952,85 +958,85 @@ void networkDisconnect()
   }
 
   String networkHTTPGETRequest(const char* serverName) 
-{
-  String payload = "{}";
-  #ifdef HARDWARE_SIMULATE
-    return payload;
-  #else
-    // !!! ESP32 hardware dependent, using Esperif library
-
-    HTTPClient http;
-
-    // servername is domain name w/URL path or IP address w/URL path
-    http.begin(client, serverName);
-
-    // Send HTTP GET request
-    uint16_t httpResponseCode = http.GET();
-
-    if (httpResponseCode == HTTP_CODE_OK) {
-      // HTTP reponse OK code
-      payload = http.getString();
-    } else {
-      debugMessage("HTTP GET error code: " + httpResponseCode,1);
-      payload = "HTTP GET error";
-    }
-    // free resources
-    http.end();
-    return payload;
-  #endif
-}
-
-void setTimeZone(String timezone)
-// Set local time based on timezone set in config.h
-{
-  debugMessage(String("setting Timezone to ") + timezone.c_str(),2);
-  setenv("TZ",networkTimeZone.c_str(),1);
-  tzset();
-  debugMessage(String("Local time: ") + dateTimeString("short"),1);
-}
-
-String dateTimeString(String formatType)
-// Converts time into human readable string
-{
-  // https://cplusplus.com/reference/ctime/tm/
-
-  String dateTime;
-  struct tm timeInfo;
-
-  if (getLocalTime(&timeInfo)) 
   {
-    if (formatType == "short")
-    {
-      // short human readable format
-      dateTime = weekDays[timeInfo.tm_wday];
-      dateTime += " at ";
-      if (timeInfo.tm_hour < 10) dateTime += "0";
-      dateTime += timeInfo.tm_hour;
-      dateTime += ":";
-      if (timeInfo.tm_min < 10) dateTime += "0";
-      dateTime += timeInfo.tm_min;
-    }
-    else if (formatType == "long")
-    {
-      // long human readable
-      dateTime = weekDays[timeInfo.tm_wday];
-      dateTime += ", ";
-      if (timeInfo.tm_mon<10) dateTime += "0";
-      dateTime += timeInfo.tm_mon;
-      dateTime += "-";
-      if (timeInfo.tm_wday<10) dateTime += "0";
-      dateTime += timeInfo.tm_wday;
-      dateTime += " at ";
-      if (timeInfo.tm_hour<10) dateTime += "0";
-      dateTime += timeInfo.tm_hour;
-      dateTime += ":";
-      if (timeInfo.tm_min<10) dateTime += "0";
-      dateTime += timeInfo.tm_min;
-    }
+    String payload = "{}";
+    #ifdef HARDWARE_SIMULATE
+      return payload;
+    #else
+      // !!! ESP32 hardware dependent, using Esperif library
+
+      HTTPClient http;
+
+      // servername is domain name w/URL path or IP address w/URL path
+      http.begin(client, serverName);
+
+      // Send HTTP GET request
+      uint16_t httpResponseCode = http.GET();
+
+      if (httpResponseCode == HTTP_CODE_OK) {
+        // HTTP reponse OK code
+        payload = http.getString();
+      } else {
+        debugMessage("HTTP GET error code: " + httpResponseCode,1);
+        payload = "HTTP GET error";
+      }
+      // free resources
+      http.end();
+      return payload;
+    #endif
   }
-  else dateTime = "Can't reach time service";
-  return dateTime;
-}
+
+  void setTimeZone(String timezone)
+  // Set local time based on timezone set in config.h
+  {
+    debugMessage(String("setting Timezone to ") + timezone.c_str(),2);
+    setenv("TZ",networkTimeZone.c_str(),1);
+    tzset();
+    debugMessage(String("Local time: ") + dateTimeString("short"),1);
+  }
+
+  String dateTimeString(String formatType)
+  // Converts time into human readable string
+  {
+    // https://cplusplus.com/reference/ctime/tm/
+
+    String dateTime;
+    struct tm timeInfo;
+
+    if (getLocalTime(&timeInfo)) 
+    {
+      if (formatType == "short")
+      {
+        // short human readable format
+        dateTime = weekDays[timeInfo.tm_wday];
+        dateTime += " at ";
+        if (timeInfo.tm_hour < 10) dateTime += "0";
+        dateTime += timeInfo.tm_hour;
+        dateTime += ":";
+        if (timeInfo.tm_min < 10) dateTime += "0";
+        dateTime += timeInfo.tm_min;
+      }
+      else if (formatType == "long")
+      {
+        // long human readable
+        dateTime = weekDays[timeInfo.tm_wday];
+        dateTime += ", ";
+        if (timeInfo.tm_mon<10) dateTime += "0";
+        dateTime += timeInfo.tm_mon;
+        dateTime += "-";
+        if (timeInfo.tm_wday<10) dateTime += "0";
+        dateTime += timeInfo.tm_wday;
+        dateTime += " at ";
+        if (timeInfo.tm_hour<10) dateTime += "0";
+        dateTime += timeInfo.tm_hour;
+        dateTime += ":";
+        if (timeInfo.tm_min<10) dateTime += "0";
+        dateTime += timeInfo.tm_min;
+      }
+    }
+    else dateTime = "Can't reach time service";
+    return dateTime;
+  }
 #endif
 
 bool networkGetTime(String timezone)
@@ -1062,12 +1068,64 @@ bool sensorPMInit()
   #ifdef HARDWARE_SIMULATE
     return true;
   #else
-    if (pmSensor.begin_I2C()) 
-    {
-      debugMessage("PMSA003I initialized",1);
-      return true;
+    // // pmsa003i
+    // if (pmSensor.begin_I2C()) 
+    // {
+    //   debugMessage("PMSA003I initialized",1);
+    //   return true;
+    // }
+    // return false;
+    // SEN5x
+
+    uint16_t error;
+    char errorMessage[256];
+
+    // Wire.begin();
+    Wire.begin(CYD_SDA, CYD_SCL);
+    pmSensor.begin(Wire);
+
+    error = pmSensor.deviceReset();
+    if (error) {
+      errorToString(error, errorMessage, 256);
+      debugMessage(String(errorMessage) + " error during SEN5x reset", 1);
+      return false;
     }
-    return false;
+
+    // set a temperature offset in degrees celsius
+    // By default, the temperature and humidity outputs from the sensor
+    // are compensated for the modules self-heating. If the module is
+    // designed into a device, the temperature compensation might need
+    // to be adapted to incorporate the change in thermal coupling and
+    // self-heating of other device components.
+    //
+    // A guide to achieve optimal performance, including references
+    // to mechanical design-in examples can be found in the app note
+    // “SEN5x – Temperature Compensation Instruction” at www.sensirion.com.
+    // Please refer to those application notes for further information
+    // on the advanced compensation settings used
+    // in `setTemperatureOffsetParameters`, `setWarmStartParameter` and
+    // `setRhtAccelerationMode`.
+    //
+    // Adjust tempOffset to account for additional temperature offsets
+    // exceeding the SEN module's self heating.
+    // float tempOffset = 0.0;
+    // error = pmSensor.setTemperatureOffsetSimple(tempOffset);
+    // if (error) {
+    //   errorToString(error, errorMessage, 256);
+    //   debugMessage(String(errorMessage) + " error setting temp offset", 1);
+    // } else {
+    //   debugMessage(String("Temperature Offset set to ") + tempOffset + " degrees C", 2);
+    // }
+
+    // Start Measurement
+    error = pmSensor.startMeasurement();
+    if (error) {
+      errorToString(error, errorMessage, 256);
+      debugMessage(String(errorMessage) + " error during SEN5x startMeasurement", 1);
+      return false;
+    }
+    debugMessage("SEN5X starting periodic measurements",1);
+    return true;
   #endif
 }
 
@@ -1077,37 +1135,59 @@ bool sensorPMRead()
     sensorPMSimulate();
     return true;
   #else
-    PM25_AQI_Data data;
-    if (! pmSensor.read(&data)) 
-    {
+    // pmsa003i
+    // PM25_AQI_Data data;
+    // if (! pmSensor.read(&data)) 
+    // {
+    //   return false;
+    // }
+    // // successful read, store data
+
+    // // sensorData.massConcentrationPm1p0 = data.pm10_standard;
+    // sensorData.massConcentrationPm2p5 = data.pm25_standard;
+    // // sensorData.massConcentrationPm10p0 = data.pm100_standard;
+    // // sensorData.pm25_env = data.pm25_env;
+    // // sensorData.particles_03um = data.particles_03um;
+    // // sensorData.particles_05um = data.particles_05um;
+    // // sensorData.particles_10um = data.particles_10um;
+    // // sensorData.particles_25um = data.particles_25um;
+    // // sensorData.particles_50um = data.particles_50um;
+    // // sensorData.particles_100um = data.particles_100um;
+
+    // debugMessage(String("PM2.5 reading is ") + sensorData.massConcentrationPm2p5 + " or AQI " + pm25toAQI(sensorData.massConcentrationPm2p5),1);
+    // // debugMessage(String("Particles > 0.3um / 0.1L air:") + sensorData.particles_03um,2);
+    // // debugMessage(String("Particles > 0.5um / 0.1L air:") + sensorData.particles_05um,2);
+    // // debugMessage(String("Particles > 1.0um / 0.1L air:") + sensorData.particles_10um,2);
+    // // debugMessage(String("Particles > 2.5um / 0.1L air:") + sensorData.particles_25um,2);
+    // // debugMessage(String("Particles > 5.0um / 0.1L air:") + sensorData.particles_50um,2);
+    // // debugMessage(String("Particles > 10 um / 0.1L air:") + sensorData.particles_100um,2);
+    // return true;
+    // SEN5x
+    uint16_t error;
+    char errorMessage[256];
+    // we'll use the SCD4X values for these
+    // IMPROVEMENT: Compare to SCD4X values?
+    float sen5xTempF;
+    float sen5xHumidity;
+
+    debugMessage("SEN5X read initiated",1);
+
+    error = pmSensor.readMeasuredValues(
+      sensorData.massConcentrationPm1p0, sensorData.massConcentrationPm2p5, sensorData.massConcentrationPm4p0,
+      sensorData.massConcentrationPm10p0, sen5xHumidity, sen5xTempF, sensorData.vocIndex,
+      sensorData.noxIndex);
+    if (error) {
+      errorToString(error, errorMessage, 256);
+      debugMessage(String(errorMessage) + " error during SEN5x read",1);
       return false;
     }
-    // successful read, store data
-
-    // sensorData.massConcentrationPm1p0 = data.pm10_standard;
-    sensorData.massConcentrationPm2p5 = data.pm25_standard;
-    // sensorData.massConcentrationPm10p0 = data.pm100_standard;
-    // sensorData.pm25_env = data.pm25_env;
-    // sensorData.particles_03um = data.particles_03um;
-    // sensorData.particles_05um = data.particles_05um;
-    // sensorData.particles_10um = data.particles_10um;
-    // sensorData.particles_25um = data.particles_25um;
-    // sensorData.particles_50um = data.particles_50um;
-    // sensorData.particles_100um = data.particles_100um;
-
-    debugMessage(String("PM2.5 reading is ") + sensorData.massConcentrationPm2p5 + " or AQI " + pm25toAQI(sensorData.massConcentrationPm2p5),1);
-    // debugMessage(String("Particles > 0.3um / 0.1L air:") + sensorData.particles_03um,2);
-    // debugMessage(String("Particles > 0.5um / 0.1L air:") + sensorData.particles_05um,2);
-    // debugMessage(String("Particles > 1.0um / 0.1L air:") + sensorData.particles_10um,2);
-    // debugMessage(String("Particles > 2.5um / 0.1L air:") + sensorData.particles_25um,2);
-    // debugMessage(String("Particles > 5.0um / 0.1L air:") + sensorData.particles_50um,2);
-    // debugMessage(String("Particles > 10 um / 0.1L air:") + sensorData.particles_100um,2);
+    debugMessage(String("SEN5X PM2.5 reading: ") + sensorData.massConcentrationPm2p5,1);
     return true;
   #endif
 }
 
 bool sensorCO2Init()
-// initializes CO2 sensor to read
+// initializes SCD4X to read
 {
   #ifdef HARDWARE_SIMULATE
     return true;
@@ -1115,14 +1195,15 @@ bool sensorCO2Init()
     char errorMessage[256];
     uint16_t error;
 
-    Wire.begin();
+    // Wire.begin();
+    Wire.begin(CYD_SDA, CYD_SCL);
     co2Sensor.begin(Wire);
 
     // stop potentially previously started measurement.
     error = co2Sensor.stopPeriodicMeasurement();
     if (error) {
       errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " executing SCD40 stopPeriodicMeasurement()",1);
+      debugMessage(String(errorMessage) + " executing SCD4X stopPeriodicMeasurement()",1);
       return false;
     }
 
@@ -1132,7 +1213,7 @@ bool sensorCO2Init()
     if (error == 0){
         error = co2Sensor.setTemperatureOffset(sensorTempCOffset);
         if (error == 0)
-          debugMessage(String("Initial SCD40 temperature offset ") + offset + " ,set to " + sensorTempCOffset,2);
+          debugMessage(String("Initial SCD4X temperature offset ") + offset + " ,set to " + sensorTempCOffset,2);
     }
 
     uint16_t sensor_altitude;
@@ -1140,7 +1221,7 @@ bool sensorCO2Init()
     if (error == 0){
       error = co2Sensor.setSensorAltitude(SITE_ALTITUDE);  // optimizes CO2 reading
       if (error == 0)
-        debugMessage(String("Initial SCD40 altitude ") + sensor_altitude + " meters, set to " + SITE_ALTITUDE,2);
+        debugMessage(String("Initial SCD4X altitude ") + sensor_altitude + " meters, set to " + SITE_ALTITUDE,2);
     }
 
     // Start Measurement.  For high power mode, with a fixed update interval of 5 seconds
@@ -1150,19 +1231,19 @@ bool sensorCO2Init()
     error = co2Sensor.startLowPowerPeriodicMeasurement();
     if (error) {
       errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " executing SCD40 startLowPowerPeriodicMeasurement()",1);
+      debugMessage(String(errorMessage) + " executing SCD4X startLowPowerPeriodicMeasurement()",1);
       return false;
     }
     else
     {
-      debugMessage("SCD40 starting low power periodic measurements",1);
+      debugMessage("SCD4X starting low power periodic measurements",1);
       return true;
     }
   #endif
 }
 
 bool sensorCO2Read()
-// sets global environment values from SCD40 sensor
+// sets global environment values from SCD4X sensor
 {
   #ifdef HARDWARE_SIMULATE
     sensorCO2Simulate();
@@ -1175,7 +1256,7 @@ bool sensorCO2Read()
     float humidity = 0.0f;
     uint16_t error;
 
-    debugMessage("CO2 sensor read initiated",1);
+    debugMessage("SCD4X read initiated",1);
 
     // Loop attempting to read Measurement
     status = false;
@@ -1193,17 +1274,17 @@ bool sensorCO2Read()
       if (!isDataReady) {
           continue; // Back to the top of the loop
       }
-      debugMessage("CO2 sensor data available",2);
+      debugMessage("SCD4X data available",2);
 
       error = co2Sensor.readMeasurement(co2, temperature, humidity);
       if (error) {
           errorToString(error, errorMessage, 256);
-          debugMessage(String("SCD40 executing readMeasurement(): ") + errorMessage,1);
+          debugMessage(String("SCD4X executing readMeasurement(): ") + errorMessage,1);
           // Implicitly continues back to the top of the loop
       }
       else if (co2 < sensorCO2Min || co2 > sensorCO2Max)
       {
-        debugMessage(String("SCD40 CO2 reading: ") + sensorData.ambientCO2 + " is out of expected range",1);
+        debugMessage(String("SCD4X CO2 reading: ") + sensorData.ambientCO2 + " is out of expected range",1);
         //(sensorData.ambientCO2 < sensorCO2Min) ? sensorData.ambientCO2 = sensorCO2Min : sensorData.ambientCO2 = sensorCO2Max;
         // Implicitly continues back to the top of the loop
       }
@@ -1213,7 +1294,7 @@ bool sensorCO2Read()
         sensorData.ambientTemperatureF = (temperature*1.8)+32.0;
         sensorData.ambientHumidity = humidity;
         sensorData.ambientCO2 = co2;
-        debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+        debugMessage(String("SCD4X: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
         // Update global sensor readings
         status = true;  // We have data, can break out of loop
       }
@@ -1269,10 +1350,37 @@ float fmap(float x, float xmin, float xmax, float ymin, float ymax)
 void debugMessage(String messageText, int messageLevel)
 // wraps Serial.println as #define conditional
 {
-#ifdef DEBUG
-  if (messageLevel <= DEBUG) {
-    Serial.println(messageText);
-    Serial.flush();  // Make sure the message gets output (before any sleeping...)
-  }
-#endif
+  #ifdef DEBUG
+    if (messageLevel <= DEBUG) {
+      Serial.println(messageText);
+      Serial.flush();      // Make sure the message gets output (before any sleeping...)
+    }
+  #endif
+}
+
+void powerDisable(uint8_t deepSleepTime)
+// turns off component hardware then puts ESP32 into deep sleep mode for specified seconds
+{
+  debugMessage("powerDisable start",1);
+
+  // power down SCD4X by stopping potentially started measurement then power down SCD4X
+  #ifndef HARDWARE_SIMULATE
+    uint16_t error = co2Sensor.stopPeriodicMeasurement();
+    if (error) {
+      char errorMessage[256];
+      errorToString(error, errorMessage, 256);
+      debugMessage(String(errorMessage) + " executing SCD4X stopPeriodicMeasurement()",1);
+    }
+    co2Sensor.powerDown();
+    debugMessage("power off: SCD4X",2);
+  #endif
+  
+  // turn off TFT backlight
+  digitalWrite(TFT_BACKLIGHT, LOW);
+
+  networkDisconnect();
+
+  esp_sleep_enable_timer_wakeup(deepSleepTime*1000000); // ESP microsecond modifier
+  debugMessage(String("powerDisable complete: ESP32 deep sleep for ") + (deepSleepTime) + " seconds",1);
+  esp_deep_sleep_start();
 }
