@@ -70,8 +70,16 @@ Adafruit_ILI9341 display = Adafruit_ILI9341(&hspi, TFT_DC, TFT_CS, TFT_RST);
 // ezButton buttonOne(buttonD1Pin);
 
 // external function dependencies
+#ifdef DWEET
+  extern void post_dweet(float pm25, float minaqi, float maxaqi, float aqi, float temperatureF, float vocIndex, float humidity, int rssi);
+#endif
+
+#ifdef THINGSPEAK
+  extern void post_thingspeak(float pm25, float minaqi, float maxaqi, float aqi);
+#endif
+
 #ifdef INFLUX
-  extern bool post_influx(float pm25, float aqi, float temperatureF, float vocIndex, float humidity, uint16_t co2, int rssi);
+  extern bool post_influx(float pm25, float aqi, float temperatureF, float vocIndex, float humidity, uint16_t co2, uint8_t rssi);
 #endif
 
 #ifdef MQTT
@@ -81,13 +89,13 @@ Adafruit_ILI9341 display = Adafruit_ILI9341(&hspi, TFT_DC, TFT_CS, TFT_RST);
   #include <Adafruit_MQTT_Client.h>
   Adafruit_MQTT_Client aq_mqtt(&client, MQTT_BROKER, MQTT_PORT, DEVICE_ID, MQTT_USER, MQTT_PASS);
 
-  extern bool mqttDeviceWiFiUpdate(int rssi);
+  extern bool mqttDeviceWiFiUpdate(uint8_t rssi);
   extern bool mqttSensorTemperatureFUpdate(float temperatureF);
   extern bool mqttSensorHumidityUpdate(float humidity);
+  extern bool mqttSensorCO2Update(uint16_t co2);
   extern bool mqttSensorPM25Update(float pm25);
   extern bool mqttSensorAQIUpdate(float aqi);
-  // extern bool mqttSensorVOCIndexUpdate(float vocIndex);
-  extern bool mqttSensorCO2Update(uint16_t co2);
+  extern bool mqttSensorVOCIndexUpdate(float vocIndex);
   #ifdef HASSIO_MQTT
     extern void hassio_mqtt_publish(float pm25, float aqi, float temperatureF, float vocIndex, float humidity, uint16_t co2ß);
   #endif
@@ -126,20 +134,25 @@ typedef struct envData
 } envData;
 envData sensorData;
 
-float humidityTotal = 0;  // running total of humidity over report interval
-float temperatureFTotal = 0;     // running total of temperature over report interval
-float vocTotal = 0;       // running total of VOC over report interval
-float avgtemperatureF = 0;       // average temperature over report interval
-float avgHumidity = 0;    // average humidity over report interval
-float avgVOC = 0;         // average VOC over report interval
+float temperatureFTotal = 0;  // running total of temperature over report interval
+float humidityTotal = 0;      // running total of humidity over report interval
+uint16_t co2Total = 0;        // running total of C02 over report interval
+float vocTotal = 0;           // running total of VOC over report interval
+float pm25Total = 0;          // running total of humidity over report interval
+// IMPROVEMENT: avg values can be local to loop() vs. global?
+float avgtemperatureF = 0;    // average temperature over report interval
+float avgHumidity = 0;        // average humidity over report interval
+uint16_t avgCO2 = 0;          // average CO2 over report interval
+float avgVOC = 0;             // average VOC over report interval
+float avgPM25 = 0;            // average PM2.5 over report interval
 
-float pm25Total = 0;  // running total of humidity over report interval
-float avgPM25;        // average PM2.5 over report interval
+uint8_t numSamples = 0;       // Number of overall sensor readings over reporting interval
+uint32_t timeLastSample = 0;  // timestamp (in ms) for last captured sample 
+uint32_t timeLastReport = 0;  // timestamp (in ms) for last report to network endpoints
 
-unsigned long prevReportMs = 0;  // Timestamp for measuring elapsed capture time
-unsigned long prevSampleMs = 0;  // Timestamp for measuring elapsed sample time
-unsigned int numSamples = 0;     // Number of overall sensor readings over reporting interval
-unsigned int numReports = 0;     // Number of capture intervals observed
+// used by thingspeak and dweet
+float MinPm25 = 1999; /* Observed minimum PM2.5 */
+float MaxPm25 = -99;  /* Observed maximum PM2.5 */
 
 // hardware status data
 typedef struct hdweData
@@ -193,10 +206,6 @@ typedef struct {
 } OpenWeatherMapAirQuality;
 OpenWeatherMapAirQuality owmAirQuality;  // global variable for OWM current data
 
-// forces immediate sample and report in loop()
-long timeLastSample = -(sensorSampleInterval*1000);
-long timeLastReport = -(sensorReportInterval*1000);
-
 // set first screen to display
 uint8_t screenCurrent = 0;
 
@@ -244,13 +253,20 @@ void setup()
     powerDisable(hardwareRebootInterval);
   }
 
-  // buttonOne.setDebounceTime(buttonDebounceDelay); 
+  // buttonOne.setDebounceTime(buttonDebounceDelay);
+
+  // start WiFi (for OWM)
+  networkConnect();
+
+  // start tracking timers
+  timeLastSample = -(sensorSampleInterval*1000); // forces immediate sample in loop()
+  timeLastReport = millis();
 }
 
 void loop()
 {
   // update current timer value
-  unsigned long timeCurrent = millis();
+  uint32_t timeCurrent = millis();
 
   // buttonOne.loop();
   // // check if buttons were pressed
@@ -266,13 +282,13 @@ void loop()
   {
     if (!sensorPMRead())
     {
-      debugMessage("Could not read SEN5x sensor data",1);
+      // TODO: what else to do here, see OWM Reads...
+    }
+
+    if (!sensorCO2Read())
+    {
       // TODO: what else to do here
     }
-    sensorCO2Read();
-
-    // ensure network connection specified in config.h
-    networkConnect();
 
     // Get local weather and air quality info from Open Weather Map
     if (!OWMCurrentWeatherRead()) {
@@ -283,6 +299,22 @@ void loop()
     if (!OWMAirPollutionRead()) {
       owmAirQuality.aqi = 10000;
     }
+
+    // add to the running totals
+    numSamples++;
+    temperatureFTotal += sensorData.ambientTemperatureF;
+    humidityTotal += sensorData.ambientHumidity;
+    co2Total += sensorData.ambientCO2;
+    vocTotal += sensorData.vocIndex;
+    pm25Total += sensorData.massConcentrationPm2p5;
+
+    debugMessage(String("Sample #") + numSamples + ", running totals: ",2);
+    debugMessage(String("temperatureF total: ") + temperatureFTotal,2);
+    debugMessage(String("Humidity total: ") + humidityTotal,2);
+    debugMessage(String("CO2 total: ") + co2Total,2);    
+    debugMessage(String("VOC total: ") + vocTotal,2);
+    debugMessage(String("PM25 total: ") + pm25Total,2);
+
     screenCurrentInfo();
     // Save last sample time
     timeLastSample = millis();
@@ -291,39 +323,71 @@ void loop()
   // do we have network endpoints to report to?
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
     // is it time to report to the network endpoints?
-    if ((timeCurrent - prevReportMs) >= (sensorReportInterval * 60 * 1000))  // converting sensorReportInterval into milliseconds
+    if ((timeCurrent - timeLastReport) >= (sensorReportInterval * 60 * 1000))  // converting sensorReportInterval into milliseconds
     {
-      debugMessage("----- Reporting -----",1);
-      debugMessage(String("PM2.5: ") + avgPM25 + String(" = AQI ") + pm25toAQI(avgPM25),1);
-      debugMessage(String("Temp: ") + avgtemperatureF + String(" F"),1);
-      debugMessage(String("Humidity: ") + avgHumidity + String("%"),1);
-      debugMessage(String("VoC: ") + avgVOC,1);
-
-      if (networkConnect())
+      // do we have samples to report?
+      if (numSamples != 0) 
       {
-        /* Post both the current readings and historical max/min readings to the internet */
-        #ifdef INFLUX
-          if (!post_influx(avgPM25, pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, hardwareData.rssi))
-            debugMessage("Did not write to influxDB",1);
-        #endif
 
-        #ifdef MQTT
-          if (!mqttDeviceWiFiUpdate(hardwareData.rssi))
-              debugMessage("Did not write device data to MQTT broker",1);
-          // if ((!mqttSensorTemperatureFUpdate(avgtemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorAQIUpdate(pm25toAQI(avgPM25))) || (!mqttSensorVOCIndexUpdate(avgVOC)))
-          if ((!mqttSensorTemperatureFUpdate(avgtemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorAQIUpdate(pm25toAQI(avgPM25))))
-              debugMessage("Did not write environment data to MQTT broker",1);
-          #ifdef HASSIO_MQTT
-            debugMessage("Establishing MQTT for Home Assistant",1);
-            // Either configure sensors in Home Assistant's configuration.yaml file
-            // directly or attempt to do it via MQTT auto-discovery
-            // hassio_mqtt_setup();  // Config for MQTT auto-discovery
-            hassio_mqtt_publish(avgPM25, pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity);
+        // average the sample totals
+        avgtemperatureF = temperatureFTotal / numSamples;
+        avgHumidity = humidityTotal / numSamples;
+        avgCO2 = co2Total / numSamples;
+        avgVOC = vocTotal / numSamples;
+        avgPM25 = pm25Total / numSamples;
+        if (avgPM25 > MaxPm25) MaxPm25 = avgPM25;
+        if (avgPM25 < MinPm25) MinPm25 = avgPM25;
+
+        debugMessage("----- Reporting -----",1);
+        debugMessage(String("Reporting averages (") + sensorReportInterval + " minute): ",1);
+        debugMessage(String("Temp: ") + avgtemperatureF + " F",1);
+        debugMessage(String("Humidity: ") + avgHumidity + "%",1);
+        debugMessage(String("CO2: ") + avgCO2 + " ppm",1);
+        debugMessage(String("VoC: ") + avgVOC,1);
+        debugMessage(String("PM2.5: ") + avgPM25 + " = AQI " + pm25toAQI(avgPM25),1);
+
+        if (networkConnect())
+        {
+          /* Post both the current readings and historical max/min readings to the internet */
+          #ifdef DWEET
+            post_dweet(avgPM25, pm25toAQI(MinPm25), pm25toAQI(MaxPm25), pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, rssi);
           #endif
-        #endif
+
+          // Also post the AQI sensor data to ThingSpeak
+          #ifdef THINGSPEAK
+            post_thingspeak(avgPM25, pm25toAQI(MinPm25), pm25toAQI(MaxPm25), pm25toAQI(avgPM25));
+          #endif
+
+          #ifdef INFLUX
+            if (!post_influx(avgPM25, pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, avgCO2 , hardwareData.rssi))
+              debugMessage("Did not write to influxDB",1);
+          #endif
+
+          #ifdef MQTT
+            if (!mqttDeviceWiFiUpdate(hardwareData.rssi))
+                debugMessage("Did not write device data to MQTT broker",1);
+            if ((!mqttSensorTemperatureFUpdate(avgtemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorAQIUpdate(pm25toAQI(avgPM25))) || (!mqttSensorVOCIndexUpdate(avgVOC)) || (!mqttSensorCO2Update(avgCO2)))
+                debugMessage("Did not write environment data to MQTT broker",1);
+            #ifdef HASSIO_MQTT
+              debugMessage("Establishing MQTT for Home Assistant",1);
+              // Either configure sensors in Home Assistant's configuration.yaml file
+              // directly or attempt to do it via MQTT auto-discovery
+              // hassio_mqtt_setup();  // Config for MQTT auto-discovery
+              hassio_mqtt_publish(avgPM25, pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity);
+            #endif
+          #endif
+        }
+        // Reset sample counters
+        numSamples = 0;
+        temperatureFTotal = 0;
+        humidityTotal = 0;
+        co2Total = 0;
+        vocTotal = 0;
+        pm25Total = 0;
+
+        // save last report time
+        timeLastReport = millis();
       }
-      // save last report time
-      timeLastReport = millis();
     }
   #endif
 }
@@ -1181,7 +1245,7 @@ bool sensorPMRead()
       debugMessage(String(errorMessage) + " error during SEN5x read",1);
       return false;
     }
-    debugMessage(String("SEN5X PM2.5 reading: ") + sensorData.massConcentrationPm2p5,1);
+    debugMessage(String("SEN5X PM2.5:") + sensorData.massConcentrationPm2p5 + ", AQI:" + pm25toAQI(sensorData.massConcentrationPm2p5) + ", VOC:" + sensorData.vocIndex, 1);
     return true;
   #endif
 }
@@ -1252,7 +1316,7 @@ bool sensorCO2Read()
     char errorMessage[256];
     bool status;
     uint16_t co2 = 0;
-    float temperature = 0.0f;
+    float temperatureC = 0.0f;
     float humidity = 0.0f;
     uint16_t error;
 
@@ -1276,7 +1340,7 @@ bool sensorCO2Read()
       }
       debugMessage("SCD4X data available",2);
 
-      error = co2Sensor.readMeasurement(co2, temperature, humidity);
+      error = co2Sensor.readMeasurement(co2, temperatureC, humidity);
       if (error) {
           errorToString(error, errorMessage, 256);
           debugMessage(String("SCD4X executing readMeasurement(): ") + errorMessage,1);
@@ -1291,7 +1355,7 @@ bool sensorCO2Read()
       else
       {
         // Successfully read valid data
-        sensorData.ambientTemperatureF = (temperature*1.8)+32.0;
+        sensorData.ambientTemperatureF = (temperatureC*1.8)+32.0;
         sensorData.ambientHumidity = humidity;
         sensorData.ambientCO2 = co2;
         debugMessage(String("SCD4X: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);

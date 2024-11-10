@@ -16,7 +16,9 @@
 // HARDWARE_SIMULATE can not be defined if any network data endpoints are defined
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-// #define INFLUX // Log data to InfluxDB server
+#define INFLUX // Log data to InfluxDB server
+// #define DWEET       // Log data to Dweet service
+// #define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration variables that are less likely to require changes
 
@@ -50,12 +52,11 @@ const uint16_t wifiBarHeightIncrement = 3;
 const uint16_t wifiBarSpacing = 5;
 
 #ifdef DEBUG
-  // time between samples in seconds
-  const uint16_t sensorSampleInterval = 30;
-  const uint8_t sensorReportInterval = 1; // Interval at which samples are averaged & reported in minutes)
+  const uint16_t sensorSampleInterval = 30;   // time between samples in seconds
+  const uint8_t sensorReportInterval = 2;     // time between reports in minutes
 #else
   const uint16_t sensorSampleInterval = 60;
-  const uint8_t sensorReportInterval = 15; // Interval at which samples are averaged & reported in minutes)
+  const uint8_t sensorReportInterval = 15;
 #endif
 
 // Simulation boundary values

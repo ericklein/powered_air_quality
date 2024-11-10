@@ -29,7 +29,7 @@
 // #define VALUE_KEY_PRESSURE      "pressure"
 #define VALUE_KEY_PM25          "pm25"
 #define VALUE_KEY_AQI           "aqi"
-// #define VALUE_KEY_VOC			"vocIndex"
+#define VALUE_KEY_VOC			"vocIndex"
 // #define VALUE_KEY_BATTERY_VOLTS "battery_volts"
 // #define VALUE_KEY_BATTERY_PCT   "battery_pct"
 #define VALUE_KEY_RSSI          "rssi"

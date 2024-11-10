@@ -39,7 +39,7 @@
 
 
   // Post data to Influx DB using the connection established during setup
-  boolean post_influx(float pm25, float aqi, float temperatureF, float vocIndex, float humidity, int co2, int rssi)
+  boolean post_influx(float pm25, float aqi, float temperatureF, float vocIndex, float humidity, uint16_t co2, uint8_t rssi)
   {
     bool result = false;
 
@@ -71,13 +71,13 @@
       dbdevdata.addTag(TAG_KEY_ROOM, DEVICE_ROOM);
 
       // Attempts influxDB connection, and if unsuccessful, re-attempts after networkConnectAttemptInterval second delay for networkConnectAttempLimit times
-      for (int tries = 1; tries <= networkConnectAttempLimit; tries++) {
+      for (int tries = 1; tries <= networkConnectAttemptLimit; tries++) {
         if (dbclient.validateConnection()) {
           debugMessage(String("Connected to InfluxDB: ") + dbclient.getServerUrl(),1);
           result = true;
           break;
         }
-        debugMessage(String("influxDB connection attempt ") + tries + " of " + networkConnectAttempLimit + " failed with error msg: " + dbclient.getLastErrorMessage(),1);
+        debugMessage(String("influxDB connection attempt ") + tries + " of " + networkConnectAttemptLimit + " failed with error msg: " + dbclient.getLastErrorMessage(),1);
         delay(networkConnectAttemptInterval*1000);
       }
       if (result)

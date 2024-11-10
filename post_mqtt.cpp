@@ -66,7 +66,7 @@
     return(topic);
   }
 
-  bool mqttDeviceWiFiUpdate(int rssi)
+  bool mqttDeviceWiFiUpdate(uint8_t rssi)
   {
     bool result = false;
     if (rssi!=0)
@@ -184,28 +184,28 @@
     return(result);
   }
 
-  // bool mqttSensorVOCIndexUpdate(float vocIndex)
-  // // Publishes VoC Index data to MQTT broker
-  // {
-  //   bool result = false;
-  //   String topic;
-  //   topic = generateTopic(VALUE_KEY_VOC);  // Generate topic using config.h and data.h parameters
-  //   // add ,MQTT_QOS_1); if problematic, remove QOS parameter
-  //   Adafruit_MQTT_Publish vocPub = Adafruit_MQTT_Publish(&aq_mqtt, topic.c_str());
+  bool mqttSensorVOCIndexUpdate(float vocIndex)
+  // Publishes VoC Index data to MQTT broker
+  {
+    bool result = false;
+    String topic;
+    topic = generateTopic(VALUE_KEY_VOC);  // Generate topic using config.h and data.h parameters
+    // add ,MQTT_QOS_1); if problematic, remove QOS parameter
+    Adafruit_MQTT_Publish vocPub = Adafruit_MQTT_Publish(&aq_mqtt, topic.c_str());
     
-  //   mqttConnect();
+    mqttConnect();
     
-  //   // Attempt to publish sensor data
-  //   if(vocPub.publish(vocIndex))
-  //   {
-  //     debugMessage("MQTT publish: VoC Index succeeded",1);
-  //     result = true;
-  //   }
-  //   else {
-  //     debugMessage("MQTT publish: VoC Index failed",1);
-  //   }
-  //   return(result);
-  // }
+    // Attempt to publish sensor data
+    if(vocPub.publish(vocIndex))
+    {
+      debugMessage("MQTT publish: VoC Index succeeded",1);
+      result = true;
+    }
+    else {
+      debugMessage("MQTT publish: VoC Index failed",1);
+    }
+    return(result);
+  }
 
     bool mqttSensorCO2Update(uint16_t co2)
   // Publishes CO2 data to MQTT broker
