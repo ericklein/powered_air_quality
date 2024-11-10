@@ -5,7 +5,7 @@
 
 // Configuration Step 1: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-#define DEBUG 2
+#define DEBUG 1
 
 // Configuration Step 2: simulate WiFi and sensor hardware,
 // returning random but plausible values

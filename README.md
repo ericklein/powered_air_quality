@@ -1,6 +1,5 @@
 # Powered Air Quality
-AI: PUT HERO SHOT HERE
-
+![Hero Shot](readme/PAQ_components.jpg)
 ## Purpose
 Powered Air Quality, aka PAQ, samples and displays temperature, humidity, CO2 (carbon dioxide), and air particulate levels. If PAQ is connected to WiFi, it can log this information to a number of network endpoints, and it displays local outdoor weather and air quality information to compliment the indoor sensor information. PAQ requires an AC power source.
 
@@ -15,33 +14,44 @@ PAQ has a number of sibling projects that share many common hardware and code at
 - [RCO2](https://github.com/ericklein/rco2) is a small, portable version of Air Quality that only samples and displays air quality levels.
 - [Badge](https://github.com/ericklein/badge) is RCO2 in a badge form factor capable of displaying additional information beyond air quality levels.
 ## Features
+![UI](readme/PAQ_UI.jpg)
 AI : ADD DOCUMENTATION
 ## Target configuration
 - Set parameter configuration using config.h
 - Private configuration settings including WiFi SSID/password and network endpoint credentials are contained in a `secrets.h` file that is not included in this repo.  Instead you'll find the file `secrets_template.h`, which should be copied to `secrets.h` and then edited to supply the right access credentials and configuration values to match your deployment environment.
 ## Bill of Materials (BOM)
 ### MCU
-- AI : ADD DOCUMENTATION
+- [CYD (Cheap Yellow Display)])(https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/tree/main). This is an inexpensive ESP32 prototype board with a built-in screen.
+    - Code is portable to any ESP32 MCU
 ### WiFi
-- AI : ADD DOCUMENTATION
-    - any ESP32
+- [CYD (Cheap Yellow Display)])(https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/tree/main). This is an inexpensive ESP32 prototype board with a built-in screen.
+    - Code is portable to any ESP32 MCU
 ### Sensors
 - [SCD40 temp/humidity/CO2 sensor](https://www.adafruit.com/product/5187)
     can use any SCD40 connected over i2c
 - Particulate sensor over i2c
-    - SEN54
-        - AI: ADD DOCUMENTATION
-    - PM0003sa
-        - AI: ADD DOCUMENTATION
+    - [Sensirion SEN54]([SEN54](readme/Sensirion_Datasheet_Environmental_Node_SEN5x.pdf))
+    - [Plantower PMSA003I](https://www.adafruit.com/product/4632)
+        - this sensor does not provide as much particulate information as the SEN54. Code support is still included but is commented out in the current release.
 ### Screen
-- AI : ADD DOCUMENTATION
+- [CYD (Cheap Yellow Display)])(https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/tree/main). This is an inexpensive ESP32 prototype board with a built-in screen.
     - any screen with ILI9341 driver
 ### Buttons/Switches
-- AI : ADD DOCUMENTATION
+- None at this time.
 ## Pinouts
-- SCD40, SEN54, PMS003a
-    - Stemma QT cable between MCU board and SCD40 board
-        - or connect 3.3v/5v, GND, SDA, SCL on both sides
+### SCD40
+- Connected through Stemma QT cable to SEN5X adapter board
+### SEN54
+- Connected to CYD through a custom cable and SEN54 to [Adafruit SEN5x to i2c adapter board](https://www.adafruit.com/product/5964)
+#### Custom cable from CYD to SEN5X adapter board
+- CYD connector is [JST 1.25mm pitch 4 pin](https://www.amazon.com/dp/B0DFCHWTXK?ref=fed_asin_title&th=1)
+- Adafruit connector is JST SH 1.0mm pitch 4 pin
+    - I cut the male breadboard ends off this [Adafruit cable](https://www.adafruit.com/product/4209) to get the appropriate second part of the cable
+- This custom cable attaches to CYD connector CN1
+    - GND to GND
+    - GPIO 22 to SDA (often Blue) pin
+    - GPIO 27 to SCL (often Yellow) pin
+    - 3.3v to 3.3v
 ## Supported network endpoints
 ### MQTT
 - uncomment #define MQTT in config.h
@@ -85,5 +95,3 @@ We currently use the following scale:
 - [OSHA Air Quality](readme/OSHA_Indoor_Air_Quality.pdf)
 - [Great site for air quality info](https://itsairborne.com/)
 - [NYT on indoor gas stoves](https://www.nytimes.com/2023/01/29/climate/gas-stove-health.html)
-#### Sensors
-[SEN54](readme/Sensirion_Datasheet_Environmental_Node_SEN5x.pdf)
