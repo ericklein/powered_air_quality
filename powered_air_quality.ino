@@ -221,7 +221,7 @@ void setup()
     #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
       debugMessage(String("Report interval is ") + sensorReportInterval + " minutes",1);
     #endif
-    debugMessage(String("Internet reconnect delay is ") + networkConnectAttemptInterval + " seconds",1);
+    debugMessage(String("Internet reconnect delay is ") + networkConnectAttemptInterval + " seconds",2);
   #endif
 
   // generate random numbers for every boot cycle
@@ -240,13 +240,13 @@ void setup()
 
   // Initialize PM25 sensor
   if (!sensorPMInit()) {
-    debugMessage("Environment sensor failed to initialize", 1);
+    debugMessage("SEN5X initialization failure", 1);
     screenAlert("No SEN5X");
   }
 
   // Initialize SCD4X
   if (!sensorCO2Init()) {
-    debugMessage("Environment sensor failed to initialize",1);
+    debugMessage("SCD40 initialization failure",1);
     screenAlert("No SCD4X");
     // This error often occurs right after a firmware flash and reset.
     // Hardware deep sleep typically resolves it, so quickly cycle the hardware
@@ -711,7 +711,7 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
       debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
     } else {
       // you could do a visual representation of no WiFi strength here
-      debugMessage("RSSI too low, no display", 1);
+      debugMessage("RSSI too low, not displayed on screen", 1);
     }
   }
 }
