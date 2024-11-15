@@ -27,6 +27,12 @@
 #define CYD_SDA 22
 #define CYD_SCL 27
 
+#define XPT2046_IRQ 36
+#define XPT2046_MOSI 32
+#define XPT2046_MISO 39
+#define XPT2046_CLK 25
+#define XPT2046_CS 33
+
 // Buttons
 // const uint8_t buttonD1Pin = 1; // initially LOW
 // const int buttonDebounceDelay = 50; // time in milliseconds to debounce button
