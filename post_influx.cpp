@@ -39,7 +39,7 @@
 
 
   // Post data to Influx DB using the connection established during setup
-  boolean post_influx(float pm25, float aqi, float temperatureF, float vocIndex, float humidity, uint16_t co2, uint8_t rssi)
+  boolean post_influx(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2, uint8_t rssi)
   {
     bool result = false;
 
@@ -86,7 +86,6 @@
         dbenvdata.clearFields();
         // Report sensor readings
         dbenvdata.addField(VALUE_KEY_PM25, pm25);
-        dbenvdata.addField(VALUE_KEY_AQI, aqi);
         dbenvdata.addField(VALUE_KEY_TEMPERATURE, temperatureF);
         dbenvdata.addField(VALUE_KEY_HUMIDITY, humidity);
         dbenvdata.addField(VALUE_KEY_VOC, vocIndex);

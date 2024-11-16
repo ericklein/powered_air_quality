@@ -83,6 +83,11 @@ We currently use the following scale:
 - ![Example 1](readme/co2_scale_1.png)
 - ![Example 2](readme/co2_scale_2.png)
 - ![Example 3](readme/co2_scale_3.jpg)
+- US NIOSH (1987) recommendations:
+    - 250-350 ppm - normal outdoor ambient concentrations
+    - 600 ppm - minimal air quality complaints
+    - 600-1,000 ppm - less clearly interpreted
+    - 1,000 ppm - indicates inadequate ventilation; complaints such as headaches, fatigue, and eye and throat irritation will be more widespread; 1,000 ppm should be used as an upper limit for indoor levels
 #### Impact on health
 - [CO2 and indoor air quality](readme/CO2_and_indoor_air_quality.pdf)
 #### Sensors
@@ -91,7 +96,26 @@ We currently use the following scale:
     - [SCD40 datasheet](readme/Sensirion_CO2_Sensors_SCD4x_Datasheet.pdf)
 ### AQI
 - [AQI Overview](readme/aqi_overview.md)
+- https://en.wikipedia.org/wiki/Air_quality_index#CAQI
 - [Open Weather Map Air Pollution API](https://openweathermap.org/api/air-pollution)
 - [OSHA Air Quality](readme/OSHA_Indoor_Air_Quality.pdf)
 - [Great site for air quality info](https://itsairborne.com/)
 - [NYT on indoor gas stoves](https://www.nytimes.com/2023/01/29/climate/gas-stove-health.html)
+#### Scales
+We currently use the following scale:
+
+- 0-50 : Good : Green
+- 51-100 : Acceptable : Yellow
+- 101-150 : Moderate : Orange
+- 151-300 : Poor : Red
+- 301+ : Hazardous : Purple
+
+Options:
+- Open Weather Map scale
+![owm scale](readme/owm_aqi_scale.jpg)
+- Aware scale
+![awair scale](readme/aqi_scale_2.png)
+- Australian local goverment scale
+![victoria scale](readme/AU_aqi_scale.jpg)
+- government standard scale
+![AQI scale](readme/aqi_scale_1.png)

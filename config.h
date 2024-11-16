@@ -5,7 +5,7 @@
 
 // Configuration Step 1: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-#define DEBUG 1
+#define DEBUG 2
 
 // Configuration Step 2: simulate WiFi and sensor hardware,
 // returning random but plausible values
@@ -41,7 +41,7 @@
 const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
 const uint8_t screenCount = 5;
 
-// CYD
+// CYD pinout
 #define TFT_BACKLIGHT 21
 #define TFT_CS 15
 #define TFT_DC 2
@@ -57,6 +57,7 @@ const uint16_t wifiBarWidth = 3;
 const uint16_t wifiBarHeightIncrement = 3;
 const uint16_t wifiBarSpacing = 5;
 
+// Sample and reporting intervals
 #ifdef DEBUG
   const uint16_t sensorSampleInterval = 30;   // time between samples in seconds
   const uint8_t sensorReportInterval = 2;     // time between reports in minutes
@@ -67,65 +68,65 @@ const uint16_t wifiBarSpacing = 5;
 
 // Simulation boundary values
 #ifdef HARDWARE_SIMULATE
-  const uint16_t sensorTempMin =      1500; // in Celcius, divided by 100.0 to give floats
-  const uint16_t sensorTempMax =      2500;
-  const uint16_t sensorHumidityMin =  500; // RH%, divided by 100.0 to give floats
-  const uint16_t sensorHumidityMax =  9500;
+  const uint16_t sensorTempMinF =       1400; // Fahrenheit, divided by 100.0 to give floats
+  const uint16_t sensorTempMaxF =       14000;
+  const uint16_t sensorHumidityMin =    0; // RH%, divided by 100.0 to give float
+  const uint16_t sensorHumidityMax =    10000;
 
-  // IMPROVEMENT: SWAG on values, check docs
-  const uint8_t OWMAQIMin = 0;
-  // European AQI values 
+  const uint8_t OWMAQIMin = 1;  // https://openweathermap.org/api/air-pollution
   const uint8_t OWMAQIMax = 5;
-  // US AQI values 
-  // const uint8_t OWMAQIMax = 6;
+
   const uint16_t OWMPM25Min = 0;  // will be divided by 100.0 to give float
-  const uint32_t OWMPM25Max = 250000; // will be divided by 100.0 to give float
+  const uint32_t OWMPM25Max = 10000; // will be divided by 100.0 to give float
 
   const uint8_t networkRSSIMin = 30;
   const uint8_t networkRSSIMax = 90;
 
-  const uint16_t sensorPM2p5Min = 0;
-  const uint16_t sensorPM2p5Max = 360;
+  const uint16_t sensorPMMin = 0;
+  const uint16_t sensorPMMax = 100000; // divided by 100.0 to give float
+
+  const uint16_t sensorVOCMin = 0;
+  const uint16_t sensorVOCMax = 50000; // divided by 100.0 to give float
 #endif
 
-// Open Weather Map parameters
+// Open Weather Map (OWM)
 #define OWM_SERVER      "http://api.openweathermap.org/data/2.5/"
 #define OWM_WEATHER_PATH  "weather?"
 #define OWM_AQM_PATH    "air_pollution?"
+// aqi labels from https://openweathermap.org/api/air-pollution
+const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
+
+// warnings
+const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
+// Subjective color scheme using 16 bit ('565') RGB colors
+const uint16_t warningColor[4] = {
+    0x07E0, // Green = "Good"
+    0xFFE0, // Yellow = "Fair"
+    0xFD20, // Orange = "Poor"
+    0xF800  // Red = "Bad"
+  };
 
 // CO2 sensor
-// Define CO2 values that constitute Red (Alarm) & Yellow (Warning) values
-// US NIOSH (1987) recommendations:
-// 250-350 ppm - normal outdoor ambient concentrations
-// 600 ppm - minimal air quality complaints
-// 600-1,000 ppm - less clearly interpreted
-// 1,000 ppm - indicates inadequate ventilation; complaints such as headaches, fatigue, and eye and throat irritation will be more widespread; 1,000 ppm should be used as an upper limit for indoor levels
-
-const uint16_t co2Warning = 800; // Associated with "OK"
-const uint16_t co2Alarm = 1000; // Associated with "Poor"
-
-const String co2Labels[3]={"Good", "So-So", "Poor"};
-// Subjective color scheme using 16 bit ('565') RGB colors a la ST77XX display
-const uint16_t co2Color[3] = {
-    0x07E0,   // GREEN = "Good"
-    0xFFE0,   // YELLOW = "So-So"
-    0xF800    // RED = "Poor"
-  };
+// CO2 value thresholds for labeling
+const uint16_t co2Fair = 800;
+const uint16_t co2Poor = 1500;
+const uint16_t co2Bad = 2000;
 
 const uint16_t sensorCO2Min =      400;   // in ppm
 const uint16_t sensorCO2Max =      2000;  // in ppm
 const uint16_t sensorTempCOffset = 0;     // in Celcius
 
-// if using OWM aqi value, these are the European standards-body conversions from numeric valeu
-const String aqiEuropeanLabels[5] = { "Good", "Fair", "Moderate", "Poor", "Very Poor" };
-// US standards-body conversions from numeric value
-// const String aqiUSALabels[6] = {"Good", "Moderate", "Unhealthy (SG)", "Unhealthy", "Very Unhealthy", "Hazardous"};
+// particulates
+// CO2 value thresholds for labeling
+const uint16_t pmFair = 25;
+const uint16_t pmPoor = 50;
+const uint16_t pm2Bad = 150;
 
 // Time
 // NTP time parameters
 const String networkNTPAddress = "pool.ntp.org";
 const String networkTimeZone = "PST8PDT,M3.2.0,M11.1.0"; // America/Los_Angeles
-const String weekDays[7] = { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" };
+const String weekDays[7] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
 // Data endpoints
 #ifdef INFLUX  

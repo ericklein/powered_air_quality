@@ -20,7 +20,7 @@
 
   #ifdef HASSIO_MQTT
     extern void hassio_mqtt_setup();
-    extern void hassio_mqtt_publish(float pm25, float aqi, float temperatureF, float vocIndex, float humidity);
+    extern void hassio_mqtt_publish(float pm25, float temperatureF, float vocIndex, float humidity);
   #endif
 
   // MQTT setup
@@ -157,29 +157,6 @@
     }
     else {
       debugMessage("MQTT publish: pm2.5 failed",1);
-    }
-    return(result);
-  }
-
-  bool mqttSensorAQIUpdate(float aqi)
-  // Publishes AQI data to MQTT broker
-  {
-    bool result = false;
-    String topic;
-    topic = generateTopic(VALUE_KEY_AQI);  // Generate topic using config.h and data.h parameters
-    // add ,MQTT_QOS_1); if problematic, remove QOS parameter
-    Adafruit_MQTT_Publish aqiPub = Adafruit_MQTT_Publish(&aq_mqtt, topic.c_str());
-    
-    mqttConnect();
-    
-    // Attempt to publish sensor data
-    if(aqiPub.publish(aqi))
-    {
-      debugMessage("MQTT publish: AQI succeeded",1);
-      result = true;
-    }
-    else {
-      debugMessage("MQTT publish: AQI failed",1);
     }
     return(result);
   }

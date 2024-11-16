@@ -81,7 +81,7 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 #endif
 
 #ifdef INFLUX
-  extern bool post_influx(float pm25, float aqi, float temperatureF, float vocIndex, float humidity, uint16_t co2, uint8_t rssi);
+  extern bool post_influx(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2, uint8_t rssi);
 #endif
 
 #ifdef MQTT
@@ -96,10 +96,9 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
   extern bool mqttSensorHumidityUpdate(float humidity);
   extern bool mqttSensorCO2Update(uint16_t co2);
   extern bool mqttSensorPM25Update(float pm25);
-  extern bool mqttSensorAQIUpdate(float aqi);
   extern bool mqttSensorVOCIndexUpdate(float vocIndex);
   #ifdef HASSIO_MQTT
-    extern void hassio_mqtt_publish(float pm25, float aqi, float temperatureF, float vocIndex, float humidity, uint16_t co2ß);
+    extern void hassio_mqtt_publish(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2ß);
   #endif
 #endif
 
@@ -108,20 +107,20 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 // environment sensor data
 typedef struct envData
 {
-  // SCD4X data
-  float ambientTemperatureF;
-  float ambientHumidity;      // RH [%]
-  uint16_t  ambientCO2;       // ppm
+  // SCD40 data
+  float ambientTemperatureF;    // range -10C to 60C
+  float ambientHumidity;        // RH [%], range 0 to 100
+  uint16_t  ambientCO2;         // ppm, range 400 to 2000
 
   // Common data to PMSA003I and SEN5x
-  float massConcentrationPm2p5;   // PM2.5 [µg/m³]
-  float massConcentrationPm1p0;   // PM1.0 [µg/m³], NAN if unknown
-  float massConcentrationPm10p0;  // PM10.0 [µg/m³], NAN if unknown
+  float pm25;                   // PM2.5 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
+  float pm1;                    // PM1.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
+  float pm10;                   // PM10.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
 
   // SEN5x specific data
-  float massConcentrationPm4p0;   // PM4.0 [µg/m³], NAN if unknown
-  float vocIndex;                 // Sensiron VOC Index, NAN in unknown
-  float noxIndex;                 // NAN for unsupported devices (SEN5x), also NAN for first 10-11 seconds
+  float pm4;                    // PM4.0 [µg/m³], range 0 to 1000, NAN if unknown
+  float vocIndex;               // Sensiron VOC Index, range 0 to 500, NAN in unknown
+  float noxIndex;               // NAN for SEN54, also NAN for first 10-11 seconds on SEN55
 
   // PMSA003I specific data
   // uint16_t pm10_env;         // Environmental PM1.0
@@ -194,17 +193,17 @@ OpenWeatherMapCurrentData owmCurrentData;  // global variable for OWM current da
 
 // OpenWeatherMap Air Quality data
 typedef struct {
-  // float lon;    // "lon": 8.54
-  // float lat;    // "lat": 47.37
-  uint16_t aqi;  // "aqi": 2  [European standards body value]
-  // float co;     // "co": 453.95, in μg/m3
-  // float no;     // "no": 0.47, in μg/m3
-  // float no2;    // "no2": 52.09, in μg/m3
-  // float o3;     // "o3": 17.17, in μg/m3
-  // float so2;    // "so2": 7.51, in μg/m3
-  float pm25;  // "pm2.5": 8.04, in μg/m3
-  // float pm10;   // "pm10": 9.96, in μg/m3
-  // float nh3;    // "nh3": 0.86, in μg/m3
+  // float lon;   // "lon": 8.54
+  // float lat;   // "lat": 47.37
+  uint16_t aqi;   // "aqi": 2
+  // float co;    // "co": 453.95, in μg/m3
+  // float no;    // "no": 0.47, in μg/m3
+  // float no2;   // "no2": 52.09, in μg/m3
+  // float o3;    // "o3": 17.17, in μg/m3
+  // float so2;   // "so2": 7.51, in μg/m3
+  float pm25;     // "pm2.5": 8.04, in μg/m3
+  // float pm10;  // "pm10": 9.96, in μg/m3
+  // float nh3;   // "nh3": 0.86, in μg/m3
 } OpenWeatherMapAirQuality;
 OpenWeatherMapAirQuality owmAirQuality;  // global variable for OWM current data
 
@@ -248,7 +247,7 @@ void setup()
 
   // Initialize SCD4X
   if (!sensorCO2Init()) {
-    debugMessage("SCD40 initialization failure",1);
+    debugMessage("SCD4X initialization failure",1);
     screenAlert("No SCD4X");
     // This error often occurs right after a firmware flash and reset.
     // Hardware deep sleep typically resolves it, so quickly cycle the hardware
@@ -321,7 +320,7 @@ void loop()
     humidityTotal += sensorData.ambientHumidity;
     co2Total += sensorData.ambientCO2;
     vocTotal += sensorData.vocIndex;
-    pm25Total += sensorData.massConcentrationPm2p5;
+    pm25Total += sensorData.pm25;
 
     debugMessage(String("Sample #") + numSamples + ", running totals: ",2);
     debugMessage(String("temperatureF total: ") + temperatureFTotal,2);
@@ -374,21 +373,21 @@ void loop()
           #endif
 
           #ifdef INFLUX
-            if (!post_influx(avgPM25, pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, avgCO2 , hardwareData.rssi))
+            if (!post_influx(avgPM25, avgtemperatureF, avgVOC, avgHumidity, avgCO2 , hardwareData.rssi))
               debugMessage("Did not write to influxDB",1);
           #endif
 
           #ifdef MQTT
             if (!mqttDeviceWiFiUpdate(hardwareData.rssi))
                 debugMessage("Did not write device data to MQTT broker",1);
-            if ((!mqttSensorTemperatureFUpdate(avgtemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorAQIUpdate(pm25toAQI(avgPM25))) || (!mqttSensorVOCIndexUpdate(avgVOC)) || (!mqttSensorCO2Update(avgCO2)))
+            if ((!mqttSensorTemperatureFUpdate(avgtemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorVOCIndexUpdate(avgVOC)) || (!mqttSensorCO2Update(avgCO2)))
                 debugMessage("Did not write environment data to MQTT broker",1);
             #ifdef HASSIO_MQTT
               debugMessage("Establishing MQTT for Home Assistant",1);
               // Either configure sensors in Home Assistant's configuration.yaml file
               // directly or attempt to do it via MQTT auto-discovery
               // hassio_mqtt_setup();  // Config for MQTT auto-discovery
-              hassio_mqtt_publish(avgPM25, pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity);
+              hassio_mqtt_publish(avgPM25, avgtemperatureF, avgVOC, avgHumidity);
             #endif
           #endif
         }
@@ -440,16 +439,16 @@ void screenCurrentInfo()
   const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
   const uint16_t yStatus = (display.height() * 7 / 8);  
   const uint16_t yTemperature = 35;
-  const uint16_t legendHeight = 10;
-  const uint16_t legendWidth = 5;
-  const uint16_t xLegend = ((display.width() / 2) - xMargins - legendWidth);
-  const uint16_t yLegend = 100;
+  const uint16_t legendHeight = 15;
+  const uint16_t legendWidth = 10;
+  const uint16_t xLegend = ((display.width() / 2) - legendWidth);
+  const uint16_t yLegend = 110;
   const uint16_t xIndoorPMCircle = (display.width() / 4);
   const uint16_t xOutdoorPMCircle = ((display.width() / 4) * 3);
-  const uint16_t yPMCircle = 75;
-  const uint16_t circleRadius = 30;
+  const uint16_t yPMCircle = 87;
+  const uint16_t circleRadius = 40;
   const uint16_t xPMLabel = ((display.width() / 2) - 25);
-  const uint16_t yPMLabel = 112;
+  const uint16_t yPMLabel = 125;
   // const uint16_t xIndoorPMValue = xIndoorPMCircle;
   // const uint16_t xOutdoorPMValue = xOutdoorPMCircle;
   // const uint16_t yPMValue = yPMCircle;
@@ -467,10 +466,22 @@ void screenCurrentInfo()
   // borders
   display.drawFastHLine(0, yStatus, display.width(), ILI9341_WHITE);
   // splitting sensor vs. outside values
-  display.drawFastVLine((display.width() / 2), 0, yStatus, ILI9341_WHITE);
+  display.drawFastVLine((display.width() / 2), 0, (yLegend - ((legendHeight*4) + 5)), ILI9341_WHITE);
+  display.drawFastVLine((display.width() / 2), yLegend + 5, (yStatus-(yLegend + 5)), ILI9341_WHITE);
 
   // screen helper routines
   screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (display.height() - (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
+
+  // PM2.5 color legend
+  for(uint8_t loop = 0; loop < 4; loop++){
+    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
+  }
+
+  // PM2.5 label
+  display.setTextColor(ILI9341_WHITE);
+  display.setFont();
+  display.setCursor(xPMLabel,yPMLabel);
+  display.print("PM2.5");
 
   // Indoor
   // Indoor temp
@@ -491,50 +502,14 @@ void screenCurrentInfo()
   // original icon ratio was 5:7?
   display.drawBitmap(xMargins + 90, yTemperature - 21, epd_bitmap_humidity_icon_sm4, 20, 28, ILI9341_WHITE);
 
-  // PM2.5 legend
-  display.fillRect(xLegend,yLegend,legendWidth,legendHeight,ILI9341_BLUE);
-  display.fillRect(xLegend,yLegend-legendHeight,legendWidth,legendHeight,ILI9341_GREEN);
-  display.fillRect(xLegend,(yLegend-(2*legendHeight)),legendWidth,legendHeight,ILI9341_YELLOW);
-  display.fillRect(xLegend,(yLegend-(3*legendHeight)),legendWidth,legendHeight,ILI9341_ORANGE);
-  display.fillRect(xLegend,(yLegend-(4*legendHeight)),legendWidth,legendHeight,ILI9341_RED);
-  display.fillRect(xLegend,(yLegend-(5*legendHeight)),legendWidth,legendHeight,ILI9341_MAGENTA);
-
-  // PM2.5 label
-  display.setTextColor(ILI9341_WHITE);
-  display.setFont();
-  display.setCursor(xPMLabel,yPMLabel);
-  display.print("PM2.5");
-
   // Indoor PM2.5 circle
-  switch (int(sensorData.massConcentrationPm2p5/50))
-  {
-    case 0: // good
-      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_BLUE);
-      break;
-    case 1: // moderate
-      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_GREEN);
-      break;
-    case 2: // unhealthy for sensitive groups
-      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_YELLOW);
-      break;
-    case 3: // unhealthy
-      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_ORANGE);
-      break;
-    case 4: // very unhealthy
-      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
-      break;
-    case 5: // very unhealthy
-      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
-      break;
-    default: // >=6 is hazardous
-      display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,ILI9341_MAGENTA);
-      break;
-  }
+  display.fillCircle(xIndoorPMCircle,yPMCircle,circleRadius,warningColor[aqiRange(sensorData.pm25)]);
 
   // Indoor PM2.5 value
-  display.setFont();
+  display.setFont(&FreeSans12pt7b);
+  display.setTextColor(ILI9341_WHITE);
   display.setCursor(xIndoorPMCircle,yPMCircle);
-  display.print(int(sensorData.massConcentrationPm2p5));
+  display.print(int(sensorData.pm25+.5));
 
   // Indoor CO2 level
   // CO2 label line
@@ -542,8 +517,8 @@ void screenCurrentInfo()
   display.setCursor(xMargins, yCO2);
   display.print("CO");
   display.setCursor(xMargins + 55, yCO2);
-  display.setTextColor(co2Color[co2Range(sensorData.ambientCO2)]);  // Use highlight color look-up table
-  display.print(String(co2Labels[co2Range(sensorData.ambientCO2)]));
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2)]);  // Use highlight color look-up table
+  display.print(String(warningLabels[co2Range(sensorData.ambientCO2)]));
   // subscript
   display.setFont(&FreeSans9pt7b);
   display.setTextColor(ILI9341_WHITE);
@@ -584,47 +559,19 @@ void screenCurrentInfo()
   if (owmAirQuality.aqi != 10000) {
 
     // Outside PM2.5
-    // PM2.5 circle
-    switch (int(owmAirQuality.pm25/50))
-    {
-      case 0: // good
-        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_BLUE);
-        break;
-      case 1: // moderate
-        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_GREEN);
-        break;
-      case 2: // unhealthy for sensitive groups
-        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_YELLOW);
-        break;
-      case 3: // unhealthy
-        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_ORANGE);
-        break;
-      case 4: // very unhealthy
-        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
-        break;
-      case 5: // very unhealthy
-        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_RED);
-        break;
-      default: // >=6 is hazardous
-        display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,ILI9341_MAGENTA);
-        break;
-    }
+    display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,warningColor[aqiRange(owmAirQuality.pm25)]);
 
-    // PM2.5 value
-    display.setFont();
+    // numeric value
+    display.setFont(&FreeSans12pt7b);
     display.setCursor(xOutdoorPMCircle,yPMCircle);
     display.setTextColor(ILI9341_WHITE);
-    display.print(int(owmAirQuality.pm25));
+    display.print(int(owmAirQuality.pm25+.5));
 
     // Outside air quality index (AQI)
-    // main line
     display.setFont(&FreeSans9pt7b);
     display.setCursor(xOutdoorMargin, yAQIValue);
     display.setTextColor(ILI9341_WHITE);
-    // European standards-body AQI value
-    display.print(aqiEuropeanLabels[(owmAirQuality.aqi)]);
-    // US standards-body AQI value
-    // display.print(aqiUSALabels[aqiUSLabelValue(owmAirQuality.pm25)]);
+    display.print(OWMAQILabels[(owmAirQuality.aqi)]);
     display.print(" AQI");
 
     // weather icon
@@ -678,7 +625,7 @@ void screenColor()
 // Represents CO2 value on screen as a single color fill
 {
   debugMessage("screenColor start",1);
-  display.fillScreen(co2Color[co2Range(sensorData.ambientCO2)]);  // Use highlight color LUT
+  display.fillScreen(warningColor[co2Range(sensorData.ambientCO2)]);  // Use highlight color LUT
   debugMessage("screenColor end",1);
 }
 
@@ -696,7 +643,7 @@ void screenSaver()
   x = random(xMargins,display.width()-xMargins-64);  // 64 pixels leaves room for 4 digit CO2 value
   y = random(35,display.height()-yMargins); // 35 pixels leaves vertical room for text display
   display.setCursor(x,y);
-  display.setTextColor(co2Color[co2Range(sensorData.ambientCO2)]);  // Use highlight color LUT
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2)]);  // Use highlight color LUT
   display.println(sensorData.ambientCO2);
   debugMessage("screenSaver end",1);
 }
@@ -733,7 +680,7 @@ void screenSaver()
 
 //   // Fill in the maximum values row
 //   display.setCursor(xCO2Column, yMaxRow);
-//   display.setTextColor(co2Color[co2Range(totalCO2.getMax())]);  // Use highlight color look-up table
+//   display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);  // Use highlight color look-up table
 //   display.print(totalCO2.getMax(),0);
 //   display.setTextColor(ST77XX_WHITE);
   
@@ -742,7 +689,7 @@ void screenSaver()
 
 //   // Fill in the average value row
 //   display.setCursor(xCO2Column, yAvgRow);
-//   display.setTextColor(co2Color[co2Range(totalCO2.getAverage())]);  // Use highlight color look-up table
+//   display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);  // Use highlight color look-up table
 //   display.print(totalCO2.getAverage(),0);
 //   display.setTextColor(ST77XX_WHITE);
 
@@ -751,7 +698,7 @@ void screenSaver()
 
 //   // Fill in the minimum value row
 //   display.setCursor(xCO2Column,yMinRow);
-//   display.setTextColor(co2Color[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
+//   display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
 //   display.print(totalCO2.getMin(),0);
 //   display.setTextColor(ST77XX_WHITE);
 
@@ -871,7 +818,7 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
   void OWMAirPollutionSimulate()
   // Simulates Open Weather Map (OWM) Air Pollution data
   {
-    owmAirQuality.aqi = random(OWMAQIMin, OWMAQIMax);  // overrides error code value
+    owmAirQuality.aqi = random(OWMAQIMin, OWMAQIMax);
     owmAirQuality.pm25 = random(OWMPM25Min, OWMPM25Max) / 100.0;
     debugMessage(String("SIMULATED OWM PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
   }
@@ -890,31 +837,33 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
     // tempF and humidity come from SCD4X simulation
 
     // Common to PMSA003I and SEN5x
-    sensorData.massConcentrationPm1p0 = random(0, 360) / 10.0;
-    sensorData.massConcentrationPm10p0 = random(0, 1550) / 10.0;
-    sensorData.massConcentrationPm2p5 = random(sensorPM2p5Min, sensorPM2p5Max) / 10.0;
+    sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
+    sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
+    sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
 
     // PMSA003I specific values
 
     // SEN5x specific values
-    sensorData.massConcentrationPm4p0 = random(0, 720) / 10.0;
-    sensorData.vocIndex = random(0, 500) / 10.0;
-    sensorData.noxIndex = random(0, 2500) / 10.0;
+    sensorData.pm4 = random(sensorPMMin, sensorPMMax) / 100.0;
+    sensorData.vocIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
+    // not supported on SEN54
+    //sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
 
-    debugMessage(String("SIMULATED PM2.5: ")+sensorData.massConcentrationPm2p5+" ppm",1); 
+    debugMessage(String("SIMULATED PM2.5: ")+sensorData.pm25+" ppm",1);
+    debugMessage(String("SIMULATED VoC index: ")+sensorData.vocIndex+" ppm",1); 
   }
 
   void sensorCO2Simulate()
-  // Simulate ranged data from the SCD4X
+  // Simulate ranged data from the SCD40
   // Improvement - implement stable, rapid rise and fall 
   {
     // Temperature in Fahrenheit
-    sensorData.ambientTemperatureF = ((random(sensorTempMin,sensorTempMax) / 100.0)*1.8)+32.0;
+    sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
     // Humidity
     sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
     // CO2
     sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
-    debugMessage(String("SIMULATED SCD4X: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+    debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
   }
 #endif
 
@@ -979,7 +928,7 @@ bool OWMCurrentWeatherRead()
 
       // owmCurrentData.windSpeed = (float) doc["wind"]["speed"];
       // owmCurrentData.windDeg = (float) doc["wind"]["deg"];
-      debugMessage(String("OWM Current Weather set: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
+      debugMessage(String("OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "% RH", 1);
       return true;
     }
     return false;
@@ -1331,9 +1280,9 @@ bool sensorPMRead()
     // }
     // // successful read, store data
 
-    // // sensorData.massConcentrationPm1p0 = data.pm10_standard;
-    // sensorData.massConcentrationPm2p5 = data.pm25_standard;
-    // // sensorData.massConcentrationPm10p0 = data.pm100_standard;
+    // // sensorData.pm1 = data.pm10_standard;
+    // sensorData.pm25 = data.pm25_standard;
+    // // sensorData.pm10 = data.pm100_standard;
     // // sensorData.pm25_env = data.pm25_env;
     // // sensorData.particles_03um = data.particles_03um;
     // // sensorData.particles_05um = data.particles_05um;
@@ -1342,7 +1291,7 @@ bool sensorPMRead()
     // // sensorData.particles_50um = data.particles_50um;
     // // sensorData.particles_100um = data.particles_100um;
 
-    // debugMessage(String("PM2.5 reading is ") + sensorData.massConcentrationPm2p5 + " or AQI " + pm25toAQI(sensorData.massConcentrationPm2p5),1);
+    // debugMessage(String("PM2.5 reading is ") + sensorData.pm25 + " or AQI " + pm25toAQI(sensorData.pm25),1);
     // // debugMessage(String("Particles > 0.3um / 0.1L air:") + sensorData.particles_03um,2);
     // // debugMessage(String("Particles > 0.5um / 0.1L air:") + sensorData.particles_05um,2);
     // // debugMessage(String("Particles > 1.0um / 0.1L air:") + sensorData.particles_10um,2);
@@ -1361,15 +1310,15 @@ bool sensorPMRead()
     debugMessage("SEN5X read initiated",1);
 
     error = pmSensor.readMeasuredValues(
-      sensorData.massConcentrationPm1p0, sensorData.massConcentrationPm2p5, sensorData.massConcentrationPm4p0,
-      sensorData.massConcentrationPm10p0, sen5xHumidity, sen5xTempF, sensorData.vocIndex,
+      sensorData.pm1, sensorData.pm25, sensorData.pm4,
+      sensorData.pm10, sen5xHumidity, sen5xTempF, sensorData.vocIndex,
       sensorData.noxIndex);
     if (error) {
       errorToString(error, errorMessage, 256);
       debugMessage(String(errorMessage) + " error during SEN5x read",1);
       return false;
     }
-    debugMessage(String("SEN5X PM2.5:") + sensorData.massConcentrationPm2p5 + ", AQI:" + pm25toAQI(sensorData.massConcentrationPm2p5) + ", VOC:" + sensorData.vocIndex, 1);
+    debugMessage(String("SEN5X PM2.5:") + sensorData.pm25 + ", VOC:" + sensorData.vocIndex, 1);
     return true;
   #endif
 }
@@ -1491,26 +1440,28 @@ bool sensorCO2Read()
   return(true);
 }
 
-uint8_t co2Range(uint16_t value)
-// places CO2 value into a three band range for labeling and coloring. See config.h for more information
+uint8_t co2Range(uint16_t co2)
+// converts co2 value to index value for labeling and color
 {
-  if (value < co2Warning)
-    return 0;
-  else if (value < co2Alarm)
-    return 1;
-  else
-    return 2;
+  uint8_t co2Range;
+  if (co2 <= co2Fair) co2Range = 0;
+  else if (co2 <= co2Poor) co2Range = 1;
+  else if (co2 <= co2Bad) co2Range = 2;
+  else co2Range =3;
+  debugMessage(String("CO2 input of ") + co2 + " yields co2Range of " + co2Range,2);
+  return co2Range;
 }
 
-uint8_t aqiUSLabelValue(float pm25)
-// converts pm25 value to a 0-5 value associated with US AQI labels
+uint8_t aqiRange(float pm25)
+// converts pm25 value to index value for labeling and color
 {
-  if (pm25 <= 12.0) return (0);
-  else if (pm25 <= 35.4) return (1);
-  else if (pm25 <= 55.4) return (2);
-  else if (pm25 <= 150.4) return (3);
-  else if (pm25 <= 250.4) return (4);
-  else return (5); // AQI above 500 not recognized
+  uint8_t aqi;
+  if (pm25 <= pmFair) aqi = 0;
+  else if (pm25 <= pmPoor) aqi = 1;
+  else if (pm25 <= pm2Bad) aqi = 2;
+  else aqi = 3;
+  debugMessage(String("PM2.5 input of ") + pm25 + " yields " + aqi + " aqi",2);
+  return aqi;
 }
 
 float pm25toAQI(float pm25)
