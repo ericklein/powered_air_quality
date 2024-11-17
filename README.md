@@ -22,6 +22,7 @@ AI : ADD DOCUMENTATION
 ## Bill of Materials (BOM)
 ### MCU
 - [CYD (Cheap Yellow Display)])(https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/tree/main). This is an inexpensive ESP32 prototype board with a built-in screen.
+    - Arduino IDE should be told to target the "ESP32 Dev Module" board, which you can find once you install the ESP32 BSP
     - Code is portable to any ESP32 MCU
 ### WiFi
 - [CYD (Cheap Yellow Display)])(https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/tree/main). This is an inexpensive ESP32 prototype board with a built-in screen.
@@ -62,6 +63,12 @@ AI : ADD DOCUMENTATION
 - AI: ADD DOCUMENTATION
 ### InfluxDB
 - AI: ADD DOCUMENTATION
+## Software Dependencies
+- ArduinoJson by Benoit Blanchon
+- Adafruit ILI9341 (and dependencies)
+- Sensirion I2C SEN5X (and dependencies)
+- Sensirion I2C SCD4x (and dependencies)
+- ESP8266 Influxdb by Tobias Schurg (which also works for ESP32 despite the name)
 ## Issues and Feature Requests
 - [Github Issues](https://github.com/ericklein/powered_air_quality/issues)
 ## .plan (big ticket items)

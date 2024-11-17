@@ -13,7 +13,11 @@
 // #define WIFI_SSID "YOUR_WIFI_SSID"
 // #define WIFI_PASS "YOUR_WIFI_PASSWORD"
 
-// Configuration Step 3: If using MQTT, set MQTT broker login parameters
+// Configuration Step 3: Set Open Weather Map credential and location
+//	#define OWM_KEY 		"keyvalue"
+// 	#define OWM_LAT_LONG	"lat=34.1448&lon=-118.1509" // Pasadena, CA
+
+// Configuration Step 4: If using MQTT, set MQTT broker login parameters
 // #ifdef MQTT
 //  #define MQTT BROKER		"mqtt.hostname.local or IP address"
 // 	#define MQTT_PORT  		port_number	// use 8883 for SSL
@@ -21,7 +25,7 @@
 //  #define MQTT_PASSWORD	"key_value"
 // #endif
 
-// Configuration Step 4: If using influxdb, set login and storage parameters
+// Configuration Step 5: If using influxdb, set login and storage parameters
 // #ifdef INFLUX
 	// For an InfluxDB v1.X server:
 	// #define INFLUX_V1			"key_value"
@@ -38,7 +42,7 @@
 	// #define INFLUXDB_BUCKET		"key_value"
 // #endif
 
-// Configuration Step 5: Set key device and installation configuration parameters.  These are used
+// Configuration Step 6: Set key device and installation configuration parameters.  These are used
 // widely throughout the code to properly identify the device and generate important
 // operating elements like MQTT topics, InfluxDB data tags (metadata).  Should be
 // customized to match the target installation. Values here are examples.

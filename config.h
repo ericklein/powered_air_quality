@@ -5,12 +5,12 @@
 
 // Configuration Step 1: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-#define DEBUG 2
+// #define DEBUG 2
 
 // Configuration Step 2: simulate WiFi and sensor hardware,
 // returning random but plausible values
 // comment out to turn off
-#define HARDWARE_SIMULATE
+// #define HARDWARE_SIMULATE
 
 // Configuration Step 3: Set network data endpoints
 // HARDWARE_SIMULATE can not be defined if any network data endpoints are defined
@@ -106,7 +106,7 @@ const uint16_t warningColor[4] = {
     0xF800  // Red = "Bad"
   };
 
-// CO2 sensor
+// CO2 from SCD4x
 // CO2 value thresholds for labeling
 const uint16_t co2Fair = 800;
 const uint16_t co2Poor = 1200;
