@@ -22,6 +22,7 @@ AI : ADD DOCUMENTATION
 ## Bill of Materials (BOM)
 ### MCU
 - [CYD (Cheap Yellow Display)])(https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/tree/main). This is an inexpensive ESP32 prototype board with a built-in screen.
+    - Arduino IDE should be told to target the "ESP32 Dev Module" board, which you can find once you install the ESP32 BSP
     - Code is portable to any ESP32 MCU
 ### WiFi
 - [CYD (Cheap Yellow Display)])(https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/tree/main). This is an inexpensive ESP32 prototype board with a built-in screen.
@@ -62,6 +63,12 @@ AI : ADD DOCUMENTATION
 - AI: ADD DOCUMENTATION
 ### InfluxDB
 - AI: ADD DOCUMENTATION
+## Software Dependencies
+- ArduinoJson by Benoit Blanchon
+- Adafruit ILI9341 (and dependencies)
+- Sensirion I2C SEN5X (and dependencies)
+- Sensirion I2C SCD4x (and dependencies)
+- ESP8266 Influxdb by Tobias Schurg (which also works for ESP32 despite the name)
 ## Issues and Feature Requests
 - [Github Issues](https://github.com/ericklein/powered_air_quality/issues)
 ## .plan (big ticket items)
@@ -75,7 +82,7 @@ AI : ADD DOCUMENTATION
 - [Ideal indoor humidity](https://iaq.works/humidity/indoor-humidity-level-why-is-the-40-60-range-ideal/)
 ### CO2 (Carbon Dioxide)
 #### Scales
-We currently use the following scale:
+We currently use the following scale, which is modifiable in config.h:
 - <800 - Good
 - 800-999 - So-So
 - 1000+ - Poor
@@ -83,6 +90,11 @@ We currently use the following scale:
 - ![Example 1](readme/co2_scale_1.png)
 - ![Example 2](readme/co2_scale_2.png)
 - ![Example 3](readme/co2_scale_3.jpg)
+- US NIOSH (1987) recommendations:
+    - 250-350 ppm - normal outdoor ambient concentrations
+    - 600 ppm - minimal air quality complaints
+    - 600-1,000 ppm - less clearly interpreted
+    - 1,000 ppm - indicates inadequate ventilation; complaints such as headaches, fatigue, and eye and throat irritation will be more widespread; 1,000 ppm should be used as an upper limit for indoor levels
 #### Impact on health
 - [CO2 and indoor air quality](readme/CO2_and_indoor_air_quality.pdf)
 #### Sensors
@@ -91,7 +103,34 @@ We currently use the following scale:
     - [SCD40 datasheet](readme/Sensirion_CO2_Sensors_SCD4x_Datasheet.pdf)
 ### AQI
 - [AQI Overview](readme/aqi_overview.md)
+- https://en.wikipedia.org/wiki/Air_quality_index#CAQI
 - [Open Weather Map Air Pollution API](https://openweathermap.org/api/air-pollution)
 - [OSHA Air Quality](readme/OSHA_Indoor_Air_Quality.pdf)
 - [Great site for air quality info](https://itsairborne.com/)
 - [NYT on indoor gas stoves](https://www.nytimes.com/2023/01/29/climate/gas-stove-health.html)
+#### Scales
+We currently use the following scale, which is modifiable in config.h:
+
+- 0-25 : "Good" : Green
+- 26-50 : "Fair" : Yellow
+- 51-150 : "Poor" : Orange
+- 151+ : "Bad" : Red
+
+Options:
+- Open Weather Map scale
+![owm scale](readme/owm_aqi_scale.jpg)
+- Aware scale
+![awair scale](readme/aqi_scale_2.png)
+- Australian local goverment scale
+![victoria scale](readme/AU_aqi_scale.jpg)
+- government standard scale
+![AQI scale](readme/aqi_scale_1.png)
+### VOC (Volatile Organic Compounds)
+[Sensirion documentation on VOC](readme/Info_Note_VOC_Index.pdf)
+#### Scale
+We currently use the following scale, which is modifiable in config.h:
+
+- 0-150 : "Good" : Green
+- 151-250 : "Fair" : Yellow
+- 251-400 : "Poor" : Orange
+- 401+ : "Bad" : Red
