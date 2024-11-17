@@ -75,7 +75,7 @@ AI : ADD DOCUMENTATION
 - [Ideal indoor humidity](https://iaq.works/humidity/indoor-humidity-level-why-is-the-40-60-range-ideal/)
 ### CO2 (Carbon Dioxide)
 #### Scales
-We currently use the following scale:
+We currently use the following scale, which is modifiable in config.h:
 - <800 - Good
 - 800-999 - So-So
 - 1000+ - Poor
@@ -102,7 +102,7 @@ We currently use the following scale:
 - [Great site for air quality info](https://itsairborne.com/)
 - [NYT on indoor gas stoves](https://www.nytimes.com/2023/01/29/climate/gas-stove-health.html)
 #### Scales
-We currently use the following scale:
+We currently use the following scale, which is modifiable in config.h:
 
 - 0-25 : "Good" : Green
 - 26-50 : "Fair" : Yellow
@@ -118,3 +118,12 @@ Options:
 ![victoria scale](readme/AU_aqi_scale.jpg)
 - government standard scale
 ![AQI scale](readme/aqi_scale_1.png)
+### VOC (Volatile Organic Compounds)
+[Sensirion documentation on VOC](readme/Info_Note_VOC_Index.pdf)
+#### Scale
+We currently use the following scale, which is modifiable in config.h:
+
+- 0-150 : "Good" : Green
+- 151-250 : "Fair" : Yellow
+- 251-400 : "Poor" : Orange
+- 401+ : "Bad" : Red

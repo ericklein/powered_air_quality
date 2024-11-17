@@ -357,7 +357,7 @@ void loop()
         debugMessage(String("Temp: ") + avgtemperatureF + " F",1);
         debugMessage(String("Humidity: ") + avgHumidity + "%",1);
         debugMessage(String("CO2: ") + avgCO2 + " ppm",1);
-        debugMessage(String("VoC: ") + avgVOC,1);
+        debugMessage(String("VOC: ") + avgVOC,1);
         debugMessage(String("PM2.5: ") + avgPM25 + " = AQI " + pm25toAQI(avgPM25),1);
 
         if (networkConnect())
@@ -439,8 +439,8 @@ void screenCurrentInfo()
   const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
   const uint16_t yStatus = (display.height() * 7 / 8);  
   const uint16_t yTemperature = 35;
-  const uint16_t legendHeight = 15;
-  const uint16_t legendWidth = 10;
+  const uint8_t legendHeight = 15;
+  const uint8_t legendWidth = 10;
   const uint16_t xLegend = ((display.width() / 2) - legendWidth);
   const uint16_t yLegend = 110;
   const uint16_t xIndoorPMCircle = (display.width() / 4);
@@ -477,7 +477,7 @@ void screenCurrentInfo()
     display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
   }
 
-  // PM2.5 label
+  // PM2.5 legend label
   display.setTextColor(ILI9341_WHITE);
   display.setFont();
   display.setCursor(xPMLabel,yPMLabel);
@@ -561,7 +561,7 @@ void screenCurrentInfo()
     // Outside PM2.5
     display.fillCircle(xOutdoorPMCircle,yPMCircle,circleRadius,warningColor[aqiRange(owmAirQuality.pm25)]);
 
-    // numeric value
+    // PM2.5 numeric value (displayed inside circle)
     display.setFont(&FreeSans12pt7b);
     display.setCursor(xOutdoorPMCircle,yPMCircle);
     display.setTextColor(ILI9341_WHITE);
@@ -712,57 +712,41 @@ void screenSaver()
 void screenVOC()
 {
   // screen layout assists in pixels
-  const uint16_t legendHeight = 10;
-  const uint16_t legendWidth = 5;
-  const uint16_t xLegend = ((display.width() / 2) - xMargins - legendWidth);
-  const uint16_t yLegend = 100;
-  const uint16_t xIndoorPMCircle = (display.width() / 4);
-  const uint16_t xOutdoorPMCircle = ((display.width() / 4) * 3);
-  const uint16_t yPMCircle = 75;
-  const uint16_t circleRadius = 30;
-  const uint16_t xPMLabel = ((display.width() / 2) - 25);
-  const uint16_t yPMLabel = 112;
-  // const uint16_t xIndoorPMValue = xIndoorPMCircle;
-  // const uint16_t xOutdoorPMValue = xOutdoorPMCircle;
-  // const uint16_t yPMValue = yPMCircle;
+  const uint8_t legendHeight = 20;
+  const uint8_t legendWidth = 10;
+  const uint16_t xLegend = (display.width() - xMargins - legendWidth);
+  const uint16_t yLegend = ((display.height() /2 ) + (legendHeight * 2));
+  const uint16_t circleRadius = 100;
+  const uint16_t xVOCCircle = (display.width() / 2);
+  const uint16_t yVOCCircle = (display.height() / 2);
+  const uint16_t xVOCLabel = (display.width() - xMargins - legendWidth);
+  const uint16_t yVOCLabel = ((display.height() /2 ) + (legendHeight * 2) + 25);
 
   debugMessage("screenVOC start",1);
 
   // clear screen
   display.fillScreen(ILI9341_BLACK);
 
-  // VoC level circle
-  switch (int(sensorData.vocIndex/100))
-  {
-    case 0: // great
-      display.fillCircle(114,75,31,ILI9341_BLUE);
-      break;
-    case 1: // good
-      display.fillCircle(114,75,31,ILI9341_GREEN);
-      break;
-    case 2: // moderate
-      display.fillCircle(114,75,31,ILI9341_YELLOW);
-      break;
-    case 3: // 
-      display.fillCircle(114,75,31,ILI9341_ORANGE);
-      break;
-    case 4: // bad
-      display.fillCircle(114,75,31,ILI9341_RED);
-      break;
+  // VOC color circle
+  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[vocRange(sensorData.vocIndex)]);
+
+  // VOC color legend
+  for(uint8_t loop = 0; loop < 4; loop++){
+    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
   }
 
-  // VoC legend
-  display.fillRect(display.width()-xMargins,yLegend,legendWidth,legendHeight,ILI9341_BLUE);
-  display.fillRect(display.width()-xMargins,yLegend-legendHeight,legendWidth,legendHeight,ILI9341_GREEN);
-  display.fillRect(display.width()-xMargins,(yLegend-(2*legendHeight)),legendWidth,legendHeight,ILI9341_YELLOW);
-  display.fillRect(display.width()-xMargins,(yLegend-(3*legendHeight)),legendWidth,legendHeight,ILI9341_ORANGE);
-  display.fillRect(display.width()-xMargins,(yLegend-(4*legendHeight)),legendWidth,legendHeight,ILI9341_RED);
-  display.setCursor(106,110);
-  display.print("VoC"); 
+  // VOC legend label
+  display.setTextColor(ILI9341_WHITE);
+  display.setFont();
+  display.setCursor(xVOCLabel,yVOCLabel);
+  display.print("VOC");
 
-  // VoC level
-  display.setCursor(100,80);
-  display.print(int(sensorData.vocIndex));
+  // VOC value (displayed inside circle)
+  display.setFont(&FreeSans18pt7b);
+  display.setTextColor(ILI9341_WHITE);
+  display.setCursor(xVOCCircle,yVOCCircle);
+  display.print(int(sensorData.vocIndex+.5));
+
   debugMessage("screenVOC end",1);
 }
 
@@ -849,7 +833,7 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
     // not supported on SEN54
     //sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
 
-    debugMessage(String("SIMULATED SEN5x PM2.5: ")+sensorData.pm25+" ppm, VoC index: " + sensorData.vocIndex,1);
+    debugMessage(String("SIMULATED SEN5x PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex,1);
   }
 
   void sensorCO2Simulate()
@@ -1461,6 +1445,18 @@ uint8_t aqiRange(float pm25)
   else aqi = 3;
   debugMessage(String("PM2.5 input of ") + pm25 + " yields " + aqi + " aqi",2);
   return aqi;
+}
+
+uint8_t vocRange(float vocIndex)
+// converts pm25 value to index value for labeling and color
+{
+  uint8_t vocRange;
+  if (vocIndex <= vocFair) vocRange = 0;
+  else if (vocIndex <= vocPoor) vocRange = 1;
+  else if (vocIndex <= vocBad) vocRange = 2;
+  else vocRange = 3;
+  debugMessage(String("VOC index input of ") + vocIndex + " yields " + vocRange + " vocRange",2);
+  return vocRange;
 }
 
 float pm25toAQI(float pm25)

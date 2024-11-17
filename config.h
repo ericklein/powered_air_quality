@@ -114,13 +114,18 @@ const uint16_t co2Bad = 2000;
 
 const uint16_t sensorCO2Min =      400;   // in ppm
 const uint16_t sensorCO2Max =      2000;  // in ppm
-const uint16_t sensorTempCOffset = 0;     // in Celcius
+const uint8_t sensorTempCOffset = 0;     // in Celcius
 
-// particulates
+// particulates (pm1, pm2.5, pm4, pm10) from SEN5x
 // CO2 value thresholds for labeling
 const uint16_t pmFair = 25;
 const uint16_t pmPoor = 50;
 const uint16_t pm2Bad = 150;
+
+// VOC (volatile organic compounds) from SEN5x
+const uint16_t vocFair = 150;
+const uint16_t vocPoor = 250;
+const uint16_t vocBad = 400;
 
 // Time
 // NTP time parameters
