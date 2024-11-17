@@ -10,13 +10,13 @@
 // Configuration Step 2: simulate WiFi and sensor hardware,
 // returning random but plausible values
 // comment out to turn off
-// #define HARDWARE_SIMULATE
+#define HARDWARE_SIMULATE
 
 // Configuration Step 3: Set network data endpoints
 // HARDWARE_SIMULATE can not be defined if any network data endpoints are defined
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-#define INFLUX // Log data to InfluxDB server
+// #define INFLUX // Log data to InfluxDB server
 // #define DWEET       // Log data to Dweet service
 // #define THINGSPEAK  // Log data to ThingSpeak
 
@@ -109,7 +109,7 @@ const uint16_t warningColor[4] = {
 // CO2 sensor
 // CO2 value thresholds for labeling
 const uint16_t co2Fair = 800;
-const uint16_t co2Poor = 1500;
+const uint16_t co2Poor = 1200;
 const uint16_t co2Bad = 2000;
 
 const uint16_t sensorCO2Min =      400;   // in ppm

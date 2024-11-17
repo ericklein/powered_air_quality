@@ -807,7 +807,7 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
     // Improvement - variable length names
     owmCurrentData.cityName = "Pleasantville";
     // Temperature
-    owmCurrentData.tempF = ((random(sensorTempMin,sensorTempMax) / 100.0) * 1.8) + 32;
+    owmCurrentData.tempF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
     // Humidity
     owmCurrentData.humidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
     // IMPROVEMENT - variable icons
@@ -820,7 +820,7 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
   {
     owmAirQuality.aqi = random(OWMAQIMin, OWMAQIMax);
     owmAirQuality.pm25 = random(OWMPM25Min, OWMPM25Max) / 100.0;
-    debugMessage(String("SIMULATED OWM PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
+    debugMessage(String("SIMULATED OWM Air Pollution PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
   }
 
   void networkSimulate()
@@ -849,8 +849,7 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
     // not supported on SEN54
     //sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
 
-    debugMessage(String("SIMULATED PM2.5: ")+sensorData.pm25+" ppm",1);
-    debugMessage(String("SIMULATED VoC index: ")+sensorData.vocIndex+" ppm",1); 
+    debugMessage(String("SIMULATED SEN5x PM2.5: ")+sensorData.pm25+" ppm, VoC index: " + sensorData.vocIndex,1);
   }
 
   void sensorCO2Simulate()

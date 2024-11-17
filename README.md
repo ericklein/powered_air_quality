@@ -104,11 +104,10 @@ We currently use the following scale:
 #### Scales
 We currently use the following scale:
 
-- 0-50 : Good : Green
-- 51-100 : Acceptable : Yellow
-- 101-150 : Moderate : Orange
-- 151-300 : Poor : Red
-- 301+ : Hazardous : Purple
+- 0-25 : "Good" : Green
+- 26-50 : "Fair" : Yellow
+- 51-150 : "Poor" : Orange
+- 151+ : "Bad" : Red
 
 Options:
 - Open Weather Map scale
