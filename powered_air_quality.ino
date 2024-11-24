@@ -98,7 +98,7 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
   extern bool mqttSensorPM25Update(float pm25);
   extern bool mqttSensorVOCIndexUpdate(float vocIndex);
   #ifdef HASSIO_MQTT
-    extern void hassio_mqtt_publish(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2ß);
+    extern void hassio_mqtt_publish(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2);
   #endif
 #endif
 
@@ -207,7 +207,7 @@ typedef struct {
 } OpenWeatherMapAirQuality;
 OpenWeatherMapAirQuality owmAirQuality;  // global variable for OWM current data
 
-bool screenWasTouched = true;
+bool screenWasTouched = false;
 
 // set first screen to display
 uint8_t screenCurrent = 0;
@@ -238,6 +238,7 @@ void setup()
   display.setRotation(screenRotation);
   display.setTextWrap(false);
   display.fillScreen(ILI9341_BLACK);
+  screenAlert("Initializing");
 
   // Initialize PM25 sensor
   if (!sensorPMInit()) {
@@ -274,23 +275,6 @@ void loop()
   // update current timer value
   uint32_t timeCurrent = millis();
 
-  // buttonOne.loop();
-  // // check if buttons were pressed
-  // if (buttonOne.isReleased())
-  // {
-  //   ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
-  //   debugMessage(String("button 1 press, switch to screen ") + screenCurrent,1);
-  //   screenUpdate(true);
-  // }
-
-  boolean istouched = ts.touched();
-  if (istouched)
-  {
-    ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
-    debugMessage(String("touchscreen pressed, switch to screen ") + screenCurrent,1);
-    screenUpdate(true);
-  }
-
   // is it time to read the sensor?
   if((timeCurrent - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
   {
@@ -307,7 +291,6 @@ void loop()
     // Get local weather and air quality info from Open Weather Map
     if (!OWMCurrentWeatherRead()) {
       owmCurrentData.tempF = 10000;
-      owmCurrentData.humidity = 10000;
     }
     
     if (!OWMAirPollutionRead()) {
@@ -329,10 +312,28 @@ void loop()
     debugMessage(String("VOC total: ") + vocTotal,2);
     debugMessage(String("PM25 total: ") + pm25Total,2);
 
-    screenCurrentInfo();
+    screenSaver();
+
     // Save last sample time
     timeLastSample = millis();
   }
+
+  // user input = change screens
+  boolean istouched = ts.touched();
+  if (istouched)
+  {
+    ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
+    debugMessage(String("touchscreen pressed, switch to screen ") + screenCurrent,1);
+    screenUpdate(true);
+  }
+
+  // buttonOne.loop();
+  // if (buttonOne.isReleased())
+  // {
+  //   ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
+  //   debugMessage(String("button 1 press, switch to screen ") + screenCurrent,1);
+  //   screenUpdate(true);
+  // }
 
   // do we have network endpoints to report to?
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
@@ -530,22 +531,21 @@ void screenCurrentInfo()
   display.print("(" + String(sensorData.ambientCO2) + ")");
 
   // Outside
-  // location label
-  display.setFont();
-  display.setCursor((display.width() * 5 / 8), yMargins);
-  display.print(owmCurrentData.cityName);
-
-  // Outside temp
+  // do we have OWM Current data to display?
   if (owmCurrentData.tempF != 10000) {
+    // location label
+    display.setFont();
+    display.setCursor((display.width() * 5 / 8), yMargins);
+    display.print(owmCurrentData.cityName);
+
+    // Outside temp
     display.setFont(&FreeSans12pt7b);
     display.setCursor(xOutdoorMargin, yTemperature);
     display.print(String((uint8_t)(owmCurrentData.tempF + 0.5)));
     display.setFont(&meteocons12pt7b);
     display.print("+");
-  }
 
-  // Outside humidity
-  if (owmCurrentData.humidity != 10000) {
+    // Outside humidity
     display.setFont(&FreeSans12pt7b);
     display.setCursor(xOutdoorMargin + 60, yTemperature);
     if ((owmCurrentData.humidity<40) || (owmCurrentData.humidity>60))
@@ -554,8 +554,19 @@ void screenCurrentInfo()
       display.setTextColor(ILI9341_GREEN);
     display.print(String((uint8_t)(owmCurrentData.humidity + 0.5)));
     display.drawBitmap(xOutdoorMargin + 90, yTemperature - 21, epd_bitmap_humidity_icon_sm4, 20, 28, ILI9341_WHITE);
-  }
 
+    // weather icon
+    String weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
+    // if getMeteoIcon doesn't have a matching symbol, skip display
+    if (weatherIcon != ")") {
+      // display icon
+      display.setFont(&meteocons20pt7b);
+      display.setCursor(xWeatherIcon, yWeatherIcon);
+      display.print(weatherIcon);
+    }
+  }
+  
+  // do we have OWM Air Quality data to display?
   if (owmAirQuality.aqi != 10000) {
 
     // Outside PM2.5
@@ -573,16 +584,6 @@ void screenCurrentInfo()
     display.setTextColor(ILI9341_WHITE);
     display.print(OWMAQILabels[(owmAirQuality.aqi)]);
     display.print(" AQI");
-
-    // weather icon
-    String weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
-    // if getMeteoIcon doesn't have a matching symbol, skip display
-    if (weatherIcon != ")") {
-      // display icon
-      display.setFont(&meteocons20pt7b);
-      display.setCursor(xWeatherIcon, yWeatherIcon);
-      display.print(weatherIcon);
-    }
   }
   debugMessage("screenCurrentInfo() end", 1);
 }
@@ -840,11 +841,8 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
   // Simulate ranged data from the SCD40
   // Improvement - implement stable, rapid rise and fall 
   {
-    // Temperature in Fahrenheit
     sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
-    // Humidity
     sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
-    // CO2
     sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
     debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
   }
@@ -1051,13 +1049,14 @@ void networkDisconnect()
 // Disconnect from WiFi network
 {
   hardwareData.rssi = 0;
-  debugMessage("power off: WiFi",1);
   #ifdef HARDWARE_SIMULATE
+    debugMessage("power off: SIMULATED WiFi",1);
     return;
   #else
     // IMPROVEMENT: What if disconnect call fails?
     WiFi.disconnect();
     WiFi.mode(WIFI_OFF);
+    debugMessage("power off: WiFi",1);
   #endif
 }
 
