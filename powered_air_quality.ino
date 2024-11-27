@@ -10,6 +10,9 @@
 // private credentials for network, MQTT
 #include "secrets.h"
 
+// Utility class for easy handling of aggregate sensor data
+#include "measure.h"
+
 #ifndef HARDWARE_SIMULATE
   // sensor support
   // instanstiate pm hardware object
@@ -135,17 +138,9 @@ typedef struct envData
 } envData;
 envData sensorData;
 
-float temperatureFTotal = 0;  // running total of temperature over report interval
-float humidityTotal = 0;      // running total of humidity over report interval
-uint16_t co2Total = 0;        // running total of C02 over report interval
-float vocTotal = 0;           // running total of VOC over report interval
-float pm25Total = 0;          // running total of humidity over report interval
-// IMPROVEMENT: avg values can be local to loop() vs. global?
-float avgtemperatureF = 0;    // average temperature over report interval
-float avgHumidity = 0;        // average humidity over report interval
-uint16_t avgCO2 = 0;          // average CO2 over report interval
-float avgVOC = 0;             // average VOC over report interval
-float avgPM25 = 0;            // average PM2.5 over report interval
+
+// Utility class used to streamline accumulating sensor values, averages, min/max &c.
+Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25;
 
 uint8_t numSamples = 0;       // Number of overall sensor readings over reporting interval
 uint32_t timeLastSample = 0;  // timestamp (in ms) for last captured sample 
@@ -272,6 +267,15 @@ void setup()
 
 void loop()
 {
+  // For conveniently handling frequent reference to average values
+  float avgtemperatureF = 0;    // average temperature over report interval
+  float avgHumidity = 0;        // average humidity over report interval
+  uint16_t avgCO2 = 0;          // average CO2 over report interval
+  float avgVOC = 0;             // average VOC over report interval
+  float avgPM25 = 0;            // average PM2.5 over report interval
+  float minPM25 = 0;            // minimum PM2.5 over report interval
+  float maxPM25 = 0;            // maximum PM2.5 over report interval
+
   // update current timer value
   uint32_t timeCurrent = millis();
 
@@ -299,20 +303,21 @@ void loop()
 
     // add to the running totals
     numSamples++;
-    temperatureFTotal += sensorData.ambientTemperatureF;
-    humidityTotal += sensorData.ambientHumidity;
-    co2Total += sensorData.ambientCO2;
-    vocTotal += sensorData.vocIndex;
-    pm25Total += sensorData.pm25;
+    totalTemperatureF.include(sensorData.ambientTemperatureF);
+    totalHumidity.include(sensorData.ambientHumidity);
+    totalCO2.include(sensorData.ambientCO2);
+    totalVOC.include(sensorData.vocIndex);
+    totalPM25.include(sensorData.pm25);
 
     debugMessage(String("Sample #") + numSamples + ", running totals: ",2);
-    debugMessage(String("temperatureF total: ") + temperatureFTotal,2);
-    debugMessage(String("Humidity total: ") + humidityTotal,2);
-    debugMessage(String("CO2 total: ") + co2Total,2);    
-    debugMessage(String("VOC total: ") + vocTotal,2);
-    debugMessage(String("PM25 total: ") + pm25Total,2);
+    debugMessage(String("temperatureF total: ") + totalTemperatureF.getTotal(),2);
+    debugMessage(String("Humidity total: ") + totalHumidity.getTotal(),2);
+    debugMessage(String("CO2 total: ") + totalCO2.getTotal(),2);    
+    debugMessage(String("VOC total: ") + totalVOC.getTotal(),2);
+    debugMessage(String("PM25 total: ") + totalPM25.getTotal(),2);
 
-    screenSaver();
+    // screenSaver();  DJB-DEV -- don't know why this was here instead of screenUpdate()
+    screenUpdate(false);
 
     // Save last sample time
     timeLastSample = millis();
@@ -336,7 +341,7 @@ void loop()
   // }
 
   // do we have network endpoints to report to?
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(HARDWARE_SIMULATE)
     // is it time to report to the network endpoints?
     if ((timeCurrent - timeLastReport) >= (sensorReportInterval * 60 * 1000))  // converting sensorReportInterval into milliseconds
     {
@@ -344,14 +349,15 @@ void loop()
       if (numSamples != 0) 
       {
 
-        // average the sample totals
-        avgtemperatureF = temperatureFTotal / numSamples;
-        avgHumidity = humidityTotal / numSamples;
-        avgCO2 = co2Total / numSamples;
-        avgVOC = vocTotal / numSamples;
-        avgPM25 = pm25Total / numSamples;
-        if (avgPM25 > MaxPm25) MaxPm25 = avgPM25;
-        if (avgPM25 < MinPm25) MinPm25 = avgPM25;
+        // Get averaged sample values from the Measure utliity class objects
+        avgtemperatureF = totalTemperatureF.getAverage();
+        avgHumidity = totalHumidity.getAverage();
+        avgCO2 = totalCO2.getAverage();
+        avgVOC = totalVOC.getAverage();
+        avgPM25 = totalPM25.getAverage();
+        maxPM25 = totalPM25.getMax();
+        minPM25 = totalPM25.getMin();
+
 
         debugMessage("----- Reporting -----",1);
         debugMessage(String("Reporting averages (") + sensorReportInterval + " minute): ",1);
@@ -365,12 +371,12 @@ void loop()
         {
           /* Post both the current readings and historical max/min readings to the internet */
           #ifdef DWEET
-            post_dweet(avgPM25, pm25toAQI(MinPm25), pm25toAQI(MaxPm25), pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, rssi);
+            post_dweet(avgPM25, pm25toAQI(minPm25), pm25toAQI(maxPm25), pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, rssi);
           #endif
 
           // Also post the AQI sensor data to ThingSpeak
           #ifdef THINGSPEAK
-            post_thingspeak(avgPM25, pm25toAQI(MinPm25), pm25toAQI(MaxPm25), pm25toAQI(avgPM25));
+            post_thingspeak(avgPM25, pm25toAQI(minPm25), pm25toAQI(maxPm25), pm25toAQI(avgPM25));
           #endif
 
           #ifdef INFLUX
@@ -394,11 +400,16 @@ void loop()
         }
         // Reset sample counters
         numSamples = 0;
-        temperatureFTotal = 0;
-        humidityTotal = 0;
-        co2Total = 0;
-        vocTotal = 0;
-        pm25Total = 0;
+        // temperatureFTotal = 0;
+        // humidityTotal = 0;
+        // co2Total = 0;
+        // vocTotal = 0;
+        // pm25Total = 0;
+        totalTemperatureF.clear();
+        totalHumidity.clear();
+        totalCO2.clear();
+        totalVOC.clear();
+        totalPM25.clear();
 
         // save last report time
         timeLastReport = millis();

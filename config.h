@@ -7,17 +7,17 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 2
+#define DEBUG 2  // DJB-DEV
 
 // Configuration Step 3: simulate WiFi and sensor hardware,
 // returning random but plausible values
 // comment out to turn off
-// #define HARDWARE_SIMULATE
+#define HARDWARE_SIMULATE  // DJB-DEV
 
 // Configuration Step 4: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-#define INFLUX // Log data to InfluxDB server
+// DJB-DEV #define INFLUX // Log data to InfluxDB server
 // #define DWEET       // Log data to Dweet service
 // #define THINGSPEAK  // Log data to ThingSpeak
 
