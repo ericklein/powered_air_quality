@@ -145,6 +145,7 @@ Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25;
 uint8_t numSamples = 0;       // Number of overall sensor readings over reporting interval
 uint32_t timeLastSample = 0;  // timestamp (in ms) for last captured sample 
 uint32_t timeLastReport = 0;  // timestamp (in ms) for last report to network endpoints
+uint32_t timeLastInput =  0;  // timestamp (in ms) for last user input (screensaver)
 
 // used by thingspeak and dweet
 float MinPm25 = 1999; /* Observed minimum PM2.5 */
@@ -204,8 +205,10 @@ OpenWeatherMapAirQuality owmAirQuality;  // global variable for OWM current data
 
 bool screenWasTouched = false;
 
-// set first screen to display
-uint8_t screenCurrent = 0;
+// Set first screen to display.  If that first screen is the screen saver then we need to
+// have the saved screen be something else so it'll get switched to on the first touch
+uint8_t screenCurrent = SCREEN_SAVER;
+uint8_t screenSaved   = SCREEN_INFO; // Saved when screen saver engages so it can be restored
 
 void setup() 
 {
@@ -262,7 +265,8 @@ void setup()
 
   // start tracking timers
   timeLastSample = -(sensorSampleInterval*1000); // forces immediate sample in loop()
-  timeLastReport = millis();
+  timeLastInput = timeLastReport = millis(); // We'll count starup as a "touch"
+  
 }
 
 void loop()
@@ -323,13 +327,45 @@ void loop()
     timeLastSample = millis();
   }
 
-  // user input = change screens
+  // User input = change screens. If screen saver is active a touch means revert to the
+  // previously active screen, otherwise step to the next screen
   boolean istouched = ts.touched();
   if (istouched)
   {
-    ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
-    debugMessage(String("touchscreen pressed, switch to screen ") + screenCurrent,1);
-    screenUpdate(true);
+    // If screen saver was active, switch to the previous active screen
+    if( screenCurrent == SCREEN_SAVER) {
+        screenCurrent = screenSaved;
+        debugMessage(String("touchscreen pressed, screen saver off => ") + screenCurrent,1);
+        screenUpdate(true);
+    }
+    // Otherwise step to the next screen (and wrap around if necessary)
+    else {
+      ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
+      // Allow stepping through screens to include the screen saver screen, in which case
+      // it is up not because the screen saver timer went off but because it was the next
+      // screen in sequence.  In that case, act like the "saved" screen is the INFO screen
+      // so it'll be switched to next in the overall sequence.
+      if(screenCurrent == SCREEN_SAVER) {
+        screenSaved = SCREEN_INFO;  // Technically, (SCREEN_SAVER+1) to preserve the sequence
+      }
+      debugMessage(String("touchscreen pressed, switch to screen ") + screenCurrent,1);
+      screenUpdate(true);
+    }
+    // Save time touch input occurred
+    timeLastInput = millis();
+  }
+  //  No touch input received, is it time to enable the screensaver?
+  else {
+    // If we're not already in screen saver mode, is it time it should be enabled?
+    if(screenCurrent != SCREEN_SAVER) {
+      if( (timeCurrent - timeLastInput) > (screenSaverInterval*1000)) {
+        // Activate screen saver, retaining current screen for easy return
+        screenSaved = screenCurrent;
+        screenCurrent = SCREEN_SAVER;
+        debugMessage(String("Screen saver engaged, will restore to ") + screenSaved,1);
+        screenUpdate(true);
+      }
+    }
   }
 
   // buttonOne.loop();
@@ -421,19 +457,19 @@ void loop()
 void screenUpdate(bool firstTime) 
 {
   switch(screenCurrent) {
-    case 0:
+    case SCREEN_SAVER:
       screenSaver();
       break;
-    case 1:
+    case SCREEN_INFO:
       screenCurrentInfo();
       break;
-    case 2:
+    case SCREEN_VOC:
       screenVOC();
       break;
-    case 3:
+    case SCREEN_COLOR:
       screenColor();
       break;
-    case 4:
+    case SCREEN_GRAPH:
       screenGraph();
       break;
     default:

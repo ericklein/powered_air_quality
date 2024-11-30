@@ -60,6 +60,10 @@ const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"}
   const uint8_t sensorReportInterval = 15;
 #endif
 
+// Screen saver timeout.  Will automatically switch to screen saver if
+// no user input (via touchscreen) in this many seconds
+const uint16_t screenSaverInterval = 300;    // In seconds
+
 // warnings
 const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
 // Subjective color scheme using 16 bit ('565') RGB colors
@@ -121,6 +125,12 @@ const uint8_t hardwareRebootInterval = 10;
 
 // Display
 const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
+// Manage the suported display screens
+#define SCREEN_SAVER    0
+#define SCREEN_INFO     1
+#define SCREEN_VOC      2 
+#define SCREEN_COLOR    3
+#define SCREEN_GRAPH    4
 const uint8_t screenCount = 5;
 
 // CYD pinout
