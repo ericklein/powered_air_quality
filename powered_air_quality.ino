@@ -469,6 +469,9 @@ void screenUpdate(bool firstTime)
     case SCREEN_COLOR:
       screenColor();
       break;
+    case SCREEN_AGGREGATE:
+      screenAggregateData();
+      break;
     case SCREEN_GRAPH:
       screenGraph();
       break;
@@ -633,6 +636,64 @@ void screenCurrentInfo()
     display.print(" AQI");
   }
   debugMessage("screenCurrentInfo() end", 1);
+}
+
+void screenAggregateData()
+// Displays minimum, average, and maximum values for CO2, temperature and humidity
+// using a table-style layout (with labels)
+{
+
+  const uint16_t xHeaderColumn = 10;
+  const uint16_t xCO2Column = 70;
+  const uint16_t xTempColumn = 130;
+  const uint16_t xHumidityColumn = 200;
+  const uint16_t yHeaderRow = 10;
+  const uint16_t yMaxRow = 40;
+  const uint16_t yAvgRow = 70;
+  const uint16_t yMinRow = 100;
+
+  // clear screen
+  display.fillScreen(ILI9341_BLACK);
+
+  // display headers
+  display.setFont();  // Revert to built-in font
+  display.setTextSize(2);
+  display.setTextColor(ILI9341_WHITE);
+  // column
+  display.setCursor(xCO2Column, yHeaderRow); display.print("CO2");
+  display.setCursor(xTempColumn, yHeaderRow); display.print("  F");
+  display.setCursor(xHumidityColumn, yHeaderRow); display.print("RH");
+  // row
+  display.setCursor(xHeaderColumn, yMaxRow); display.print("Max");
+  display.setCursor(xHeaderColumn, yAvgRow); display.print("Avg");
+  display.setCursor(xHeaderColumn, yMinRow); display.print("Min");
+
+  // Fill in the maximum values row
+  display.setCursor(xCO2Column, yMaxRow);
+  display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);  // Use highlight color look-up table
+  display.print(totalCO2.getMax(),0);
+  display.setTextColor(ILI9341_WHITE);
+  
+  display.setCursor(xTempColumn, yMaxRow); display.print(totalTemperatureF.getMax(),1);
+  display.setCursor(xHumidityColumn, yMaxRow); display.print(totalHumidity.getMax(),0);
+
+  // Fill in the average value row
+  display.setCursor(xCO2Column, yAvgRow);
+  display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);  // Use highlight color look-up table
+  display.print(totalCO2.getAverage(),0);
+  display.setTextColor(ILI9341_WHITE);
+
+  display.setCursor(xTempColumn, yAvgRow); display.print(totalTemperatureF.getAverage(),1);
+  display.setCursor(xHumidityColumn, yAvgRow); display.print(totalHumidity.getAverage(),0);
+
+  // Fill in the minimum value row
+  display.setCursor(xCO2Column,yMinRow);
+  display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
+  display.print(totalCO2.getMin(),0);
+  display.setTextColor(ILI9341_WHITE);
+
+  display.setCursor(xTempColumn,yMinRow); display.print(totalTemperatureF.getMin(),1);
+  display.setCursor(xHumidityColumn,yMinRow); display.print(totalHumidity.getMin(),0);
 }
 
 void screenAlert(String messageText)

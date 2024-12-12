@@ -12,7 +12,7 @@
 // Configuration Step 3: simulate WiFi and sensor hardware,
 // returning random but plausible values
 // comment out to turn off
-#define HARDWARE_SIMULATE  // DJB-DEV
+// #define HARDWARE_SIMULATE  // DJB-DEV
 
 // Configuration Step 4: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
@@ -126,12 +126,13 @@ const uint8_t hardwareRebootInterval = 10;
 // Display
 const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
 // Manage the suported display screens
-#define SCREEN_SAVER    0
-#define SCREEN_INFO     1
-#define SCREEN_VOC      2 
-#define SCREEN_COLOR    3
-#define SCREEN_GRAPH    4
-const uint8_t screenCount = 5;
+#define SCREEN_SAVER      0
+#define SCREEN_INFO       1
+#define SCREEN_VOC        2 
+#define SCREEN_COLOR      3
+#define SCREEN_GRAPH      4
+#define SCREEN_AGGREGATE  5
+const uint8_t screenCount = 6;
 
 // CYD pinout
 #define TFT_BACKLIGHT 21
