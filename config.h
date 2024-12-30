@@ -7,17 +7,17 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 2
+#define DEBUG 2  // DJB-DEV
 
 // Configuration Step 3: simulate WiFi and sensor hardware,
 // returning random but plausible values
 // comment out to turn off
-// #define HARDWARE_SIMULATE
+// #define HARDWARE_SIMULATE  // DJB-DEV
 
 // Configuration Step 4: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-#define INFLUX // Log data to InfluxDB server
+// DJB-DEV #define INFLUX // Log data to InfluxDB server
 // #define DWEET       // Log data to Dweet service
 // #define THINGSPEAK  // Log data to ThingSpeak
 
@@ -59,6 +59,10 @@ const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"}
   const uint16_t sensorSampleInterval = 60;
   const uint8_t sensorReportInterval = 15;
 #endif
+
+// Screen saver timeout.  Will automatically switch to screen saver if
+// no user input (via touchscreen) in this many seconds
+const uint16_t screenSaverInterval = 300;    // In seconds
 
 // warnings
 const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
@@ -121,7 +125,14 @@ const uint8_t hardwareRebootInterval = 10;
 
 // Display
 const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
-const uint8_t screenCount = 5;
+// Manage the suported display screens
+#define SCREEN_SAVER      0
+#define SCREEN_INFO       1
+#define SCREEN_VOC        2 
+#define SCREEN_COLOR      3
+#define SCREEN_GRAPH      4
+#define SCREEN_AGGREGATE  5
+const uint8_t screenCount = 6;
 
 // CYD pinout
 #define TFT_BACKLIGHT 21

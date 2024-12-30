@@ -10,6 +10,9 @@
 // private credentials for network, MQTT
 #include "secrets.h"
 
+// Utility class for easy handling of aggregate sensor data
+#include "measure.h"
+
 #ifndef HARDWARE_SIMULATE
   // sensor support
   // instanstiate pm hardware object
@@ -135,21 +138,14 @@ typedef struct envData
 } envData;
 envData sensorData;
 
-float temperatureFTotal = 0;  // running total of temperature over report interval
-float humidityTotal = 0;      // running total of humidity over report interval
-uint16_t co2Total = 0;        // running total of C02 over report interval
-float vocTotal = 0;           // running total of VOC over report interval
-float pm25Total = 0;          // running total of humidity over report interval
-// IMPROVEMENT: avg values can be local to loop() vs. global?
-float avgtemperatureF = 0;    // average temperature over report interval
-float avgHumidity = 0;        // average humidity over report interval
-uint16_t avgCO2 = 0;          // average CO2 over report interval
-float avgVOC = 0;             // average VOC over report interval
-float avgPM25 = 0;            // average PM2.5 over report interval
+
+// Utility class used to streamline accumulating sensor values, averages, min/max &c.
+Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25;
 
 uint8_t numSamples = 0;       // Number of overall sensor readings over reporting interval
 uint32_t timeLastSample = 0;  // timestamp (in ms) for last captured sample 
 uint32_t timeLastReport = 0;  // timestamp (in ms) for last report to network endpoints
+uint32_t timeLastInput =  0;  // timestamp (in ms) for last user input (screensaver)
 
 // used by thingspeak and dweet
 float MinPm25 = 1999; /* Observed minimum PM2.5 */
@@ -209,8 +205,10 @@ OpenWeatherMapAirQuality owmAirQuality;  // global variable for OWM current data
 
 bool screenWasTouched = false;
 
-// set first screen to display
-uint8_t screenCurrent = 0;
+// Set first screen to display.  If that first screen is the screen saver then we need to
+// have the saved screen be something else so it'll get switched to on the first touch
+uint8_t screenCurrent = SCREEN_SAVER;
+uint8_t screenSaved   = SCREEN_INFO; // Saved when screen saver engages so it can be restored
 
 void setup() 
 {
@@ -267,11 +265,21 @@ void setup()
 
   // start tracking timers
   timeLastSample = -(sensorSampleInterval*1000); // forces immediate sample in loop()
-  timeLastReport = millis();
+  timeLastInput = timeLastReport = millis(); // We'll count starup as a "touch"
+  
 }
 
 void loop()
 {
+  // For conveniently handling frequent reference to average values
+  float avgtemperatureF = 0;    // average temperature over report interval
+  float avgHumidity = 0;        // average humidity over report interval
+  uint16_t avgCO2 = 0;          // average CO2 over report interval
+  float avgVOC = 0;             // average VOC over report interval
+  float avgPM25 = 0;            // average PM2.5 over report interval
+  float minPM25 = 0;            // minimum PM2.5 over report interval
+  float maxPM25 = 0;            // maximum PM2.5 over report interval
+
   // update current timer value
   uint32_t timeCurrent = millis();
 
@@ -299,32 +307,65 @@ void loop()
 
     // add to the running totals
     numSamples++;
-    temperatureFTotal += sensorData.ambientTemperatureF;
-    humidityTotal += sensorData.ambientHumidity;
-    co2Total += sensorData.ambientCO2;
-    vocTotal += sensorData.vocIndex;
-    pm25Total += sensorData.pm25;
+    totalTemperatureF.include(sensorData.ambientTemperatureF);
+    totalHumidity.include(sensorData.ambientHumidity);
+    totalCO2.include(sensorData.ambientCO2);
+    totalVOC.include(sensorData.vocIndex);
+    totalPM25.include(sensorData.pm25);
 
     debugMessage(String("Sample #") + numSamples + ", running totals: ",2);
-    debugMessage(String("temperatureF total: ") + temperatureFTotal,2);
-    debugMessage(String("Humidity total: ") + humidityTotal,2);
-    debugMessage(String("CO2 total: ") + co2Total,2);    
-    debugMessage(String("VOC total: ") + vocTotal,2);
-    debugMessage(String("PM25 total: ") + pm25Total,2);
+    debugMessage(String("temperatureF total: ") + totalTemperatureF.getTotal(),2);
+    debugMessage(String("Humidity total: ") + totalHumidity.getTotal(),2);
+    debugMessage(String("CO2 total: ") + totalCO2.getTotal(),2);    
+    debugMessage(String("VOC total: ") + totalVOC.getTotal(),2);
+    debugMessage(String("PM25 total: ") + totalPM25.getTotal(),2);
 
-    screenSaver();
+    // screenSaver();  DJB-DEV -- don't know why this was here instead of screenUpdate()
+    screenUpdate(false);
 
     // Save last sample time
     timeLastSample = millis();
   }
 
-  // user input = change screens
+  // User input = change screens. If screen saver is active a touch means revert to the
+  // previously active screen, otherwise step to the next screen
   boolean istouched = ts.touched();
   if (istouched)
   {
-    ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
-    debugMessage(String("touchscreen pressed, switch to screen ") + screenCurrent,1);
-    screenUpdate(true);
+    // If screen saver was active, switch to the previous active screen
+    if( screenCurrent == SCREEN_SAVER) {
+        screenCurrent = screenSaved;
+        debugMessage(String("touchscreen pressed, screen saver off => ") + screenCurrent,1);
+        screenUpdate(true);
+    }
+    // Otherwise step to the next screen (and wrap around if necessary)
+    else {
+      ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
+      // Allow stepping through screens to include the screen saver screen, in which case
+      // it is up not because the screen saver timer went off but because it was the next
+      // screen in sequence.  In that case, act like the "saved" screen is the INFO screen
+      // so it'll be switched to next in the overall sequence.
+      if(screenCurrent == SCREEN_SAVER) {
+        screenSaved = SCREEN_INFO;  // Technically, (SCREEN_SAVER+1) to preserve the sequence
+      }
+      debugMessage(String("touchscreen pressed, switch to screen ") + screenCurrent,1);
+      screenUpdate(true);
+    }
+    // Save time touch input occurred
+    timeLastInput = millis();
+  }
+  //  No touch input received, is it time to enable the screensaver?
+  else {
+    // If we're not already in screen saver mode, is it time it should be enabled?
+    if(screenCurrent != SCREEN_SAVER) {
+      if( (timeCurrent - timeLastInput) > (screenSaverInterval*1000)) {
+        // Activate screen saver, retaining current screen for easy return
+        screenSaved = screenCurrent;
+        screenCurrent = SCREEN_SAVER;
+        debugMessage(String("Screen saver engaged, will restore to ") + screenSaved,1);
+        screenUpdate(true);
+      }
+    }
   }
 
   // buttonOne.loop();
@@ -336,7 +377,7 @@ void loop()
   // }
 
   // do we have network endpoints to report to?
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(HARDWARE_SIMULATE)
     // is it time to report to the network endpoints?
     if ((timeCurrent - timeLastReport) >= (sensorReportInterval * 60 * 1000))  // converting sensorReportInterval into milliseconds
     {
@@ -344,14 +385,15 @@ void loop()
       if (numSamples != 0) 
       {
 
-        // average the sample totals
-        avgtemperatureF = temperatureFTotal / numSamples;
-        avgHumidity = humidityTotal / numSamples;
-        avgCO2 = co2Total / numSamples;
-        avgVOC = vocTotal / numSamples;
-        avgPM25 = pm25Total / numSamples;
-        if (avgPM25 > MaxPm25) MaxPm25 = avgPM25;
-        if (avgPM25 < MinPm25) MinPm25 = avgPM25;
+        // Get averaged sample values from the Measure utliity class objects
+        avgtemperatureF = totalTemperatureF.getAverage();
+        avgHumidity = totalHumidity.getAverage();
+        avgCO2 = totalCO2.getAverage();
+        avgVOC = totalVOC.getAverage();
+        avgPM25 = totalPM25.getAverage();
+        maxPM25 = totalPM25.getMax();
+        minPM25 = totalPM25.getMin();
+
 
         debugMessage("----- Reporting -----",1);
         debugMessage(String("Reporting averages (") + sensorReportInterval + " minute): ",1);
@@ -365,12 +407,12 @@ void loop()
         {
           /* Post both the current readings and historical max/min readings to the internet */
           #ifdef DWEET
-            post_dweet(avgPM25, pm25toAQI(MinPm25), pm25toAQI(MaxPm25), pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, rssi);
+            post_dweet(avgPM25, pm25toAQI(minPm25), pm25toAQI(maxPm25), pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, rssi);
           #endif
 
           // Also post the AQI sensor data to ThingSpeak
           #ifdef THINGSPEAK
-            post_thingspeak(avgPM25, pm25toAQI(MinPm25), pm25toAQI(MaxPm25), pm25toAQI(avgPM25));
+            post_thingspeak(avgPM25, pm25toAQI(minPm25), pm25toAQI(maxPm25), pm25toAQI(avgPM25));
           #endif
 
           #ifdef INFLUX
@@ -394,11 +436,16 @@ void loop()
         }
         // Reset sample counters
         numSamples = 0;
-        temperatureFTotal = 0;
-        humidityTotal = 0;
-        co2Total = 0;
-        vocTotal = 0;
-        pm25Total = 0;
+        // temperatureFTotal = 0;
+        // humidityTotal = 0;
+        // co2Total = 0;
+        // vocTotal = 0;
+        // pm25Total = 0;
+        totalTemperatureF.clear();
+        totalHumidity.clear();
+        totalCO2.clear();
+        totalVOC.clear();
+        totalPM25.clear();
 
         // save last report time
         timeLastReport = millis();
@@ -410,19 +457,22 @@ void loop()
 void screenUpdate(bool firstTime) 
 {
   switch(screenCurrent) {
-    case 0:
+    case SCREEN_SAVER:
       screenSaver();
       break;
-    case 1:
+    case SCREEN_INFO:
       screenCurrentInfo();
       break;
-    case 2:
+    case SCREEN_VOC:
       screenVOC();
       break;
-    case 3:
+    case SCREEN_COLOR:
       screenColor();
       break;
-    case 4:
+    case SCREEN_AGGREGATE:
+      screenAggregateData();
+      break;
+    case SCREEN_GRAPH:
       screenGraph();
       break;
     default:
@@ -586,6 +636,64 @@ void screenCurrentInfo()
     display.print(" AQI");
   }
   debugMessage("screenCurrentInfo() end", 1);
+}
+
+void screenAggregateData()
+// Displays minimum, average, and maximum values for CO2, temperature and humidity
+// using a table-style layout (with labels)
+{
+
+  const uint16_t xHeaderColumn = 10;
+  const uint16_t xCO2Column = 70;
+  const uint16_t xTempColumn = 130;
+  const uint16_t xHumidityColumn = 200;
+  const uint16_t yHeaderRow = 10;
+  const uint16_t yMaxRow = 40;
+  const uint16_t yAvgRow = 70;
+  const uint16_t yMinRow = 100;
+
+  // clear screen
+  display.fillScreen(ILI9341_BLACK);
+
+  // display headers
+  display.setFont();  // Revert to built-in font
+  display.setTextSize(2);
+  display.setTextColor(ILI9341_WHITE);
+  // column
+  display.setCursor(xCO2Column, yHeaderRow); display.print("CO2");
+  display.setCursor(xTempColumn, yHeaderRow); display.print("  F");
+  display.setCursor(xHumidityColumn, yHeaderRow); display.print("RH");
+  // row
+  display.setCursor(xHeaderColumn, yMaxRow); display.print("Max");
+  display.setCursor(xHeaderColumn, yAvgRow); display.print("Avg");
+  display.setCursor(xHeaderColumn, yMinRow); display.print("Min");
+
+  // Fill in the maximum values row
+  display.setCursor(xCO2Column, yMaxRow);
+  display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);  // Use highlight color look-up table
+  display.print(totalCO2.getMax(),0);
+  display.setTextColor(ILI9341_WHITE);
+  
+  display.setCursor(xTempColumn, yMaxRow); display.print(totalTemperatureF.getMax(),1);
+  display.setCursor(xHumidityColumn, yMaxRow); display.print(totalHumidity.getMax(),0);
+
+  // Fill in the average value row
+  display.setCursor(xCO2Column, yAvgRow);
+  display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);  // Use highlight color look-up table
+  display.print(totalCO2.getAverage(),0);
+  display.setTextColor(ILI9341_WHITE);
+
+  display.setCursor(xTempColumn, yAvgRow); display.print(totalTemperatureF.getAverage(),1);
+  display.setCursor(xHumidityColumn, yAvgRow); display.print(totalHumidity.getAverage(),0);
+
+  // Fill in the minimum value row
+  display.setCursor(xCO2Column,yMinRow);
+  display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
+  display.print(totalCO2.getMin(),0);
+  display.setTextColor(ILI9341_WHITE);
+
+  display.setCursor(xTempColumn,yMinRow); display.print(totalTemperatureF.getMin(),1);
+  display.setCursor(xHumidityColumn,yMinRow); display.print(totalHumidity.getMin(),0);
 }
 
 void screenAlert(String messageText)
