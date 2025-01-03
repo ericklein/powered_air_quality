@@ -14,11 +14,7 @@
 #include "measure.h"
 
 #ifndef HARDWARE_SIMULATE
-  // sensor support
-  // instanstiate pm hardware object
-  // #include "Adafruit_PM25AQI.h"
-  // Adafruit_PM25AQI pmSensor = Adafruit_PM25AQI();
-
+  // instanstiate SEN5X hardware object
   #include <SensirionI2CSen5x.h>
   SensirionI2CSen5x pmSensor;
 
@@ -115,29 +111,15 @@ typedef struct envData
   float ambientHumidity;        // RH [%], range 0 to 100
   uint16_t  ambientCO2;         // ppm, range 400 to 2000
 
-  // Common data to PMSA003I and SEN5x
+  // SEN5x data
   float pm25;                   // PM2.5 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
   float pm1;                    // PM1.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
   float pm10;                   // PM10.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
-
-  // SEN5x specific data
   float pm4;                    // PM4.0 [µg/m³], range 0 to 1000, NAN if unknown
   float vocIndex;               // Sensiron VOC Index, range 0 to 500, NAN in unknown
   float noxIndex;               // NAN for SEN54, also NAN for first 10-11 seconds on SEN55
-
-  // PMSA003I specific data
-  // uint16_t pm10_env;         // Environmental PM1.0
-  // uint16_t pm25_env;         // Environmental PM2.5
-  // uint16_t pm100_env;        // Environmental PM10.0
-  // uint16_t particles_03um;   //< 0.3um Particle Count
-  // unit16_t particles_05um;   //< 0.5um Particle Count
-  // unit16_t particles_10um;   //< 1.0um Particle Count
-  // unit16_t particles_25um;   //< 2.5um Particle Count
-  // unit16_t particles_50um;   //< 5.0um Particle Count
-  // unit16_t particles_100um;  //< 10.0um Particle Count
 } envData;
 envData sensorData;
-
 
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.
 Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25;
@@ -927,19 +909,14 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
   void  sensorPMSimulate()
   // Simulates sensor reading from PMSA003I sensor
   {
-    // tempF and humidity come from SCD4X simulation
+    // Note: tempF and humidity come from SCD4X simulation
 
-    // Common to PMSA003I and SEN5x
     sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
     sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
     sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
-
-    // PMSA003I specific values
-
-    // SEN5x specific values
     sensorData.pm4 = random(sensorPMMin, sensorPMMax) / 100.0;
     sensorData.vocIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
-    // not supported on SEN54
+    // IMPROVEMENT: not supported on SEN54, so return NAN
     //sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
 
     debugMessage(String("SIMULATED SEN5x PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex,1);
@@ -1295,15 +1272,6 @@ bool sensorPMInit()
   #ifdef HARDWARE_SIMULATE
     return true;
   #else
-    // // pmsa003i
-    // if (pmSensor.begin_I2C()) 
-    // {
-    //   debugMessage("PMSA003I initialized",1);
-    //   return true;
-    // }
-    // return false;
-    // SEN5x
-
     uint16_t error;
     char errorMessage[256];
 
@@ -1362,34 +1330,6 @@ bool sensorPMRead()
     sensorPMSimulate();
     return true;
   #else
-    // pmsa003i
-    // PM25_AQI_Data data;
-    // if (! pmSensor.read(&data)) 
-    // {
-    //   return false;
-    // }
-    // // successful read, store data
-
-    // // sensorData.pm1 = data.pm10_standard;
-    // sensorData.pm25 = data.pm25_standard;
-    // // sensorData.pm10 = data.pm100_standard;
-    // // sensorData.pm25_env = data.pm25_env;
-    // // sensorData.particles_03um = data.particles_03um;
-    // // sensorData.particles_05um = data.particles_05um;
-    // // sensorData.particles_10um = data.particles_10um;
-    // // sensorData.particles_25um = data.particles_25um;
-    // // sensorData.particles_50um = data.particles_50um;
-    // // sensorData.particles_100um = data.particles_100um;
-
-    // debugMessage(String("PM2.5 reading is ") + sensorData.pm25 + " or AQI " + pm25toAQI(sensorData.pm25),1);
-    // // debugMessage(String("Particles > 0.3um / 0.1L air:") + sensorData.particles_03um,2);
-    // // debugMessage(String("Particles > 0.5um / 0.1L air:") + sensorData.particles_05um,2);
-    // // debugMessage(String("Particles > 1.0um / 0.1L air:") + sensorData.particles_10um,2);
-    // // debugMessage(String("Particles > 2.5um / 0.1L air:") + sensorData.particles_25um,2);
-    // // debugMessage(String("Particles > 5.0um / 0.1L air:") + sensorData.particles_50um,2);
-    // // debugMessage(String("Particles > 10 um / 0.1L air:") + sensorData.particles_100um,2);
-    // return true;
-    // SEN5x
     uint16_t error;
     char errorMessage[256];
     // we'll use the SCD4X values for these
