@@ -66,10 +66,6 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
   #include <time.h>
 #endif
 
-// button support
-// #include <ezButton.h>
-// ezButton buttonOne(buttonD1Pin);
-
 // external function dependencies
 #ifdef DWEET
   extern void post_dweet(float pm25, float minaqi, float maxaqi, float aqi, float temperatureF, float vocIndex, float humidity, int rssi);
@@ -239,8 +235,6 @@ void setup()
   vspi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
   ts.begin(vspi);
 
-  // buttonOne.setDebounceTime(buttonDebounceDelay);
-
   // start WiFi (for OWM)
   if (!networkConnect())
     hardwareData.rssi = 0;            // 0 = no WiFi
@@ -302,7 +296,6 @@ void loop()
     debugMessage(String("VOC total: ") + totalVOC.getTotal(),2);
     debugMessage(String("PM25 total: ") + totalPM25.getTotal(),2);
 
-    // screenSaver();  DJB-DEV -- don't know why this was here instead of screenUpdate()
     screenUpdate(false);
 
     // Save last sample time
@@ -349,14 +342,6 @@ void loop()
       }
     }
   }
-
-  // buttonOne.loop();
-  // if (buttonOne.isReleased())
-  // {
-  //   ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
-  //   debugMessage(String("button 1 press, switch to screen ") + screenCurrent,1);
-  //   screenUpdate(true);
-  // }
 
   // do we have network endpoints to report to?
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(HARDWARE_SIMULATE)
@@ -682,14 +667,14 @@ void screenAlert(String messageText)
 // Display error message centered on screen
 {
   debugMessage(String("screenAlert '") + messageText + "' start",1);
-  // Clear the screen
-  display.fillScreen(ILI9341_BLACK);
 
   int16_t x1, y1;
   uint16_t width, height;
 
   display.setTextColor(ILI9341_WHITE);
   display.setFont(&FreeSans24pt7b);
+  // Clear the screen
+  display.fillScreen(ILI9341_BLACK);
   display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &width, &height);
   if (width >= display.width()) {
     debugMessage(String("ERROR: screenAlert '") + messageText + "' is " + abs(display.width()-width) + " pixels too long", 1);
@@ -713,92 +698,37 @@ void screenGraph()
 }
 
 void screenColor()
-// Represents CO2 value on screen as a single color fill
+// Represents CO2 and PM25 values as a single color rectangles
 {
   debugMessage("screenColor start",1);
-  display.fillScreen(warningColor[co2Range(sensorData.ambientCO2)]);  // Use highlight color LUT
+  display.setFont(&FreeSans18pt7b);
+  display.setTextColor(ILI9341_WHITE);
+  display.fillScreen(ILI9341_BLACK);
+  display.fillRoundRect(0, 0, ((display.width()/2)-2), display.height(), 4, warningColor[co2Range(sensorData.ambientCO2)]);
+  display.setCursor(display.width()/8,display.height()/2);
+  display.print("CO2");
+  display.fillRoundRect(((display.width()/2)+2), 0, ((display.width()/2)-2), display.height(), 4, warningColor[aqiRange(sensorData.pm25)]);
+  display.setCursor(display.width()*5/8,display.height()/2);
+  display.print("PM25");
   debugMessage("screenColor end",1);
 }
 
 void screenSaver()
 // Display current CO2 reading at a random location (e.g. "screen saver")
 {
-  int16_t x, y;
-
   debugMessage("screenSaver start",1);
   display.fillScreen(ILI9341_BLACK);
   display.setTextSize(1);  // Needed so custom fonts scale properly
-  display.setFont(&FreeSans18pt7b);
+  display.setFont(&FreeSans24pt7b);
 
   // Pick a random location that'll show up
-  x = random(xMargins,display.width()-xMargins-64);  // 64 pixels leaves room for 4 digit CO2 value
-  y = random(35,display.height()-yMargins); // 35 pixels leaves vertical room for text display
+  int16_t x = random(xMargins,display.width()-xMargins-72);  // 64 pixels leaves room for 4 digit CO2 value
+  int16_t y = random(44,display.height()-yMargins); // 35 pixels leaves vertical room for text display
   display.setCursor(x,y);
   display.setTextColor(warningColor[co2Range(sensorData.ambientCO2)]);  // Use highlight color LUT
   display.println(sensorData.ambientCO2);
   debugMessage("screenSaver end",1);
 }
-
-// void screenAggregateData()
-// // Displays minimum, average, and maximum values for CO2, temperature and humidity
-// // using a table-style layout (with labels)
-// {
-
-//   const uint16_t xHeaderColumn = 10;
-//   const uint16_t xCO2Column = 70;
-//   const uint16_t xTempColumn = 130;
-//   const uint16_t xHumidityColumn = 200;
-//   const uint16_t yHeaderRow = 10;
-//   const uint16_t yMaxRow = 40;
-//   const uint16_t yAvgRow = 70;
-//   const uint16_t yMinRow = 100;
-
-//   // clear screen
-//   display.fillScreen(ST77XX_BLACK);
-
-//   // display headers
-//   display.setFont();  // Revert to built-in font
-//   display.setTextSize(2);
-//   display.setTextColor(ST77XX_WHITE);
-//   // column
-//   display.setCursor(xCO2Column, yHeaderRow); display.print("CO2");
-//   display.setCursor(xTempColumn, yHeaderRow); display.print("  F");
-//   display.setCursor(xHumidityColumn, yHeaderRow); display.print("RH");
-//   // row
-//   display.setCursor(xHeaderColumn, yMaxRow); display.print("Max");
-//   display.setCursor(xHeaderColumn, yAvgRow); display.print("Avg");
-//   display.setCursor(xHeaderColumn, yMinRow); display.print("Min");
-
-//   // Fill in the maximum values row
-//   display.setCursor(xCO2Column, yMaxRow);
-//   display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);  // Use highlight color look-up table
-//   display.print(totalCO2.getMax(),0);
-//   display.setTextColor(ST77XX_WHITE);
-  
-//   display.setCursor(xTempColumn, yMaxRow); display.print(totalTemperatureF.getMax(),1);
-//   display.setCursor(xHumidityColumn, yMaxRow); display.print(totalHumidity.getMax(),0);
-
-//   // Fill in the average value row
-//   display.setCursor(xCO2Column, yAvgRow);
-//   display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);  // Use highlight color look-up table
-//   display.print(totalCO2.getAverage(),0);
-//   display.setTextColor(ST77XX_WHITE);
-
-//   display.setCursor(xTempColumn, yAvgRow); display.print(totalTemperatureF.getAverage(),1);
-//   display.setCursor(xHumidityColumn, yAvgRow); display.print(totalHumidity.getAverage(),0);
-
-//   // Fill in the minimum value row
-//   display.setCursor(xCO2Column,yMinRow);
-//   display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
-//   display.print(totalCO2.getMin(),0);
-//   display.setTextColor(ST77XX_WHITE);
-
-//   display.setCursor(xTempColumn,yMinRow); display.print(totalTemperatureF.getMin(),1);
-//   display.setCursor(xHumidityColumn,yMinRow); display.print(totalHumidity.getMin(),0);
-
-//   // Display current battery level on bottom right of screen
-//   //screenHelperBatteryStatus((display.width()-xMargins-batteryBarWidth-3),(display.height()-yMargins-batteryBarHeight), batteryBarWidth, batteryBarHeight);
-// }
 
 void screenVOC()
 {
@@ -1363,6 +1293,7 @@ bool sensorCO2Init()
     uint16_t error;
 
     // Wire.begin();
+    // Improvement: Do you need another Wire.begin() [see sensorPMInit()]?
     Wire.begin(CYD_SDA, CYD_SCL);
     co2Sensor.begin(Wire);
 
@@ -1375,6 +1306,7 @@ bool sensorCO2Init()
     }
 
     // Check onboard configuration settings while not in active measurement mode
+    // IMPROVEMENT: These don't handle error conditions, which should be rare as caught above
     float offset;
     error = co2Sensor.getTemperatureOffset(offset);
     if (error == 0){
@@ -1383,6 +1315,7 @@ bool sensorCO2Init()
           debugMessage(String("Initial SCD4X temperature offset ") + offset + " ,set to " + sensorTempCOffset,2);
     }
 
+    // IMPROVEMENT: These don't handle error conditions, which should be rare as caught above
     uint16_t sensor_altitude;
     error = co2Sensor.getSensorAltitude(sensor_altitude);
     if (error == 0){
@@ -1495,7 +1428,7 @@ uint8_t aqiRange(float pm25)
 }
 
 uint8_t vocRange(float vocIndex)
-// converts pm25 value to index value for labeling and color
+// converts vocIndex value to index value for labeling and color
 {
   uint8_t vocRange;
   if (vocIndex <= vocFair) vocRange = 0;
