@@ -7,17 +7,17 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-#define DEBUG 2  // DJB-DEV
+// #define DEBUG 1
 
 // Configuration Step 3: simulate WiFi and sensor hardware,
 // returning random but plausible values
 // comment out to turn off
-// #define HARDWARE_SIMULATE  // DJB-DEV
+// #define HARDWARE_SIMULATE
 
 // Configuration Step 4: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-// DJB-DEV #define INFLUX // Log data to InfluxDB server
+// #define INFLUX // Log data to InfluxDB server
 // #define DWEET       // Log data to Dweet service
 // #define THINGSPEAK  // Log data to ThingSpeak
 
@@ -144,11 +144,11 @@ const uint8_t screenCount = 6;
 #define TFT_RST -1
 
 // screen layout assists in pixels
-const uint16_t xMargins = 10;
-const uint16_t yMargins = 2;
-const uint16_t wifiBarWidth = 3;
-const uint16_t wifiBarHeightIncrement = 3;
-const uint16_t wifiBarSpacing = 5;
+const uint8_t xMargins = 5;
+const uint8_t yMargins = 5;
+const uint8_t wifiBarWidth = 3;
+const uint8_t wifiBarHeightIncrement = 3;
+const uint8_t wifiBarSpacing = 5;
 
 // Buttons
 // const uint8_t buttonD1Pin = 1; // initially LOW
