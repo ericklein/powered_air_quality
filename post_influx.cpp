@@ -20,14 +20,14 @@
   // Shared helper function
   extern void debugMessage(String messageText, int messageLevel);
 
+  // To maximize portability, we use our own local approach to posting to InfluxDB via HTTP.
   #include "InfluxClient.h"
 
-  // InfluxDB setup.  See config.h and secrets.h for site-specific settings.  Both InfluxDB v1.X
-  // and v2.X are supported here depending on configuration settings in secrets.h.  Code here
-  // reflects a number of presumptions about the data schema and InfluxDB configuration:
-  //
+  // InfluxDB setup.  See config.h and secrets.h for site-specific settings.    Code here
+  // reflects a number of presumptions about the data schema and InfluxDB configuration.
 
   #ifdef INFLUX_V1
+    // At present Influx HTTP support only conforms to the InfluxDB v2.X API
     #error "InfluxDB Version 1 not supported!"
   #endif
 

@@ -25,22 +25,16 @@
 //  #define MQTT_PASSWORD	"key_value"
 // #endif
 
-// Configuration Step 5: If using influxdb, set login and storage parameters
+// Configuration Step 5: If using InfluxDB, set login and storage parameters.
+// Note that InfluxDB v1.X is no longer supported
 // #ifdef INFLUX
-	// For an InfluxDB v1.X server:
-	// #define INFLUX_V1			"key_value"
-	// #define INFLUXDB_URL			"key_value"
-	// #define INFLUXDB_DB_NAME		"key_value"
-	// #define INFLUXDB_USER		"key_value"
-	// #define INFLUXDB_PASSWORD	"key_value"
-	//
-	// For an InfluxDB v2.X server:
-	// #define INFLUX_V2			"key_value"
-	// #define INFLUXDB_URL			"IP address with port number"
-	// #define INFLUXDB_TOKEN		"key_value"
-	// #define INFLUXDB_ORG			"key_value"
-	// #define INFLUXDB_BUCKET		"key_value"
-// #endif
+// For an InfluxDB v2.X server:
+//	#define INFLUX_V2			
+//	#define INFLUXDB_HOST			"HostnameOrIPaddr:port" // Default port is 8086
+//	#define INFLUXDB_TOKEN		"API-Key"
+//	#define INFLUXDB_ORG			"Organization"
+//	#define INFLUXDB_BUCKET		"Bucket"
+// #endif // INFLUX
 
 // Configuration Step 6: Set key device and installation configuration parameters.  These are used
 // widely throughout the code to properly identify the device and generate important

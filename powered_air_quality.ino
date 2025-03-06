@@ -19,8 +19,8 @@
   SensirionI2CSen5x pmSensor;
 
   // instanstiate SCD4X hardware object
-  #include <SensirionI2CScd4x.h>
-  SensirionI2CScd4x co2Sensor;
+  #include <SensirionI2cScd4x.h>
+  SensirionI2cScd4x co2Sensor;
 
   // WiFi support
   #if defined(ESP8266)
@@ -31,6 +31,7 @@
   #include <HTTPClient.h>
   WiFiClient client;   // used by OWM and MQTT
 #endif
+
 
 #include <SPI.h>
 // Note: the ESP32 has 2 SPI ports, to have ESP32-2432S028R work with the TFT and Touch on different SPI ports each needs to be defined and passed to the library
@@ -389,7 +390,7 @@ void loop()
         {
           /* Post both the current readings and historical max/min readings to the internet */
           #ifdef DWEET
-            post_dweet(avgPM25, pm25toAQI(minPm25), pm25toAQI(maxPm25), pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, rssi);
+            post_dweet(avgPM25, pm25toAQI(minPm25), pm25toAQI(maxPm25), pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, hardwareData.rssi);
           #endif
 
           // Also post the AQI sensor data to ThingSpeak
@@ -1364,7 +1365,7 @@ bool sensorCO2Init()
 
     // Wire.begin();
     Wire.begin(CYD_SDA, CYD_SCL);
-    co2Sensor.begin(Wire);
+    co2Sensor.begin(Wire,SCD40_I2C_ADDR_62);
 
     // stop potentially previously started measurement.
     error = co2Sensor.stopPeriodicMeasurement();
@@ -1432,7 +1433,7 @@ bool sensorCO2Read()
 
       // Is data ready to be read?
       bool isDataReady = false;
-      error = co2Sensor.getDataReadyFlag(isDataReady);
+      error = co2Sensor.getDataReadyStatus(isDataReady);
       if (error) {
           errorToString(error, errorMessage, 256);
           debugMessage(String("Error trying to execute getDataReadyFlag(): ") + errorMessage,1);

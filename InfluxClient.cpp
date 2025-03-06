@@ -29,7 +29,9 @@ void InfluxClient::writePoint(InfluxPoint point)
   Serial.println("DATA:");
   Serial.println(pointdata);
 
-  // Print a 'curl' version of this Influx post for testing purposes
+  // Print a 'curl' version of this Influx post for testing purposes. Enabled only in DEBUG mode (see code below)
+  // but commented out here as it's an optional debugging tool even then.  Uncomment to have the DEBUG output
+  // include a 'curl' command you can copy and paste into a command shell in order to test InfluxDB access.
   // _printCurl(influxurl, authvalue, pointdata);
 
   // Send it!
@@ -44,6 +46,7 @@ void InfluxClient::writePoint(InfluxPoint point)
   }
 }
 
+#ifdef DEBUG
 // To aid in development and testing, print a 'curl' command that could carry out
 // the post to Influx
 void InfluxClient::_printCurl(String influxurl, String authvalue, String pointdata)
@@ -59,6 +62,7 @@ void InfluxClient::_printCurl(String influxurl, String authvalue, String pointda
   Serial.println("  '");
   Serial.println("***** END *****");
 }
+#endif // DEBUG
 
 // Following the Influx API documentation ()
 /*
