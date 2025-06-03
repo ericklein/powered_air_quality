@@ -19,15 +19,10 @@ void InfluxClient::writePoint(InfluxPoint point)
   int httpcode;
   String influxurl, authvalue, pointdata;
 
-  // Based on Influx v2 API documentation
+  // Construct HTTP POST elements (as detailed in Influx v2 API documentation)
   authvalue = "Token " + _apitoken;
   influxurl = "http://" + _server + "/api/v2/write?org=" + _org + "&bucket=" + _bucket + "&precision=ns";
   pointdata = point._measurement + "," + point._tags + " " + point._fields;
-
-  Serial.print("BEGIN: "); Serial.println(influxurl);
-  Serial.print("Authorization: ");  Serial.println(authvalue);
-  Serial.println("DATA:");
-  Serial.println(pointdata);
 
   // Print a 'curl' version of this Influx post for testing purposes. Enabled only in DEBUG mode (see code below)
   // but commented out here as it's an optional debugging tool even then.  Uncomment to have the DEBUG output
@@ -38,6 +33,8 @@ void InfluxClient::writePoint(InfluxPoint point)
   httpcode = _httpPOSTRequest(influxurl, authvalue, pointdata);
 
   // httpcode will be negative on error, but HTTP status might indicate failure
+  // TODO: Figure out how writePoint() might return the HTTP status code in a 
+  // meaningful way to the invoker (which doesn't know anything about HTTP).
   if (httpcode > 0) {
     // HTTP POST complete, print result code
     Serial.println("HTTP POST [" + _server + "], result code: " + String(httpcode));
@@ -51,6 +48,12 @@ void InfluxClient::writePoint(InfluxPoint point)
 // the post to Influx
 void InfluxClient::_printCurl(String influxurl, String authvalue, String pointdata)
 {
+  /* Additional diagnostic info (if desired)
+  Serial.print("BEGIN: "); Serial.println(influxurl);
+  Serial.print("Authorization: ");  Serial.println(authvalue);
+  Serial.println("DATA:");
+  Serial.println(pointdata);
+  */
   Serial.println("***** Try this 'curl' command *****");
   Serial.println("curl --request POST \\");
   Serial.print("\""); Serial.print(influxurl); Serial.println("\" \\");
