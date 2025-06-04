@@ -14,13 +14,18 @@
 #include "measure.h"
 
 #ifndef HARDWARE_SIMULATE
-  // instanstiate SEN5X hardware object
+  // instanstiate SEN66 hardware object
+  #include <SensirionI2cSen66.h>
+  SensirionI2cSen66 paqSensor;
+
+/*
   #include <SensirionI2CSen5x.h>
   SensirionI2CSen5x pmSensor;
 
   // instanstiate SCD4X hardware object
   #include <SensirionI2CScd4x.h>
   SensirionI2CScd4x co2Sensor;
+*/
 
   // WiFi support
   #if defined(ESP8266)
@@ -103,12 +108,10 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 // environment sensor data
 typedef struct envData
 {
-  // SCD40 data
+  // All data measured via SEN66
   float ambientTemperatureF;    // range -10C to 60C
   float ambientHumidity;        // RH [%], range 0 to 100
   uint16_t  ambientCO2;         // ppm, range 400 to 2000
-
-  // SEN5x data
   float pm25;                   // PM2.5 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
   float pm1;                    // PM1.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
   float pm10;                   // PM10.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
@@ -217,6 +220,12 @@ void setup()
   display.fillScreen(ILI9341_BLACK);
   screenAlert("Initializing");
 
+  if( !sensorPAQInit()) {
+    debugMessage("SEN6X initialization failure", 1);
+    screenAlert("No SEN6X");    
+  }
+
+/*
   // Initialize PM25 sensor
   if (!sensorPMInit()) {
     debugMessage("SEN5X initialization failure", 1);
@@ -231,6 +240,7 @@ void setup()
     // Hardware deep sleep typically resolves it, so quickly cycle the hardware
     powerDisable(hardwareRebootInterval);
   }
+*/
 
   // Setup the VSPI to use custom pins for the touchscreen
   vspi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
@@ -263,6 +273,10 @@ void loop()
   // is it time to read the sensor?
   if((timeCurrent - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
   {
+    if (!sensorPAQRead()) {
+      // TODO: what else to do here...
+    }
+    /*
     if (!sensorPMRead())
     {
       // TODO: what else to do here, see OWM Reads...
@@ -272,6 +286,7 @@ void loop()
     {
       // TODO: what else to do here
     }
+    */
 
     // Get local weather and air quality info from Open Weather Map
     if (!OWMCurrentWeatherRead()) {
@@ -1212,6 +1227,73 @@ bool networkGetTime(String timezone)
   #endif
 }
 
+bool sensorPAQInit()
+{
+    static char errorMessage[64];
+    static int16_t error;
+
+    Wire.begin(CYD_SDA, CYD_SCL);
+    paqSensor.begin(Wire, SEN66_I2C_ADDR_6B);
+
+    error = paqSensor.deviceReset();
+    if (error != 0) {
+        Serial.print("Error trying to execute deviceReset(): ");
+        errorToString(error, errorMessage, sizeof errorMessage);
+        Serial.println(errorMessage);
+        return true;
+    }
+    delay(1200);
+    int8_t serialNumber[32] = {0};
+    error = paqSensor.getSerialNumber(serialNumber, 32);
+    if (error != 0) {
+        Serial.print("Error trying to execute getSerialNumber(): ");
+        errorToString(error, errorMessage, sizeof errorMessage);
+        Serial.println(errorMessage);
+        return false;
+    }
+    Serial.print("serialNumber: ");
+    Serial.print((const char*)serialNumber);
+    Serial.println();
+    error = paqSensor.startContinuousMeasurement();
+    if (error != 0) {
+        Serial.print("Error trying to execute startContinuousMeasurement(): ");
+        errorToString(error, errorMessage, sizeof errorMessage);
+        Serial.println(errorMessage);
+        return false;
+    }
+    return true;
+}
+
+bool sensorPAQRead()
+{
+  #ifdef HARDWARE_SIMULATE
+    return true;
+  #endif
+    static char errorMessage[64];
+    static int16_t error;
+    float ambientTemperatureC;
+
+    error = paqSensor.readMeasuredValues(
+      sensorData.pm1, sensorData.pm25, sensorData.pm4,
+      sensorData.pm10, sensorData.ambientHumidity, ambientTemperatureC , sensorData.vocIndex,
+      sensorData.noxIndex, sensorData.ambientCO2);
+
+  if (error != 0) {
+      Serial.print("Error trying to execute readMeasuredValues(): ");
+      errorToString(error, errorMessage, sizeof errorMessage);
+      Serial.println(errorMessage);
+      return false;
+  }
+  // Convert temperature Celsius from sensor into Farenheit
+  sensorData.ambientTemperatureF = (1.8*ambientTemperatureC) + 32.0;
+  
+  debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + ", VOC: " + sensorData.vocIndex +
+    String(", ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+
+  return true;
+}
+
+/*
 bool sensorPMInit()
 {
   #ifdef HARDWARE_SIMULATE
@@ -1297,7 +1379,9 @@ bool sensorPMRead()
     return true;
   #endif
 }
+*/
 
+/*
 bool sensorCO2Init()
 // initializes SCD4X to read
 {
@@ -1417,6 +1501,7 @@ bool sensorCO2Read()
   #endif
   return(true);
 }
+*/
 
 uint8_t co2Range(uint16_t co2)
 // converts co2 value to index value for labeling and color
@@ -1494,6 +1579,7 @@ void powerDisable(uint8_t deepSleepTime)
 
   // power down SCD4X by stopping potentially started measurement then power down SCD4X
   #ifndef HARDWARE_SIMULATE
+    /* DJB-DEV
     uint16_t error = co2Sensor.stopPeriodicMeasurement();
     if (error) {
       char errorMessage[256];
@@ -1502,6 +1588,7 @@ void powerDisable(uint8_t deepSleepTime)
     }
     co2Sensor.powerDown();
     debugMessage("power off: SCD4X",2);
+    */
   #endif
   
   // turn off TFT backlight
