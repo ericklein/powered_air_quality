@@ -51,3 +51,7 @@
 // #define DEVICE_LOCATION  "key_value"	// e.g. general location of device at physical address, "indoor"
 // #define DEVICE_ROOM      "key_value"	// e.g. specific location of device within location, "kitchen"
 // #define DEVICE_ID        "key_value"	// e.g. unique ID for the device, "pm25-007"
+
+// Configuration Step 7: If using ThingSpeak set channel parameters
+// #define THINGS_CHANID 1234567                      // Seven digit ThingSpeak channel ID (number)
+// #define THINGS_APIKEY "TS-Channel-Write-API-Key"   // ThingSpeak channel Write API Key (string)

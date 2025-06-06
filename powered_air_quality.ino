@@ -18,15 +18,6 @@
   #include <SensirionI2cSen66.h>
   SensirionI2cSen66 paqSensor;
 
-/*
-  #include <SensirionI2CSen5x.h>
-  SensirionI2CSen5x pmSensor;
-
-  // instanstiate SCD4X hardware object
-  #include <SensirionI2CScd4x.h>
-  SensirionI2CScd4x co2Sensor;
-*/
-
   // WiFi support
   #if defined(ESP8266)
     #include <ESP8266WiFi.h>
@@ -78,7 +69,9 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 #endif
 
 #ifdef THINGSPEAK
-  extern void post_thingspeak(float pm25, float minaqi, float maxaqi, float aqi);
+  extern bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, 
+    float vocIndex, float noxIndex, float aqi);
+
 #endif
 
 #ifdef INFLUX
@@ -117,12 +110,12 @@ typedef struct envData
   float pm10;                   // PM10.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
   float pm4;                    // PM4.0 [µg/m³], range 0 to 1000, NAN if unknown
   float vocIndex;               // Sensiron VOC Index, range 0 to 500, NAN in unknown
-  float noxIndex;               // NAN for SEN54, also NAN for first 10-11 seconds on SEN55
+  float noxIndex;               // NAN for first 10-11 seconds where supported (SEN55, SEN66)
 } envData;
 envData sensorData;
 
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.
-Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25;
+Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25, totalNOX;
 
 uint8_t numSamples = 0;       // Number of overall sensor readings over reporting interval
 uint32_t timeLastSample = 0;  // timestamp (in ms) for last captured sample 
@@ -220,27 +213,12 @@ void setup()
   display.fillScreen(ILI9341_BLACK);
   screenAlert("Initializing");
 
+  // *** Initialize sensors and other connected/onboard devices ***
+  // SEN66 initialization
   if( !sensorPAQInit()) {
     debugMessage("SEN6X initialization failure", 1);
     screenAlert("No SEN6X");    
   }
-
-/*
-  // Initialize PM25 sensor
-  if (!sensorPMInit()) {
-    debugMessage("SEN5X initialization failure", 1);
-    screenAlert("No SEN5X");
-  }
-
-  // Initialize SCD4X
-  if (!sensorCO2Init()) {
-    debugMessage("SCD4X initialization failure",1);
-    screenAlert("No SCD4X");
-    // This error often occurs right after a firmware flash and reset.
-    // Hardware deep sleep typically resolves it, so quickly cycle the hardware
-    powerDisable(hardwareRebootInterval);
-  }
-*/
 
   // Setup the VSPI to use custom pins for the touchscreen
   vspi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
@@ -259,13 +237,14 @@ void setup()
 void loop()
 {
   // For conveniently handling frequent reference to average values
-  float avgtemperatureF = 0;    // average temperature over report interval
+  float avgTemperatureF = 0;    // average temperature over report interval
   float avgHumidity = 0;        // average humidity over report interval
   uint16_t avgCO2 = 0;          // average CO2 over report interval
   float avgVOC = 0;             // average VOC over report interval
   float avgPM25 = 0;            // average PM2.5 over report interval
   float minPM25 = 0;            // minimum PM2.5 over report interval
   float maxPM25 = 0;            // maximum PM2.5 over report interval
+  float avgNOX = 0;             // average NOX over report interval
 
   // update current timer value
   uint32_t timeCurrent = millis();
@@ -273,20 +252,10 @@ void loop()
   // is it time to read the sensor?
   if((timeCurrent - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
   {
+    // Read SEN66 to obtain all environmental values
     if (!sensorPAQRead()) {
       // TODO: what else to do here...
     }
-    /*
-    if (!sensorPMRead())
-    {
-      // TODO: what else to do here, see OWM Reads...
-    }
-
-    if (!sensorCO2Read())
-    {
-      // TODO: what else to do here
-    }
-    */
 
     // Get local weather and air quality info from Open Weather Map
     if (!OWMCurrentWeatherRead()) {
@@ -304,13 +273,15 @@ void loop()
     totalCO2.include(sensorData.ambientCO2);
     totalVOC.include(sensorData.vocIndex);
     totalPM25.include(sensorData.pm25);
+    totalNOX.include(sensorData.noxIndex);  // TODO: Skip invalid values immediately after initialization
 
     debugMessage(String("Sample #") + numSamples + ", running totals: ",2);
-    debugMessage(String("temperatureF total: ") + totalTemperatureF.getTotal(),2);
+    debugMessage(String("TemperatureF total: ") + totalTemperatureF.getTotal(),2);
     debugMessage(String("Humidity total: ") + totalHumidity.getTotal(),2);
     debugMessage(String("CO2 total: ") + totalCO2.getTotal(),2);    
     debugMessage(String("VOC total: ") + totalVOC.getTotal(),2);
     debugMessage(String("PM25 total: ") + totalPM25.getTotal(),2);
+    debugMessage(String("NOX total: ") + totalNOX.getTotal(),2);
 
     screenUpdate(false);
 
@@ -360,7 +331,7 @@ void loop()
   }
 
   // do we have network endpoints to report to?
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(HARDWARE_SIMULATE)
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK) || defined(HARDWARE_SIMULATE)
     // is it time to report to the network endpoints?
     if ((timeCurrent - timeLastReport) >= (sensorReportInterval * 60 * 1000))  // converting sensorReportInterval into milliseconds
     {
@@ -369,37 +340,44 @@ void loop()
       {
 
         // Get averaged sample values from the Measure utliity class objects
-        avgtemperatureF = totalTemperatureF.getAverage();
+        avgTemperatureF = totalTemperatureF.getAverage();
         avgHumidity = totalHumidity.getAverage();
         avgCO2 = totalCO2.getAverage();
         avgVOC = totalVOC.getAverage();
         avgPM25 = totalPM25.getAverage();
         maxPM25 = totalPM25.getMax();
         minPM25 = totalPM25.getMin();
+        avgNOX = totalNOX.getAverage();
 
 
         debugMessage("----- Reporting -----",1);
         debugMessage(String("Reporting averages (") + sensorReportInterval + " minute): ",1);
-        debugMessage(String("Temp: ") + avgtemperatureF + " F",1);
+        debugMessage(String("Temp: ") + avgTemperatureF + " F",1);
         debugMessage(String("Humidity: ") + avgHumidity + "%",1);
         debugMessage(String("CO2: ") + avgCO2 + " ppm",1);
         debugMessage(String("VOC: ") + avgVOC,1);
-        debugMessage(String("PM2.5: ") + avgPM25 + " = AQI " + pm25toAQI(avgPM25),1);
+        debugMessage(String("PM2.5: ") + avgPM25 + " = AQI " + pm25toAQI_US(avgPM25),1);
+        debugMessage(String("NOX: ") + avgNOX,1);
 
         if (networkConnect())
         {
+          // TODO: Modify reporting routines to include NOX readings
+
           /* Post both the current readings and historical max/min readings to the internet */
           #ifdef DWEET
-            post_dweet(avgPM25, pm25toAQI(minPm25), pm25toAQI(maxPm25), pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, rssi);
+            post_dweet(avgPM25, pm25toAQI_US(minPm25), pm25toAQI_US(maxPm25), pm25toAQI_US(avgPM25), avgTemperatureF, avgVOC, avgHumidity, rssi);
           #endif
 
-          // Also post the AQI sensor data to ThingSpeak
+          // Also post the AQI sensor data to ThingSpeak. Make sure to use the PM25 to AQI conversion formula for the
+          // desired country as there is no global standard.
           #ifdef THINGSPEAK
-            post_thingspeak(avgPM25, pm25toAQI(minPm25), pm25toAQI(maxPm25), pm25toAQI(avgPM25));
+            if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
+              debugMessage("Did not write to ThingSpeak",1);
+            }
           #endif
 
           #ifdef INFLUX
-            if (!post_influx(avgPM25, avgtemperatureF, avgVOC, avgHumidity, avgCO2 , hardwareData.rssi))
+            if (!post_influx(avgPM25, avgTemperatureF, avgVOC, avgHumidity, avgCO2 , hardwareData.rssi))
               debugMessage("Did not write to influxDB",1);
           #endif
 
@@ -429,6 +407,7 @@ void loop()
         totalCO2.clear();
         totalVOC.clear();
         totalPM25.clear();
+        totalNOX.clear();
 
         // save last report time
         timeLastReport = millis();
@@ -639,15 +618,18 @@ void screenAggregateData()
 // Displays minimum, average, and maximum values for CO2, temperature and humidity
 // using a table-style layout (with labels)
 {
-
-  const uint16_t xHeaderColumn = 10;
-  const uint16_t xCO2Column = 70;
-  const uint16_t xTempColumn = 130;
-  const uint16_t xHumidityColumn = 200;
-  const uint16_t yHeaderRow = 10;
-  const uint16_t yMaxRow = 40;
-  const uint16_t yAvgRow = 70;
-  const uint16_t yMinRow = 100;
+  const uint16_t xValueColumn =  10;
+  const uint16_t xMinColumn   =  80;
+  const uint16_t xAvgColumn   = 150;
+  const uint16_t xMaxColumn   = 220;
+  const uint16_t yHeaderRow   =  10;
+  const uint16_t yPM25Row     =  40;
+  const uint16_t yCO2Row      =  70;
+  const uint16_t yVOCRow      = 100;
+  const uint16_t yNOXRow      = 130;
+  const uint16_t yTempFRow    = 160;
+  const uint16_t yHumidityRow = 190;
+  const uint16_t yAQIRow      = 220;
 
   // clear screen
   display.fillScreen(ILI9341_BLACK);
@@ -656,41 +638,60 @@ void screenAggregateData()
   display.setFont();  // Revert to built-in font
   display.setTextSize(2);
   display.setTextColor(ILI9341_WHITE);
-  // column
-  display.setCursor(xCO2Column, yHeaderRow); display.print("CO2");
-  display.setCursor(xTempColumn, yHeaderRow); display.print("  F");
-  display.setCursor(xHumidityColumn, yHeaderRow); display.print("RH");
-  // row
-  display.setCursor(xHeaderColumn, yMaxRow); display.print("Max");
-  display.setCursor(xHeaderColumn, yAvgRow); display.print("Avg");
-  display.setCursor(xHeaderColumn, yMinRow); display.print("Min");
+  // columns
+  display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
+  display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
+  display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
+  // display.setCursor(xCO2Column, yHeaderRow); display.print("CO2");
+  // display.setCursor(xTempColumn, yHeaderRow); display.print("  F");
+  // display.setCursor(xHumidityColumn, yHeaderRow); display.print("RH");
 
-  // Fill in the maximum values row
-  display.setCursor(xCO2Column, yMaxRow);
-  display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);  // Use highlight color look-up table
-  display.print(totalCO2.getMax(),0);
-  display.setTextColor(ILI9341_WHITE);
-  
-  display.setCursor(xTempColumn, yMaxRow); display.print(totalTemperatureF.getMax(),1);
-  display.setCursor(xHumidityColumn, yMaxRow); display.print(totalHumidity.getMax(),0);
+  // rows
+  display.setCursor(xValueColumn, yPM25Row); display.print("PM25");
+  display.setCursor(xValueColumn, yCO2Row); display.print("CO2");
+  display.setCursor(xValueColumn, yVOCRow); display.print("VOC");
+  display.setCursor(xValueColumn, yNOXRow); display.print("NOX");
+  display.setCursor(xValueColumn, yTempFRow); display.print(" F");
+  display.setCursor(xValueColumn, yHumidityRow); display.print("%RH");
+  display.setCursor(xValueColumn, yAQIRow); display.print("AQI");
+  // display.setCursor(xHeaderColumn, yMaxRow); display.print("Max");
+  // display.setCursor(xHeaderColumn, yAvgRow); display.print("Avg");
+  // display.setCursor(xHeaderColumn, yMinRow); display.print("Min");
 
-  // Fill in the average value row
-  display.setCursor(xCO2Column, yAvgRow);
-  display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);  // Use highlight color look-up table
-  display.print(totalCO2.getAverage(),0);
-  display.setTextColor(ILI9341_WHITE);
+  // Fill in the data row by row
+  display.setCursor(xMinColumn,yPM25Row); display.print(totalPM25.getMin(),1);
+  display.setCursor(xAvgColumn,yPM25Row); display.print(totalPM25.getAverage(),1);
+  display.setCursor(xMaxColumn,yPM25Row); display.print(totalPM25.getMax(),1);
 
-  display.setCursor(xTempColumn, yAvgRow); display.print(totalTemperatureF.getAverage(),1);
-  display.setCursor(xHumidityColumn, yAvgRow); display.print(totalHumidity.getAverage(),0);
-
-  // Fill in the minimum value row
-  display.setCursor(xCO2Column,yMinRow);
+  // Color code the CO2 row
   display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
-  display.print(totalCO2.getMin(),0);
-  display.setTextColor(ILI9341_WHITE);
+  display.setCursor(xMinColumn,yCO2Row); display.print(totalCO2.getMin(),0);
+  display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);  // Use highlight color look-up table
+  display.setCursor(xAvgColumn,yCO2Row); display.print(totalCO2.getAverage(),0);
+  display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);  // Use highlight color look-up table
+  display.setCursor(xMaxColumn,yCO2Row); display.print(totalCO2.getMax(),0);
+  display.setTextColor(ILI9341_WHITE);  // Restore text color
 
-  display.setCursor(xTempColumn,yMinRow); display.print(totalTemperatureF.getMin(),1);
-  display.setCursor(xHumidityColumn,yMinRow); display.print(totalHumidity.getMin(),0);
+  display.setCursor(xMinColumn,yVOCRow); display.print(totalVOC.getMin(),0);
+  display.setCursor(xAvgColumn,yVOCRow); display.print(totalVOC.getAverage(),0);
+  display.setCursor(xMaxColumn,yVOCRow); display.print(totalVOC.getMax(),0);
+
+  display.setCursor(xMinColumn,yNOXRow); display.print(totalNOX.getMin(),1);
+  display.setCursor(xAvgColumn,yNOXRow); display.print(totalNOX.getAverage(),1);
+  display.setCursor(xMaxColumn,yNOXRow); display.print(totalNOX.getMax(),1);
+
+  display.setCursor(xMinColumn,yTempFRow); display.print(totalTemperatureF.getMin(),1);
+  display.setCursor(xAvgColumn,yTempFRow); display.print(totalTemperatureF.getAverage(),1);
+  display.setCursor(xMaxColumn,yTempFRow); display.print(totalTemperatureF.getMax(),1);
+
+  display.setCursor(xMinColumn,yHumidityRow); display.print(totalHumidity.getMin(),0);
+  display.setCursor(xAvgColumn,yHumidityRow); display.print(totalHumidity.getAverage(),0);
+  display.setCursor(xMaxColumn,yHumidityRow); display.print(totalHumidity.getMax(),0);
+
+  display.setCursor(xMinColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMin()),1);
+  display.setCursor(xAvgColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getAverage()),1);
+  display.setCursor(xMaxColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMax()),1);
+
 }
 
 void screenAlert(String messageText)
@@ -866,6 +867,23 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
     debugMessage(String("SIMULATED WiFi RSSI: ") + hardwareData.rssi,1);
   }
 
+  // Simulates sensor reading from SEN66 sensor
+  void  sensorPAQSimulate()
+  {
+    sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
+    sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
+    sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
+    sensorData.pm4 = random(sensorPMMin, sensorPMMax) / 100.0;
+    sensorData.vocIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
+    sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
+    sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
+    sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
+    sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
+
+    debugMessage(String("SIMULATED SEN66 PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex +
+      sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex + ",NOX index: " + sensorData.noxIndex,1);
+
+  }
   void  sensorPMSimulate()
   // Simulates sensor reading from PMSA003I sensor
   {
@@ -889,7 +907,7 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
     sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
     sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
     sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
-    debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+    debugMessage(String("SIMULATED SEN5x PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex,1);
   }
 #endif
 
@@ -1261,17 +1279,22 @@ bool sensorPAQInit()
         Serial.println(errorMessage);
         return false;
     }
+
+    // TODO: Add support for setting custom temperature offset for SEN66
     return true;
 }
 
 bool sensorPAQRead()
 {
   #ifdef HARDWARE_SIMULATE
+    sensorPAQSimulate();
     return true;
   #endif
     static char errorMessage[64];
     static int16_t error;
     float ambientTemperatureC;
+
+    // TODO: Add support for checking isDataReady flag on SEN66
 
     error = paqSensor.readMeasuredValues(
       sensorData.pm1, sensorData.pm25, sensorData.pm4,
@@ -1287,9 +1310,9 @@ bool sensorPAQRead()
   // Convert temperature Celsius from sensor into Farenheit
   sensorData.ambientTemperatureF = (1.8*ambientTemperatureC) + 32.0;
   
-  debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + ", VOC: " + sensorData.vocIndex +
-    String(", ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
-
+  debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + String(", CO2: ") + sensorData.ambientCO2 +
+    String(", VOC: ") + sensorData.vocIndex + String(", NOX: ") + sensorData.noxIndex + String(", ") + 
+    sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + String("%, "),1);
   return true;
 }
 
@@ -1539,19 +1562,19 @@ uint8_t vocRange(float vocIndex)
   return vocRange;
 }
 
-float pm25toAQI(float pm25)
-// Converts pm25 reading to AQI using the AQI Equation
-// (https://forum.airnowtech.org/t/the-aqi-equation/169)
+float pm25toAQI_US(float pm25)
+// Converts pm25 reading to AQI using the US EPA standard (revised Feb 7, 2024) and detailed
+// here: https://www.epa.gov/system/files/documents/2024-02/pm-naaqs-air-quality-index-fact-sheet.pdf.
 {  
   float aqiValue;
-  if(pm25 <= 12.0)       aqiValue = (fmap(pm25,  0.0, 12.0,  0.0, 50.0));
-  else if(pm25 <= 35.4)  aqiValue = (fmap(pm25, 12.1, 35.4, 51.0,100.0));
-  else if(pm25 <= 55.4)  aqiValue = (fmap(pm25, 35.5, 55.4,101.0,150.0));
-  else if(pm25 <= 150.4) aqiValue = (fmap(pm25, 55.5,150.4,151.0,200.0));
-  else if(pm25 <= 250.4) aqiValue = (fmap(pm25,150.5,250.4,201.0,300.0));
-  else if(pm25 <= 500.4) aqiValue = (fmap(pm25,250.5,500.4,301.0,500.0));
-  else aqiValue = (505.0); // AQI above 500 not recognized
-  debugMessage(String("PM2.5 value of ") + pm25 + " converts to AQI value of " + aqiValue, 2);
+  if(pm25 <= 9.0)        aqiValue = (fmap(pm25,  0.0,  9.0,  0.0, 50.0)); // "Good"
+  else if(pm25 <= 35.4)  aqiValue = (fmap(pm25, 12.1, 35.4, 51.0,100.0)); // "Moderate"
+  else if(pm25 <= 55.4)  aqiValue = (fmap(pm25, 35.5, 55.4,101.0,150.0)); // "Unhealthy for Sensitive Groups"
+  else if(pm25 <= 125.4) aqiValue = (fmap(pm25, 55.5,125.4,151.0,200.0)); // "Unhnealthy"
+  else if(pm25 <= 225.4) aqiValue = (fmap(pm25,125.5,225.4,201.0,300.0)); // "Very Unhealthy"
+  else if(pm25 <= 500.0) aqiValue = (fmap(pm25,225.5,500.0,301.0,500.0)); // "Hazardous"
+  else aqiValue = (501.0); // AQI above 500 not recognized
+  debugMessage(String("PM2.5 value of ") + pm25 + " converts to US AQI value of " + aqiValue, 2);
 
   return aqiValue;
 }

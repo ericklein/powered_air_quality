@@ -1,6 +1,9 @@
-// ThingSpeak data upload
+// ThingSpeak data upload.  Uses the ThingSpeak Arduino library from MathWorks
+// https://github.com/mathworks/thingspeak-arduino 
 
 #include "Arduino.h"
+#include <WiFi.h>
+#include "ThingSpeak.h"
 
 // hardware and internet configuration parameters
 #include "config.h"
@@ -12,51 +15,31 @@
   // Shared helper function(s)
   extern void debugMessage(String messageText, int messageLevel);
 
-  const char* ts_server = "api.thingspeak.com";
-  void post_thingspeak(float pm25, float minaqi, float maxaqi, float aqi) {
-        WiFiClient tspeak_client;
-    
-    if (tspeak_client.connect(ts_server, 80)) {
+  bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float nox, float aqi)
+  {  
+    int httpcode;
+    WiFiClient ts_client;  
 
-      // Construct API request body
-      String body = "field1=";
-             body += String(aqi,2);
-             body += "&";
-             body += "field2=";
-             body += String(pm25,2);
-             body += "&";
-             body += "field3=";
-             body += String(maxaqi,2);
-             body += "&";
-             body += "field4=";
-             body += String(minaqi,2);
+    // Initialize ThingSpeak
+    ThingSpeak.begin(ts_client);
 
+    // Set values for the Channel's fields to queue them up for a single batch post to ThingSpeak
+    // Note that a channel cannot have more than eight fields (so choose wisely)
+    ThingSpeak.setField(1,pm25);
+    ThingSpeak.setField(2,co2);
+    ThingSpeak.setField(3,temperatureF);
+    ThingSpeak.setField(4,humidity);
+    ThingSpeak.setField(5,voc);
+    ThingSpeak.setField(6,nox);
+    ThingSpeak.setField(7,aqi);
 
-      tspeak_client.println("POST /update HTTP/1.1");
-      tspeak_client.println("Host: api.thingspeak.com");
-      tspeak_client.println("User-Agent: ESP32/ESP8266 (orangemoose)/1.0");
-      tspeak_client.println("Connection: close");
-      tspeak_client.println("X-THINGSPEAKAPIKEY: " + String(THINGS_APIKEY));
-      tspeak_client.println("Content-Type: application/x-www-form-urlencoded");
-      tspeak_client.println("Content-Length: " + String(body.length()));
-      tspeak_client.println("");
-      tspeak_client.print(body);
-      debugMessage("ThingSpeak POST:",1);
-      debugMessage(body,1);
+    // Batch write all the field updates to ThingSpeak and check HTTP return code
+    httpcode = ThingSpeak.writeFields(THINGS_CHANID,THINGS_APIKEY);
+    debugMessage("ThingSpeak update, return code: " + String(httpcode),1);
 
-    }
-    delay(1500);
-      
-    // Read all the lines of the reply from server (if any) and print them to Serial Monitor
-    #ifdef DEBUG
-      debugMessageln("ThingSpeak server response:",1);
-      while(tspeak_client.available()){
-        String line = tspeak_client.readStringUntil('\r');
-        debugMessage(line,1);
-      }
-      debugMessageln("-----",1);
-    #endif
-
-    tspeak_client.stop();
+    // HTTP return code 200 means success, otherwise some problem occurred
+    if(httpcode == 200) return true;
+    else return false;
   }
+
 #endif
