@@ -179,14 +179,17 @@ typedef struct {
 OpenWeatherMapAirQuality owmAirQuality;  // global variable for OWM current data
 
 bool screenWasTouched = false;
+int16_t co2data[GRAPH_POINTS];
 
 // Set first screen to display.  If that first screen is the screen saver then we need to
 // have the saved screen be something else so it'll get switched to on the first touch
-uint8_t screenCurrent = SCREEN_SAVER;
+uint8_t screenCurrent = SCREEN_GRAPH; // DJB-DEV should be _SAVER
 uint8_t screenSaved   = SCREEN_INFO; // Saved when screen saver engages so it can be restored
 
 void setup() 
 {
+  int i;
+
   // handle Serial first so debugMessage() works
   #ifdef DEBUG
     Serial.begin(115200);
@@ -203,6 +206,11 @@ void setup()
   // generate random numbers for every boot cycle
   randomSeed(analogRead(0));
 
+  // Initialize array of retained CO2 data values (for graphing -- see below)
+  for(i=0;i<GRAPH_POINTS;i++) {
+    co2data[i] = -1;
+  }
+
   // initialize screen first to display hardware error messages
   pinMode(TFT_BACKLIGHT, OUTPUT);
   digitalWrite(TFT_BACKLIGHT, HIGH);
@@ -216,7 +224,7 @@ void setup()
   // *** Initialize sensors and other connected/onboard devices ***
   // SEN66 initialization
   if( !sensorPAQInit()) {
-    debugMessage("SEN6X initialization failure", 1);
+    Serial.println("ERROR: SEN6X initialization failure");
     screenAlert("No SEN6X");    
   }
 
@@ -359,6 +367,9 @@ void loop()
         debugMessage(String("PM2.5: ") + avgPM25 + " = AQI " + pm25toAQI_US(avgPM25),1);
         debugMessage(String("NOX: ") + avgNOX,1);
 
+        // Retain CO2 data for graphing (see below)
+        retainCO2(avgCO2);
+
         if (networkConnect())
         {
           // TODO: Modify reporting routines to include NOX readings
@@ -372,20 +383,20 @@ void loop()
           // desired country as there is no global standard.
           #ifdef THINGSPEAK
             if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
-              debugMessage("Did not write to ThingSpeak",1);
+              Serial.println("ERROR: Did not write to ThingSpeak");
             }
           #endif
 
           #ifdef INFLUX
             if (!post_influx(avgPM25, avgTemperatureF, avgVOC, avgHumidity, avgCO2 , hardwareData.rssi))
-              debugMessage("Did not write to influxDB",1);
+              Serial.println("ERROR: Did not write to influxDB");
           #endif
 
           #ifdef MQTT
             if (!mqttDeviceWiFiUpdate(hardwareData.rssi))
-                debugMessage("Did not write device data to MQTT broker",1);
+                Serial.println("ERROR: Did not write device data to MQTT broker");
             if ((!mqttSensorTemperatureFUpdate(avgtemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorVOCIndexUpdate(avgVOC)) || (!mqttSensorCO2Update(avgCO2)))
-                debugMessage("Did not write environment data to MQTT broker",1);
+                Serial.println("ERROR: Did not write environment data to MQTT broker");
             #ifdef HASSIO_MQTT
               debugMessage("Establishing MQTT for Home Assistant",1);
               // Either configure sensors in Home Assistant's configuration.yaml file
@@ -411,6 +422,9 @@ void loop()
 
         // save last report time
         timeLastReport = millis();
+      }
+      else {
+        Serial.println ("ERROR: No samples to report");
       }
     }
   #endif
@@ -615,13 +629,13 @@ void screenCurrentInfo()
 }
 
 void screenAggregateData()
-// Displays minimum, average, and maximum values for CO2, temperature and humidity
+// Displays minimum, average, and maximum values for primary sensor values
 // using a table-style layout (with labels)
 {
   const uint16_t xValueColumn =  10;
-  const uint16_t xMinColumn   =  80;
-  const uint16_t xAvgColumn   = 150;
-  const uint16_t xMaxColumn   = 220;
+  const uint16_t xMinColumn   = 115;
+  const uint16_t xAvgColumn   = 185;
+  const uint16_t xMaxColumn   = 255;
   const uint16_t yHeaderRow   =  10;
   const uint16_t yPM25Row     =  40;
   const uint16_t yCO2Row      =  70;
@@ -631,22 +645,22 @@ void screenAggregateData()
   const uint16_t yHumidityRow = 190;
   const uint16_t yAQIRow      = 220;
 
-  // clear screen
+  // clear screen and initialize properties
   display.fillScreen(ILI9341_BLACK);
-
-  // display headers
   display.setFont();  // Revert to built-in font
   display.setTextSize(2);
   display.setTextColor(ILI9341_WHITE);
-  // columns
-  display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
-  display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
-  display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
-  // display.setCursor(xCO2Column, yHeaderRow); display.print("CO2");
-  // display.setCursor(xTempColumn, yHeaderRow); display.print("  F");
-  // display.setCursor(xHumidityColumn, yHeaderRow); display.print("RH");
 
-  // rows
+  // Display column headings
+  display.setTextColor(ILI9341_BLUE);
+  display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
+  display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,ILI9341_BLUE);
+  display.setTextColor(ILI9341_WHITE);
+  display.setCursor(0,yHeaderRow); display.print("REPORT:");
+  display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
+  display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
+
+  // Display row headings
   display.setCursor(xValueColumn, yPM25Row); display.print("PM25");
   display.setCursor(xValueColumn, yCO2Row); display.print("CO2");
   display.setCursor(xValueColumn, yVOCRow); display.print("VOC");
@@ -654,9 +668,6 @@ void screenAggregateData()
   display.setCursor(xValueColumn, yTempFRow); display.print(" F");
   display.setCursor(xValueColumn, yHumidityRow); display.print("%RH");
   display.setCursor(xValueColumn, yAQIRow); display.print("AQI");
-  // display.setCursor(xHeaderColumn, yMaxRow); display.print("Max");
-  // display.setCursor(xHeaderColumn, yAvgRow); display.print("Avg");
-  // display.setCursor(xHeaderColumn, yMinRow); display.print("Min");
 
   // Fill in the data row by row
   display.setCursor(xMinColumn,yPM25Row); display.print(totalPM25.getMin(),1);
@@ -716,16 +727,116 @@ void screenAlert(String messageText)
   debugMessage("screenAlert end",1);
 }
 
+// Draw a simple graph of recent CO2 values. Time-ordered data to be plottted is stored in an array with the
+// most recent point last.  Values of -1 are to be skipped in the plotting, allowing the line of points to
+// always have the most recent value at the right edge of the graph but still work if not enough data has yet
+// been reported to fully cover the plot area.
 void screenGraph()
 // Displays CO2 values over time as a graph
 {
-  // screen layout assists in pixels
-  // const uint16_t ySparkline = 95;
-  // const uint16_t sparklineHeight = 40;
+  int16_t i, x1, y1;
+  uint16_t width, height, deltax, w1, h1, x, y, xp, yp;
+  uint16_t gx0, gy0, gx1, gy1;  // Drawing area bouding box
+  String minlabel, maxlabel, xlabel;
+  float c, minvalue, maxvalue;
+  bool firstpoint = true, nodata = true;
 
   debugMessage("screenGraph start",1);
-  screenAlert("Graph");
+  width = display.width();
+  height = display.height();
+
+  // Set drawing area bounding box values
+  gx0 = 50;
+  gy0 = 10;
+  gx1 = width-30;
+  gy1 = height-30;  // Room at the bottom for the graph label
+
+  display.fillScreen(ILI9341_BLACK);
+  display.setFont(&FreeSans9pt7b);
+
+  // Scan the retained CO2 data for max & min to scale the plot
+  minvalue = 5000;
+  maxvalue = 0;
+  for(i=0;i<GRAPH_POINTS;i++) {
+    if(co2data[i] == -1) continue;   // Skip "empty" slots
+    nodata = false;  // At least one data point
+    if(co2data[i] < minvalue) minvalue = co2data[i];
+    if(co2data[i] > maxvalue) maxvalue = co2data[i];
+  }
+  // Deal with no data condition (e.g., just booted)
+  if(nodata) {
+    // Label plot with "awating" message
+    display.setTextColor(ILI9341_WHITE);
+    xlabel = String("Awaiting CO2 Values");  // Center overall graph label below the drawing area
+    display.getTextBounds(xlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
+    display.setCursor( ((width-w1)/2),(height-(h1/2)) );
+    display.print(xlabel);
+    // Set reasonable bounds for the (empty) plot
+    minvalue = 400;
+    maxvalue = 1200;
+  }
+  else {
+    // We have data to plot, so say so
+    display.setTextColor(ILI9341_WHITE);
+    xlabel = String("Recent CO2 Values");  // Center overall graph label below the drawing area
+    display.getTextBounds(xlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
+    display.setCursor( ((width-w1)/2),(height-(h1/2)) );
+    display.print(xlabel);
+
+    // Pad min and max CO2 to add room and be multiples of 50 (for nicer axis labels)
+    minvalue = (int(minvalue)/50)*50;
+    maxvalue = ((int(maxvalue)/50)+1)*50;
+  }
+  
+  display.setTextColor(ILI9341_LIGHTGREY);
+  // Draw Y axis labels
+  minlabel = String(int(minvalue));
+  maxlabel = String(int(maxvalue));
+  display.getTextBounds(maxlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
+  display.setCursor(gx0-5-w1,h1+5); display.print(maxlabel);
+  display.getTextBounds(minlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
+  display.setCursor(gx0-5-w1,gy1); display.print(minlabel);
+
+  // Draw axis lines
+  display.drawLine(gx0,gy0,gx0,gy1,ILI9341_LIGHTGREY);
+  display.drawLine(gx0,gy1,gx1,gy1,ILI9341_LIGHTGREY);
+  display.setTextColor(ILI9341_WHITE);
+
+  // Plot however many data points we have both with filled circles at each
+  // point and lines connecting the points.  Color the filled circles with the
+  // appropriate CO2 warning level color.
+  deltax = (gx1 - gx0 - 10)/ (GRAPH_POINTS-1);  // 10 pixel padding for Y axis
+  xp = gx0;
+  yp = gy1;
+  for(i=0;i<GRAPH_POINTS;i++) {
+    if(co2data[i] == -1) continue;
+    c = co2data[i];
+    x = gx0 + 10 + (i*deltax);  // Include 10 pixel padding for Y axis
+    y = gy1 - (((c - minvalue)/(maxvalue-minvalue)) * (gy1-gy0));
+    display.fillCircle(x,y,4,warningColor[co2Range(c)]);
+    if(firstpoint) {
+      // If this is the first drawn point then don't try to draw a line
+      firstpoint = false;
+    }
+    else {
+      // Draw line from previous point (if one) to this point
+      display.drawLine(xp,yp,x,y,ILI9341_WHITE);
+    }
+    // Save x & y of this point to use as previous point for next one.
+    xp = x;
+    yp = y;
+  }
+
   debugMessage("screenGraph end",1);
+}
+// Accumulate a CO2 value into the data array used by the screen graphing function above
+void retainCO2(uint16_t co2)
+{
+  int i;
+  for(i=1;i<GRAPH_POINTS;i++) {
+    co2data[i-1] = co2data[i];
+  }
+  co2data[GRAPH_POINTS-1] = co2;
 }
 
 void screenColor()
@@ -753,7 +864,7 @@ void screenSaver()
   display.setFont(&FreeSans24pt7b);
 
   // Pick a random location that'll show up
-  int16_t x = random(xMargins,display.width()-xMargins-72);  // 64 pixels leaves room for 4 digit CO2 value
+  int16_t x = random(xMargins,display.width()-xMargins-100);  // 90 pixels leaves room for 4 digit CO2 value
   int16_t y = random(44,display.height()-yMargins); // 35 pixels leaves vertical room for text display
   display.setCursor(x,y);
   display.setTextColor(warningColor[co2Range(sensorData.ambientCO2)]);  // Use highlight color LUT
@@ -1255,28 +1366,27 @@ bool sensorPAQInit()
 
     error = paqSensor.deviceReset();
     if (error != 0) {
-        Serial.print("Error trying to execute deviceReset(): ");
+        debugMessage("Error trying to execute deviceReset(): ",1);
         errorToString(error, errorMessage, sizeof errorMessage);
-        Serial.println(errorMessage);
-        return true;
+        debugMessage(errorMessage,1);
+        return false;
     }
     delay(1200);
     int8_t serialNumber[32] = {0};
     error = paqSensor.getSerialNumber(serialNumber, 32);
     if (error != 0) {
-        Serial.print("Error trying to execute getSerialNumber(): ");
+        debugMessage("Error trying to execute SEN6x getSerialNumber(): ",1);
         errorToString(error, errorMessage, sizeof errorMessage);
-        Serial.println(errorMessage);
+        debugMessage(errorMessage,1);
         return false;
     }
-    Serial.print("serialNumber: ");
-    Serial.print((const char*)serialNumber);
-    Serial.println();
+    debugMessage("SEN6x serial number: ",2);
+    debugMessage((const char *)serialNumber,2);
     error = paqSensor.startContinuousMeasurement();
     if (error != 0) {
-        Serial.print("Error trying to execute startContinuousMeasurement(): ");
+        debugMessage("Error trying to execute SEN6x startContinuousMeasurement(): ",1);
         errorToString(error, errorMessage, sizeof errorMessage);
-        Serial.println(errorMessage);
+        debugMessage(errorMessage,1);
         return false;
     }
 
@@ -1302,9 +1412,9 @@ bool sensorPAQRead()
       sensorData.noxIndex, sensorData.ambientCO2);
 
   if (error != 0) {
-      Serial.print("Error trying to execute readMeasuredValues(): ");
+      debugMessage("Error trying to execute readMeasuredValues(): ",1);
       errorToString(error, errorMessage, sizeof errorMessage);
-      Serial.println(errorMessage);
+      debugMessage(errorMessage,1);
       return false;
   }
   // Convert temperature Celsius from sensor into Farenheit

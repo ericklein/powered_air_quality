@@ -18,8 +18,8 @@
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
 // #define INFLUX // Log data to InfluxDB server
-// #define DWEET       // Log data to Dweet service
-// #define THINGSPEAK  // Log data to ThingSpeak
+// #define DWEET       // Log data to Dweet service. NOTE: Dweet.io shut down in April 2025 :-(
+#define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration variables that are less likely to require changes
 
@@ -133,6 +133,9 @@ const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
 #define SCREEN_GRAPH      4
 #define SCREEN_AGGREGATE  5
 const uint8_t screenCount = 6;
+
+// How many CO2 points to retain for the graphing screen
+#define GRAPH_POINTS 10
 
 // CYD pinout
 #define TFT_BACKLIGHT 21
