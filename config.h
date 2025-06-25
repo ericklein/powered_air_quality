@@ -17,7 +17,7 @@
 // Configuration Step 4: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-// #define INFLUX // Log data to InfluxDB server
+#define INFLUX // Log data to InfluxDB server
 // #define DWEET       // Log data to Dweet service
 // #define THINGSPEAK  // Log data to ThingSpeak
 
@@ -108,6 +108,7 @@ const uint16_t co2Bad = 2000;
 const uint16_t sensorCO2Min =      400;   // in ppm
 const uint16_t sensorCO2Max =      2000;  // in ppm
 const uint8_t sensorTempCOffset = 0;     // in Celcius
+const uint8_t co2SensorReadFailureLimit = 20;
 
 // particulates (pm1, pm2.5, pm4, pm10) from SEN5x
 // CO2 value thresholds for labeling

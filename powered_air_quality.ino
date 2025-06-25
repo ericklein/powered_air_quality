@@ -19,8 +19,8 @@
   SensirionI2CSen5x pmSensor;
 
   // instanstiate SCD4X hardware object
-  #include <SensirionI2CScd4x.h>
-  SensirionI2CScd4x co2Sensor;
+  #include <SensirionI2cScd4x.h>
+  SensirionI2cScd4x co2Sensor;
 
   // WiFi support
   #if defined(ESP8266)
@@ -270,7 +270,7 @@ void loop()
 
     if (!sensorCO2Read())
     {
-      // TODO: what else to do here
+      screenAlert("CO2 read fail");
     }
 
     // Get local weather and air quality info from Open Weather Map
@@ -1310,7 +1310,7 @@ bool sensorCO2Init()
     // Wire.begin();
     // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
     Wire.begin(CYD_SDA, CYD_SCL);
-    co2Sensor.begin(Wire);
+    co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
 
     // stop potentially previously started measurement.
     error = co2Sensor.stopPeriodicMeasurement();
@@ -1358,64 +1358,62 @@ bool sensorCO2Init()
 }
 
 bool sensorCO2Read()
-// sets global environment values from SCD4X sensor
+// Description: Sets global environment values from SCD40 sensor
+// Parameters: none
+// Output : true if successful read, false if not
+// Improvement : NA
 {
   #ifdef HARDWARE_SIMULATE
     sensorCO2Simulate();
-    return true;
+    debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
   #else
     char errorMessage[256];
-    bool status;
+    bool status = false;
     uint16_t co2 = 0;
-    float temperatureC = 0.0f;
+    float temperature = 0.0f;
     float humidity = 0.0f;
     uint16_t error;
+    uint8_t errorCount = 0;
 
-    debugMessage("SCD4X read initiated",1);
-
-    // Loop attempting to read Measurement
-    status = false;
+    debugMessage("CO2 sensor read initiated",1);
     while(!status) {
-      delay(100);
-
+      errorCount++;
+      if (errorCount>co2SensorReadFailureLimit)
+        break;
       // Is data ready to be read?
       bool isDataReady = false;
-      error = co2Sensor.getDataReadyFlag(isDataReady);
+      error = co2Sensor.getDataReadyStatus(isDataReady);
       if (error) {
           errorToString(error, errorMessage, 256);
           debugMessage(String("Error trying to execute getDataReadyFlag(): ") + errorMessage,1);
           continue; // Back to the top of the loop
       }
-      if (!isDataReady) {
-          continue; // Back to the top of the loop
-      }
-      debugMessage("SCD4X data available",2);
-
-      error = co2Sensor.readMeasurement(co2, temperatureC, humidity);
+      error = co2Sensor.readMeasurement(co2, temperature, humidity);
       if (error) {
           errorToString(error, errorMessage, 256);
-          debugMessage(String("SCD4X executing readMeasurement(): ") + errorMessage,1);
+          debugMessage(String("SCD40 executing readMeasurement(): ") + errorMessage,2);
           // Implicitly continues back to the top of the loop
       }
       else if (co2 < sensorCO2Min || co2 > sensorCO2Max)
       {
-        debugMessage(String("SCD4X CO2 reading: ") + sensorData.ambientCO2 + " is out of expected range",1);
+        debugMessage(String("SCD40 CO2 reading: ") + sensorData.ambientCO2 + " is out of expected range",1);
         //(sensorData.ambientCO2 < sensorCO2Min) ? sensorData.ambientCO2 = sensorCO2Min : sensorData.ambientCO2 = sensorCO2Max;
         // Implicitly continues back to the top of the loop
       }
       else
       {
-        // Successfully read valid data
-        sensorData.ambientTemperatureF = (temperatureC*1.8)+32.0;
+        // valid measurement available, update globals
+        sensorData.ambientTemperatureF = (temperature*1.8)+32.0;
         sensorData.ambientHumidity = humidity;
         sensorData.ambientCO2 = co2;
-        debugMessage(String("SCD4X: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
-        // Update global sensor readings
-        status = true;  // We have data, can break out of loop
+        debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+        status = true;
+        break;
       }
+    delay(100); // reduces readMeasurement() Not enough data received errors
     }
   #endif
-  return(true);
+  return(status);
 }
 
 uint8_t co2Range(uint16_t co2)
