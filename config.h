@@ -7,7 +7,7 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 1
+#define DEBUG 1
 
 // Configuration Step 3: simulate WiFi and sensor hardware,
 // returning random but plausible values
@@ -18,30 +18,15 @@
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
 #define INFLUX // Log data to InfluxDB server
-// #define DWEET       // Log data to Dweet service
 // #define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration variables that are less likely to require changes
-
-// Time
-// NTP time parameters
-const String networkNTPAddress = "pool.ntp.org";
-const String networkTimeZone = "PST8PDT,M3.2.0,M11.1.0"; // America/Los_Angeles
-const String weekDays[7] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 
 // network endpoints
 #ifdef INFLUX  
   // Specify Measurement to use with InfluxDB for sensor and device info
   const String influxEnvMeasurement = "weather";  // Used for environmental sensor data
   const String influxDevMeasurement =  "device";   // Used for logging AQI device data (e.g. battery)
-#endif
-
-#ifdef DWEET
-  // Post data to the internet via dweet.io.  Set DWEET_DEVICE to be a
-  // unique name you want associated with this reporting device, allowing
-  // data to be easily retrieved through the web or Dweet's REST API.
-  #define DWEET_HOST "dweet.io"   // Typically dweet.io
-  #define DWEET_DEVICE "makerhour-airquality"  // Must be unique across all of dweet.io
 #endif
 
 // Open Weather Map (OWM)

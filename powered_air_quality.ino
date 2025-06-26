@@ -67,11 +67,6 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
   #include <time.h>
 #endif
 
-// external function dependencies
-#ifdef DWEET
-  extern void post_dweet(float pm25, float minaqi, float maxaqi, float aqi, float temperatureF, float vocIndex, float humidity, int rssi);
-#endif
-
 #ifdef THINGSPEAK
   extern void post_thingspeak(float pm25, float minaqi, float maxaqi, float aqi);
 #endif
@@ -126,7 +121,7 @@ uint32_t timeLastSample = 0;  // timestamp (in ms) for last captured sample
 uint32_t timeLastReport = 0;  // timestamp (in ms) for last report to network endpoints
 uint32_t timeLastInput =  0;  // timestamp (in ms) for last user input (screensaver)
 
-// used by thingspeak and dweet
+// used by thingspeak
 float MinPm25 = 1999; /* Observed minimum PM2.5 */
 float MaxPm25 = -99;  /* Observed maximum PM2.5 */
 
@@ -243,22 +238,53 @@ void setup()
   // start tracking timers
   timeLastSample = -(sensorSampleInterval*1000); // forces immediate sample in loop()
   timeLastInput = timeLastReport = millis(); // We'll count starup as a "touch"
-  
 }
 
 void loop()
 {
-  // For conveniently handling frequent reference to average values
-  float avgtemperatureF = 0;    // average temperature over report interval
-  float avgHumidity = 0;        // average humidity over report interval
-  uint16_t avgCO2 = 0;          // average CO2 over report interval
-  float avgVOC = 0;             // average VOC over report interval
-  float avgPM25 = 0;            // average PM2.5 over report interval
-  float minPM25 = 0;            // minimum PM2.5 over report interval
-  float maxPM25 = 0;            // maximum PM2.5 over report interval
-
   // update current timer value
   uint32_t timeCurrent = millis();
+
+  // User input = change screens. If screen saver is active a touch means revert to the
+  // previously active screen, otherwise step to the next screen
+  boolean istouched = ts.touched();
+  if (istouched)
+  {
+    // If screen saver was active, switch to the previous active screen
+    if( screenCurrent == SCREEN_SAVER) {
+        screenCurrent = screenSaved;
+        debugMessage(String("touchscreen pressed, screen saver off => ") + screenCurrent,1);
+        screenUpdate(true);
+    }
+    // Otherwise step to the next screen (and wrap around if necessary)
+    else {
+      ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
+      // Allow stepping through screens to include the screen saver screen, in which case
+      // it is up not because the screen saver timer went off but because it was the next
+      // screen in sequence.  In that case, act like the "saved" screen is the INFO screen
+      // so it'll be switched to next in the overall sequence.
+      if(screenCurrent == SCREEN_SAVER) {
+        screenSaved = SCREEN_INFO;  // Technically, (SCREEN_SAVER+1) to preserve the sequence
+      }
+      debugMessage(String("touchscreen pressed, switch to screen ") + screenCurrent,1);
+      screenUpdate(true);
+    }
+    // Save time touch input occurred
+    timeLastInput = millis();
+  }
+  //  No touch input received, is it time to enable the screensaver?
+  else {
+    // If we're not already in screen saver mode, is it time it should be enabled?
+    if(screenCurrent != SCREEN_SAVER) {
+      if( (timeCurrent - timeLastInput) > (screenSaverInterval*1000)) {
+        // Activate screen saver, retaining current screen for easy return
+        screenSaved = screenCurrent;
+        screenCurrent = SCREEN_SAVER;
+        debugMessage(String("Screen saver engaged, will restore to ") + screenSaved,1);
+        screenUpdate(true);
+      }
+    }
+  }
 
   // is it time to read the sensor?
   if((timeCurrent - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
@@ -303,47 +329,6 @@ void loop()
     timeLastSample = millis();
   }
 
-  // User input = change screens. If screen saver is active a touch means revert to the
-  // previously active screen, otherwise step to the next screen
-  boolean istouched = ts.touched();
-  if (istouched)
-  {
-    // If screen saver was active, switch to the previous active screen
-    if( screenCurrent == SCREEN_SAVER) {
-        screenCurrent = screenSaved;
-        debugMessage(String("touchscreen pressed, screen saver off => ") + screenCurrent,1);
-        screenUpdate(true);
-    }
-    // Otherwise step to the next screen (and wrap around if necessary)
-    else {
-      ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
-      // Allow stepping through screens to include the screen saver screen, in which case
-      // it is up not because the screen saver timer went off but because it was the next
-      // screen in sequence.  In that case, act like the "saved" screen is the INFO screen
-      // so it'll be switched to next in the overall sequence.
-      if(screenCurrent == SCREEN_SAVER) {
-        screenSaved = SCREEN_INFO;  // Technically, (SCREEN_SAVER+1) to preserve the sequence
-      }
-      debugMessage(String("touchscreen pressed, switch to screen ") + screenCurrent,1);
-      screenUpdate(true);
-    }
-    // Save time touch input occurred
-    timeLastInput = millis();
-  }
-  //  No touch input received, is it time to enable the screensaver?
-  else {
-    // If we're not already in screen saver mode, is it time it should be enabled?
-    if(screenCurrent != SCREEN_SAVER) {
-      if( (timeCurrent - timeLastInput) > (screenSaverInterval*1000)) {
-        // Activate screen saver, retaining current screen for easy return
-        screenSaved = screenCurrent;
-        screenCurrent = SCREEN_SAVER;
-        debugMessage(String("Screen saver engaged, will restore to ") + screenSaved,1);
-        screenUpdate(true);
-      }
-    }
-  }
-
   // do we have network endpoints to report to?
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(HARDWARE_SIMULATE)
     // is it time to report to the network endpoints?
@@ -352,16 +337,14 @@ void loop()
       // do we have samples to report?
       if (numSamples != 0) 
       {
-
         // Get averaged sample values from the Measure utliity class objects
-        avgtemperatureF = totalTemperatureF.getAverage();
-        avgHumidity = totalHumidity.getAverage();
-        avgCO2 = totalCO2.getAverage();
-        avgVOC = totalVOC.getAverage();
-        avgPM25 = totalPM25.getAverage();
-        maxPM25 = totalPM25.getMax();
-        minPM25 = totalPM25.getMin();
-
+        float avgtemperatureF = totalTemperatureF.getAverage(); // average temperature over report interval
+        float avgHumidity = totalHumidity.getAverage();         // average humidity over report interval
+        uint16_t avgCO2 = totalCO2.getAverage();                // average CO2 over report interval
+        float avgVOC = totalVOC.getAverage();                   // average VOC over report interval
+        float avgPM25 = totalPM25.getAverage();                 // average PM2.5 over report interval
+        float maxPM25 = totalPM25.getMax();                     // maximum PM2.5 over report interval
+        float minPM25 = totalPM25.getMin();                     // minimum PM2.5 over report interval
 
         debugMessage("----- Reporting -----",1);
         debugMessage(String("Reporting averages (") + sensorReportInterval + " minute): ",1);
@@ -374,10 +357,6 @@ void loop()
         if (networkConnect())
         {
           /* Post both the current readings and historical max/min readings to the internet */
-          #ifdef DWEET
-            post_dweet(avgPM25, pm25toAQI(minPm25), pm25toAQI(maxPm25), pm25toAQI(avgPM25), avgtemperatureF, avgVOC, avgHumidity, rssi);
-          #endif
-
           // Also post the AQI sensor data to ThingSpeak
           #ifdef THINGSPEAK
             post_thingspeak(avgPM25, pm25toAQI(minPm25), pm25toAQI(maxPm25), pm25toAQI(avgPM25));
@@ -404,11 +383,6 @@ void loop()
         }
         // Reset sample counters
         numSamples = 0;
-        // temperatureFTotal = 0;
-        // humidityTotal = 0;
-        // co2Total = 0;
-        // vocTotal = 0;
-        // pm25Total = 0;
         totalTemperatureF.clear();
         totalHumidity.clear();
         totalCO2.clear();
@@ -1134,83 +1108,7 @@ void networkDisconnect()
       return payload;
     #endif
   }
-
-  void setTimeZone(String timezone)
-  // Set local time based on timezone set in config.h
-  {
-    debugMessage(String("setting Timezone to ") + timezone.c_str(),2);
-    setenv("TZ",networkTimeZone.c_str(),1);
-    tzset();
-    debugMessage(String("Local time: ") + dateTimeString("short"),1);
-  }
-
-  String dateTimeString(String formatType)
-  // Converts time into human readable string
-  {
-    // https://cplusplus.com/reference/ctime/tm/
-
-    String dateTime;
-    struct tm timeInfo;
-
-    if (getLocalTime(&timeInfo)) 
-    {
-      if (formatType == "short")
-      {
-        // short human readable format
-        dateTime = weekDays[timeInfo.tm_wday];
-        dateTime += " at ";
-        if (timeInfo.tm_hour < 10) dateTime += "0";
-        dateTime += timeInfo.tm_hour;
-        dateTime += ":";
-        if (timeInfo.tm_min < 10) dateTime += "0";
-        dateTime += timeInfo.tm_min;
-      }
-      else if (formatType == "long")
-      {
-        // long human readable
-        dateTime = weekDays[timeInfo.tm_wday];
-        dateTime += ", ";
-        if (timeInfo.tm_mon<10) dateTime += "0";
-        dateTime += timeInfo.tm_mon;
-        dateTime += "-";
-        if (timeInfo.tm_wday<10) dateTime += "0";
-        dateTime += timeInfo.tm_wday;
-        dateTime += " at ";
-        if (timeInfo.tm_hour<10) dateTime += "0";
-        dateTime += timeInfo.tm_hour;
-        dateTime += ":";
-        if (timeInfo.tm_min<10) dateTime += "0";
-        dateTime += timeInfo.tm_min;
-      }
-    }
-    else dateTime = "Can't reach time service";
-    return dateTime;
-  }
 #endif
-
-bool networkGetTime(String timezone)
-// Set local time from NTP server specified in config.h
-{
-  // !!! ESP32 hardware dependent, using Esperif library
-  // https://randomnerdtutorials.com/esp32-ntp-timezones-daylight-saving/
-  #ifdef HARDWARE_SIMULATE
-    // IMPROVEMENT: Add random time
-    return false;
-  #else
-    struct tm timeinfo;
-
-    // connect to NTP server with 0 TZ offset
-    configTime(0, 0, networkNTPAddress.c_str());
-    if(!getLocalTime(&timeinfo))
-    {
-      debugMessage("Failed to obtain time from NTP Server",1);
-      return false;
-    }
-    // set local timezone
-    setTimeZone(timezone);
-    return true;
-  #endif
-}
 
 bool sensorPMInit()
 {
