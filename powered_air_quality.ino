@@ -62,11 +62,6 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 // UI glyphs
 #include "glyphs.h"
 
-#if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
-  // NTP setup using Esperiff library
-  #include <time.h>
-#endif
-
 #ifdef THINGSPEAK
   extern void post_thingspeak(float pm25, float minaqi, float maxaqi, float aqi);
 #endif
@@ -194,7 +189,7 @@ void setup()
     // Display key configuration parameters
     debugMessage(String("Starting Powered Air Quality with ") + sensorSampleInterval + " second sample interval",1);
     #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
-      debugMessage(String("Report interval is ") + sensorReportInterval + " minutes",1);
+      debugMessage(String("Report interval is ") + reportInterval + " minutes",1);
     #endif
     debugMessage(String("Internet reconnect delay is ") + networkConnectAttemptInterval + " seconds",2);
   #endif
@@ -237,14 +232,11 @@ void setup()
 
   // start tracking timers
   timeLastSample = -(sensorSampleInterval*1000); // forces immediate sample in loop()
-  timeLastInput = timeLastReport = millis(); // We'll count starup as a "touch"
+  timeLastInput = millis(); // We'll count starup as a "touch"
 }
 
 void loop()
 {
-  // update current timer value
-  uint32_t timeCurrent = millis();
-
   // User input = change screens. If screen saver is active a touch means revert to the
   // previously active screen, otherwise step to the next screen
   boolean istouched = ts.touched();
@@ -276,7 +268,7 @@ void loop()
   else {
     // If we're not already in screen saver mode, is it time it should be enabled?
     if(screenCurrent != SCREEN_SAVER) {
-      if( (timeCurrent - timeLastInput) > (screenSaverInterval*1000)) {
+      if( (millis() - timeLastInput) > (screenSaverInterval*1000)) {
         // Activate screen saver, retaining current screen for easy return
         screenSaved = screenCurrent;
         screenCurrent = SCREEN_SAVER;
@@ -287,7 +279,7 @@ void loop()
   }
 
   // is it time to read the sensor?
-  if((timeCurrent - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
+  if((millis() - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
   {
     if (!sensorPMRead())
     {
@@ -330,9 +322,9 @@ void loop()
   }
 
   // do we have network endpoints to report to?
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(HARDWARE_SIMULATE)
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
     // is it time to report to the network endpoints?
-    if ((timeCurrent - timeLastReport) >= (sensorReportInterval * 60 * 1000))  // converting sensorReportInterval into milliseconds
+    if ((millis() - timeLastReport) >= (reportInterval * 60 * 1000))  // converting reportInterval into milliseconds
     {
       // do we have samples to report?
       if (numSamples != 0) 
@@ -347,7 +339,7 @@ void loop()
         float minPM25 = totalPM25.getMin();                     // minimum PM2.5 over report interval
 
         debugMessage("----- Reporting -----",1);
-        debugMessage(String("Reporting averages (") + sensorReportInterval + " minute): ",1);
+        debugMessage(String("Reporting averages (") + reportInterval + " minute): ",1);
         debugMessage(String("Temp: ") + avgtemperatureF + " F",1);
         debugMessage(String("Humidity: ") + avgHumidity + "%",1);
         debugMessage(String("CO2: ") + avgCO2 + " ppm",1);
@@ -445,16 +437,6 @@ void screenCurrentInfo()
   const uint16_t yAQIValue = 160;
   const uint16_t xWeatherIcon = xOutdoorPMCircle - 18;
   const uint16_t yWeatherIcon = yPMCircles - 20;
-  
-  //IMPROVEMENT: removed deprecated assists and code
-  // const uint16_t yCO2 = 160;
-  // const uint16_t ySparkline = 40;
-  // const uint8_t legendHeight = 15;
-  // const uint8_t legendWidth = 10;
-  // const uint16_t xLegend = ((display.width() / 2) - legendWidth);
-  // const uint16_t yLegend = 110;
-  // const uint16_t xPMLabel = ((display.width() / 2) - 25);
-  // const uint16_t yPMLabel = 125;
 
   debugMessage("screenCurrentInfo() start", 1);
 
@@ -468,17 +450,7 @@ void screenCurrentInfo()
   // screen helpers in status region
   // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
   screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
-
-  // // PM2.5 color legend
-  // for(uint8_t loop = 0; loop < 4; loop++){
-  //   display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
-  // }
-
-  // // PM2.5 legend label
-  // display.setTextColor(ILI9341_WHITE);
-  // display.setFont();
-  // display.setCursor(xPMLabel,yPMLabel);
-  // display.print("PM2.5");
+  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), yMargins);
 
   // Indoor
   // Indoor temp
@@ -486,6 +458,7 @@ void screenCurrentInfo()
   display.setTextColor(ILI9341_WHITE);
   display.setCursor(xMargins + xTempModifier, yTempHumdidity);
   display.print(String((uint8_t)(sensorData.ambientTemperatureF + .5)));
+  //display.drawBitmap(xMargins + xTempModifier + 35, yTempHumdidity, bitmapTempFSmall, 20, 28, ILI9341_WHITE);
   display.setFont(&meteocons12pt7b);
   display.print("+");
 
@@ -499,17 +472,11 @@ void screenCurrentInfo()
   display.print(String((uint8_t)(sensorData.ambientHumidity + 0.5)));
   // IMPROVEMENT: original icon ratio was 5:7?
   // IMPROVEMENT: move this into meteoicons so it can be inline text
-  display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, epd_bitmap_humidity_icon_sm4, 20, 28, ILI9341_WHITE);
+  display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, ILI9341_WHITE);
 
   // Indoor PM2.5 ring
   display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[aqiRange(sensorData.pm25)]);
   display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
-
-  // // Indoor PM2.5 value
-  // display.setFont(&FreeSans12pt7b);
-  // display.setTextColor(ILI9341_WHITE);
-  // display.setCursor(xIndoorPMCircle,yPMCircles);
-  // display.print(int(sensorData.pm25+.5));
 
   // Indoor CO2 level inside the circle
   // CO2 value line
@@ -536,12 +503,6 @@ void screenCurrentInfo()
     // Outside PM2.5
     display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[aqiRange(owmAirQuality.pm25)]);
     display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
-
-    // // PM2.5 numeric value (displayed inside circle)
-    // display.setFont(&FreeSans12pt7b);
-    // display.setCursor(xOutdoorPMCircle,yPMCircles);
-    // display.setTextColor(ILI9341_WHITE);
-    // display.print(int(owmAirQuality.pm25+.5));
 
     // Outside air quality index (AQI)
     display.setFont(&FreeSans9pt7b);
@@ -578,7 +539,7 @@ void screenCurrentInfo()
     display.print(String((uint8_t)(owmCurrentData.humidity + 0.5)));
     // IMPROVEMENT: original icon ratio was 5:7?
     // IMPROVEMENT: move this into meteoicons so it can be inline text
-    display.drawBitmap(xOutdoorMargin + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, epd_bitmap_humidity_icon_sm4, 20, 28, ILI9341_WHITE);
+    display.drawBitmap(xOutdoorMargin + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, ILI9341_WHITE);
 
     // weather icon
     String weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
@@ -652,26 +613,81 @@ void screenAggregateData()
   display.setCursor(xHumidityColumn,yMinRow); display.print(totalHumidity.getMin(),0);
 }
 
-void screenAlert(String messageText)
-// Display error message centered on screen
+bool screenAlert(String messageText)
+// Description: Display error message centered on screen, using different font sizes and/or splitting to fit on screen
+// Parameters: String containing error message text
+// Output: NA (void)
+// Improvement: ?
 {
-  debugMessage(String("screenAlert '") + messageText + "' start",1);
+  debugMessage("screenAlert start",1);
 
+  bool status = true;
   int16_t x1, y1;
-  uint16_t width, height;
+  uint16_t largeFontPhraseOneWidth, largeFontPhraseOneHeight;
+  uint16_t smallFontWidth, smallFontHeight;
 
   display.setTextColor(ILI9341_WHITE);
   display.setFont(&FreeSans24pt7b);
   // Clear the screen
   display.fillScreen(ILI9341_BLACK);
-  display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &width, &height);
-  if (width >= display.width()) {
-    debugMessage(String("ERROR: screenAlert '") + messageText + "' is " + abs(display.width()-width) + " pixels too long", 1);
-  }
 
-  display.setCursor(display.width() / 2 - width / 2, display.height() / 2 + height / 2);
-  display.print(messageText);
+  display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
+  if (largeFontPhraseOneWidth <= (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2))))
+  {
+    // fits with large font, display
+    display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,display.height()/2+largeFontPhraseOneHeight/2);
+    display.print(messageText);
+  }
+  else
+  {
+    debugMessage(String("ERROR: screenAlert messageText '") + messageText + "' with large font is " + abs(largeFontPhraseOneWidth - (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) + " pixels too long", 1);
+    // does the string break into two pieces based on a space character?
+    uint8_t spaceLocation;
+    String messageTextPartOne, messageTextPartTwo;
+    uint16_t largeFontPhraseTwoWidth, largeFontPhraseTwoHeight;
+
+    spaceLocation = messageText.indexOf(' ');
+    if (spaceLocation)
+    {
+      // has a space character, will it fit on two lines?
+      messageTextPartOne = messageText.substring(0,spaceLocation);
+      messageTextPartTwo = messageText.substring(spaceLocation+1);
+      display.getTextBounds(messageTextPartOne.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
+      display.getTextBounds(messageTextPartTwo.c_str(), 0, 0, &x1, &y1, &largeFontPhraseTwoWidth, &largeFontPhraseTwoHeight);
+      if ((largeFontPhraseOneWidth <= (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) && (largeFontPhraseTwoWidth <= (display.width()-(display.width()/2-(largeFontPhraseTwoWidth/2)))))
+      {
+        // fits on two lines, display
+        display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,(display.height()/2+largeFontPhraseOneHeight/2)+6);
+        display.print(messageTextPartOne);
+        display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,(display.height()/2+largeFontPhraseOneHeight/2)-18);
+        display.print(messageTextPartTwo);
+      }
+    }
+    debugMessage(String("Message part one with large fonts is ") + largeFontPhraseOneWidth + " pixels wide vs. available " + (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2))) + " pixels",1);
+    debugMessage(String("Message part two with large fonts is ") + largeFontPhraseTwoWidth + " pixels wide vs. available " + (display.width()-(display.width()/2-(largeFontPhraseTwoWidth/2))) + " pixels",1);
+    // at large font size, string doesn't fit even if it can be broken into two lines
+    // does the string fit with small size text?
+    display.setFont(&FreeSans18pt7b);
+    display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &smallFontWidth, &smallFontHeight);
+    if (smallFontWidth <= (display.width()-(display.width()/2-(smallFontWidth/2))))
+    {
+      // fits with small size
+      display.setCursor(display.width()/2-smallFontWidth/2,display.height()/2+smallFontHeight/2);
+      display.print(messageText);
+    }
+    else
+    {
+      debugMessage(String("ERROR: screenAlert messageText '") + messageText + "' with small font is " + abs(smallFontWidth - (display.width()-(display.width()/2-(smallFontWidth/2)))) + " pixels too long", 1);
+      // doesn't fit at any size/line split configuration, display as truncated, large text
+      display.setFont(&FreeSans12pt7b);
+      display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
+      display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,display.height()/2+largeFontPhraseOneHeight/2);
+      display.print(messageText);
+      status = false;
+    }
+  }
   debugMessage("screenAlert end",1);
+  return status;
 }
 
 void screenGraph()
@@ -781,15 +797,19 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
   }
 }
 
-void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String messageText)
-// helper function for screenXXX() routines that draws a status message
-// uses system default font, so text drawn x+,y+ from initialX,Y
+void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
+// Description: helper function for screenXXX() routines that displays an icon relaying success of network endpoint writes
+// Parameters: initial x and y coordinate to draw from
+// Output : NA
+// Improvement : NA
+// 
 {
-  // IMPROVEMENT: Screen dimension boundary checks for function parameters
-  #ifdef SCREEN
-    display.setFont();  // resets to system default monospace font (6x8 pixels)
-    display.setCursor(initialX, initialY);
-    display.print(messageText);
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+    if ((timeLastReport == 0) || ((millis() - timeLastReport) >= ((reportInterval * 60 * 1000) * reportFailureThreshold)))  // converting reportInterval into milliseconds
+        // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
+        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_RED);
+      else
+        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_GREEN);
   #endif
 }
 

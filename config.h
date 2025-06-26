@@ -7,7 +7,7 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-#define DEBUG 1
+#define DEBUG 2
 
 // Configuration Step 3: simulate WiFi and sensor hardware,
 // returning random but plausible values
@@ -36,14 +36,15 @@
 // aqi labels from https://openweathermap.org/api/air-pollution
 const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 
-// Sample and reporting intervals
+// sampling and reporting intervals
 #ifdef DEBUG
   const uint16_t sensorSampleInterval = 30;   // time between samples in seconds
-  const uint8_t sensorReportInterval = 2;     // time between reports in minutes
+  const uint8_t reportInterval = 2;     // time between reports in minutes
 #else
   const uint16_t sensorSampleInterval = 60;
-  const uint8_t sensorReportInterval = 15;
+  const uint8_t reportInterval = 15;
 #endif
+const uint8_t reportFailureThreshold = 3; // number of times reporting has to fail before UI reflects issue
 
 // Screen saver timeout.  Will automatically switch to screen saver if
 // no user input (via touchscreen) in this many seconds
