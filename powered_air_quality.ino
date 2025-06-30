@@ -741,12 +741,12 @@ void screenVOC()
   const uint8_t legendHeight = 20;
   const uint8_t legendWidth = 10;
   const uint16_t xLegend = (display.width() - xMargins - legendWidth);
-  const uint16_t yLegend = ((display.height() /2 ) + (legendHeight * 2));
+  const uint16_t yLegend = ((display.height() / 2 ) - (legendHeight * 2));
   const uint16_t circleRadius = 100;
   const uint16_t xVOCCircle = (display.width() / 2);
   const uint16_t yVOCCircle = (display.height() / 2);
-  const uint16_t xVOCLabel = (display.width() - xMargins - legendWidth);
-  const uint16_t yVOCLabel = ((display.height() /2 ) + (legendHeight * 2) + 25);
+  const uint16_t xVOCLabel = xVOCCircle - 35;
+  const uint16_t yVOCLabel = yVOCCircle + 35;
 
   debugMessage("screenVOC start",1);
 
@@ -755,23 +755,21 @@ void screenVOC()
 
   // VOC color circle
   display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[vocRange(sensorData.vocIndex)]);
+  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,ILI9341_BLACK);
 
   // VOC color legend
   for(uint8_t loop = 0; loop < 4; loop++){
     display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
   }
 
-  // VOC legend label
+  // VOC value and label (displayed inside circle)
+  display.setFont(&FreeSans18pt7b);
+  display.setTextColor(warningColor[vocRange(sensorData.vocIndex)]);  // Use highlight color look-up table
+  display.setCursor(xVOCCircle-20,yVOCCircle);
+  display.print(int(sensorData.vocIndex+.5));
   display.setTextColor(ILI9341_WHITE);
-  display.setFont();
   display.setCursor(xVOCLabel,yVOCLabel);
   display.print("VOC");
-
-  // VOC value (displayed inside circle)
-  display.setFont(&FreeSans18pt7b);
-  display.setTextColor(ILI9341_WHITE);
-  display.setCursor(xVOCCircle,yVOCCircle);
-  display.print(int(sensorData.vocIndex+.5));
 
   debugMessage("screenVOC end",1);
 }
