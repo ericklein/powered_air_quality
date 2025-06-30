@@ -395,14 +395,14 @@ void loop()
           #ifdef MQTT
             if (!mqttDeviceWiFiUpdate(hardwareData.rssi))
                 Serial.println("ERROR: Did not write device data to MQTT broker");
-            if ((!mqttSensorTemperatureFUpdate(avgtemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorVOCIndexUpdate(avgVOC)) || (!mqttSensorCO2Update(avgCO2)))
+            if ((!mqttSensorTemperatureFUpdate(avgTemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorVOCIndexUpdate(avgVOC)) || (!mqttSensorCO2Update(avgCO2)))
                 Serial.println("ERROR: Did not write environment data to MQTT broker");
             #ifdef HASSIO_MQTT
               debugMessage("Establishing MQTT for Home Assistant",1);
               // Either configure sensors in Home Assistant's configuration.yaml file
               // directly or attempt to do it via MQTT auto-discovery
               // hassio_mqtt_setup();  // Config for MQTT auto-discovery
-              hassio_mqtt_publish(avgPM25, avgtemperatureF, avgVOC, avgHumidity);
+              hassio_mqtt_publish(avgPM25, avgTemperatureF, avgVOC, avgHumidity);
             #endif
           #endif
         }

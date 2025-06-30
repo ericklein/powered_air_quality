@@ -15,11 +15,11 @@
 // #define HARDWARE_SIMULATE
 
 // Configuration Step 4: Set network data endpoints
-// #define MQTT     // log sensor data to MQTT broker
+#define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-// #define INFLUX // Log data to InfluxDB server
+#define INFLUX // Log data to InfluxDB server
 // #define DWEET       // Log data to Dweet service. NOTE: Dweet.io shut down in April 2025 :-(
-#define THINGSPEAK  // Log data to ThingSpeak
+// #define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration variables that are less likely to require changes
 
