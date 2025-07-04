@@ -78,7 +78,7 @@
 
       mqttConnect();
 
-      if (rssiLevelPub.publish(rssi))
+      if (rssiLevelPub.publish((uint32_t)rssi))
       {
         debugMessage("MQTT publish: WiFi RSSI succeeded",1);
         result = true;
@@ -198,7 +198,7 @@
     // Attempt to publish sensor data
     if (co2 != 10000)
     {
-      if(co2Pub.publish(co2))
+      if(co2Pub.publish((uint32_t)co2))
       {
         debugMessage("MQTT publish: CO2 succeeded",1);
         result = true;

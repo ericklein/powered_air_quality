@@ -14,9 +14,21 @@
 #include "measure.h"
 
 #ifndef HARDWARE_SIMULATE
-  // instanstiate SEN66 hardware object
-  #include <SensirionI2cSen66.h>
-  SensirionI2cSen66 paqSensor;
+  #ifdef SENSOR_SEN66
+    // Instanstiate SEN66 hardware object, if being used
+    #include <SensirionI2cSen66.h>
+    SensirionI2cSen66 paqSensor;
+  #endif // SENSOR_SEN66
+
+  #ifdef SENSOR_SEN54SCD40
+    // instanstiate SEN5X hardware object
+    #include <SensirionI2CSen5x.h>
+    SensirionI2CSen5x pmSensor;
+
+    // instanstiate SCD4X hardware object
+    #include <SensirionI2cScd4x.h>
+    SensirionI2cScd4x co2Sensor;
+  #endif // SENSOR_SEN54SCD40
 
   // WiFi support
   #if defined(ESP8266)
@@ -64,9 +76,6 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 #endif
 
 // external function dependencies
-#ifdef DWEET
-  extern void post_dweet(float pm25, float minaqi, float maxaqi, float aqi, float temperatureF, float vocIndex, float humidity, int rssi);
-#endif
 
 #ifdef THINGSPEAK
   extern bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, 
@@ -122,7 +131,7 @@ uint32_t timeLastSample = 0;  // timestamp (in ms) for last captured sample
 uint32_t timeLastReport = 0;  // timestamp (in ms) for last report to network endpoints
 uint32_t timeLastInput =  0;  // timestamp (in ms) for last user input (screensaver)
 
-// used by thingspeak and dweet
+// used by thingspeak
 float MinPm25 = 1999; /* Observed minimum PM2.5 */
 float MaxPm25 = -99;  /* Observed maximum PM2.5 */
 
@@ -223,9 +232,9 @@ void setup()
 
   // *** Initialize sensors and other connected/onboard devices ***
   // SEN66 initialization
-  if( !sensorPAQInit()) {
-    Serial.println("ERROR: SEN6X initialization failure");
-    screenAlert("No SEN6X");    
+  if( !sensorInit()) {
+    Serial.println("ERROR: Sensor initialization failure");
+    screenAlert("No Sensors");    
   }
 
   // Setup the VSPI to use custom pins for the touchscreen
@@ -260,8 +269,8 @@ void loop()
   // is it time to read the sensor?
   if((timeCurrent - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
   {
-    // Read SEN66 to obtain all environmental values
-    if (!sensorPAQRead()) {
+    // Read sensor(s) to obtain all environmental values
+    if (!sensorRead()) {
       // TODO: what else to do here...
     }
 
@@ -374,12 +383,7 @@ void loop()
         {
           // TODO: Modify reporting routines to include NOX readings
 
-          /* Post both the current readings and historical max/min readings to the internet */
-          #ifdef DWEET
-            post_dweet(avgPM25, pm25toAQI_US(minPm25), pm25toAQI_US(maxPm25), pm25toAQI_US(avgPM25), avgTemperatureF, avgVOC, avgHumidity, rssi);
-          #endif
-
-          // Also post the AQI sensor data to ThingSpeak. Make sure to use the PM25 to AQI conversion formula for the
+          // Post the AQI sensor data to ThingSpeak. Make sure to use the PM25 to AQI conversion formula for the
           // desired country as there is no global standard.
           #ifdef THINGSPEAK
             if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
@@ -978,23 +982,7 @@ void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String mess
     debugMessage(String("SIMULATED WiFi RSSI: ") + hardwareData.rssi,1);
   }
 
-  // Simulates sensor reading from SEN66 sensor
-  void  sensorPAQSimulate()
-  {
-    sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.pm4 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.vocIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
-    sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
-    sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
-    sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
-    sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
 
-    debugMessage(String("SIMULATED SEN66 PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex +
-      sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex + ",NOX index: " + sensorData.noxIndex,1);
-
-  }
   void  sensorPMSimulate()
   // Simulates sensor reading from PMSA003I sensor
   {
@@ -1356,285 +1344,376 @@ bool networkGetTime(String timezone)
   #endif
 }
 
-bool sensorPAQInit()
+/**************************************************************************************
+ *                 SENSOR SPECIFIC ROUTINES AND CONVENIENCE FUNCTIONS                 *
+ *************************************************************************************/
+
+// Generalized entry point for sensor initialization
+bool sensorInit()
 {
-    static char errorMessage[64];
-    static int16_t error;
-
-    Wire.begin(CYD_SDA, CYD_SCL);
-    paqSensor.begin(Wire, SEN66_I2C_ADDR_6B);
-
-    error = paqSensor.deviceReset();
-    if (error != 0) {
-        debugMessage("Error trying to execute deviceReset(): ",1);
-        errorToString(error, errorMessage, sizeof errorMessage);
-        debugMessage(errorMessage,1);
-        return false;
-    }
-    delay(1200);
-    int8_t serialNumber[32] = {0};
-    error = paqSensor.getSerialNumber(serialNumber, 32);
-    if (error != 0) {
-        debugMessage("Error trying to execute SEN6x getSerialNumber(): ",1);
-        errorToString(error, errorMessage, sizeof errorMessage);
-        debugMessage(errorMessage,1);
-        return false;
-    }
-    debugMessage("SEN6x serial number: ",2);
-    debugMessage((const char *)serialNumber,2);
-    error = paqSensor.startContinuousMeasurement();
-    if (error != 0) {
-        debugMessage("Error trying to execute SEN6x startContinuousMeasurement(): ",1);
-        errorToString(error, errorMessage, sizeof errorMessage);
-        debugMessage(errorMessage,1);
-        return false;
-    }
-
-    // TODO: Add support for setting custom temperature offset for SEN66
-    return true;
-}
-
-bool sensorPAQRead()
-{
-  #ifdef HARDWARE_SIMULATE
-    sensorPAQSimulate();
-    return true;
+  // Conditionally compiled based on the sensor configuration as defined in config.h
+  #ifdef SENSOR_SEN66
+    return(sensorSEN6xInit());
   #endif
-    static char errorMessage[64];
-    static int16_t error;
-    float ambientTemperatureC;
 
-    // TODO: Add support for checking isDataReady flag on SEN66
+  #ifdef SENSOR_SEN54SCD40
+    bool status = true;
+    // Initialize PM25 sensor (SEN54)
+    if (!sensorPMInit()) {
+      debugMessage("SEN5X initialization failure", 1);
+      screenAlert("No SEN5X");
+      status = false;
+    }
 
-    error = paqSensor.readMeasuredValues(
-      sensorData.pm1, sensorData.pm25, sensorData.pm4,
-      sensorData.pm10, sensorData.ambientHumidity, ambientTemperatureC , sensorData.vocIndex,
-      sensorData.noxIndex, sensorData.ambientCO2);
+    // Initialize CO2 Sensor (SCD4X)
+    if (!sensorCO2Init()) {
+      debugMessage("SCD4X initialization failure",1);
+      screenAlert("No SCD4X");
+      // This error often occurs right after a firmware flash and reset.
+      // Hardware deep sleep typically resolves it, so quickly cycle the hardware
+      powerDisable(hardwareRebootInterval);
+      status = false;  // Not executed given power reset
+    }
+    return(status);
+  #endif // SENSOR_SEN54SCD40
 
-  if (error != 0) {
-      debugMessage("Error trying to execute readMeasuredValues(): ",1);
-      errorToString(error, errorMessage, sizeof errorMessage);
-      debugMessage(errorMessage,1);
-      return false;
-  }
-  // Convert temperature Celsius from sensor into Farenheit
-  sensorData.ambientTemperatureF = (1.8*ambientTemperatureC) + 32.0;
-  
-  debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + String(", CO2: ") + sensorData.ambientCO2 +
-    String(", VOC: ") + sensorData.vocIndex + String(", NOX: ") + sensorData.noxIndex + String(", ") + 
-    sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + String("%, "),1);
-  return true;
+  debugMessage("Initialization failed: no sensor(s) defined!",1);
+  return false;
 }
 
-/*
-bool sensorPMInit()
+// Generalized entry point for reading sensor values
+bool sensorRead()
 {
-  #ifdef HARDWARE_SIMULATE
-    return true;
-  #else
-    uint16_t error;
-    char errorMessage[256];
+  #ifdef SENSOR_SEN66
+    return(sensorSEN6xRead());
+  #endif // SENSOR_SEN66
 
-    // Wire.begin();
-    Wire.begin(CYD_SDA, CYD_SCL);
-    pmSensor.begin(Wire);
-
-    error = pmSensor.deviceReset();
-    if (error) {
-      errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " error during SEN5x reset", 1);
-      return false;
-    }
-
-    // set a temperature offset in degrees celsius
-    // By default, the temperature and humidity outputs from the sensor
-    // are compensated for the modules self-heating. If the module is
-    // designed into a device, the temperature compensation might need
-    // to be adapted to incorporate the change in thermal coupling and
-    // self-heating of other device components.
-    //
-    // A guide to achieve optimal performance, including references
-    // to mechanical design-in examples can be found in the app note
-    // “SEN5x – Temperature Compensation Instruction” at www.sensirion.com.
-    // Please refer to those application notes for further information
-    // on the advanced compensation settings used
-    // in `setTemperatureOffsetParameters`, `setWarmStartParameter` and
-    // `setRhtAccelerationMode`.
-    //
-    // Adjust tempOffset to account for additional temperature offsets
-    // exceeding the SEN module's self heating.
-    // float tempOffset = 0.0;
-    // error = pmSensor.setTemperatureOffsetSimple(tempOffset);
-    // if (error) {
-    //   errorToString(error, errorMessage, 256);
-    //   debugMessage(String(errorMessage) + " error setting temp offset", 1);
-    // } else {
-    //   debugMessage(String("Temperature Offset set to ") + tempOffset + " degrees C", 2);
-    // }
-
-    // Start Measurement
-    error = pmSensor.startMeasurement();
-    if (error) {
-      errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " error during SEN5x startMeasurement", 1);
-      return false;
-    }
-    debugMessage("SEN5X starting periodic measurements",1);
-    return true;
-  #endif
-}
-
-bool sensorPMRead()
-{
-  #ifdef HARDWARE_SIMULATE
-    sensorPMSimulate();
-    return true;
-  #else
-    uint16_t error;
-    char errorMessage[256];
-    // we'll use the SCD4X values for these
-    // IMPROVEMENT: Compare to SCD4X values?
-    float sen5xTempF;
-    float sen5xHumidity;
-
-    debugMessage("SEN5X read initiated",1);
-
-    error = pmSensor.readMeasuredValues(
-      sensorData.pm1, sensorData.pm25, sensorData.pm4,
-      sensorData.pm10, sen5xHumidity, sen5xTempF, sensorData.vocIndex,
-      sensorData.noxIndex);
-    if (error) {
-      errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " error during SEN5x read",1);
-      return false;
-    }
-    debugMessage(String("SEN5X PM2.5: ") + sensorData.pm25 + ", VOC: " + sensorData.vocIndex, 1);
-    return true;
-  #endif
-}
-*/
-
-/*
-bool sensorCO2Init()
-// initializes SCD4X to read
-{
-  #ifdef HARDWARE_SIMULATE
-    return true;
- #else
-    char errorMessage[256];
-    uint16_t error;
-
-    // Wire.begin();
-    // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
-    Wire.begin(CYD_SDA, CYD_SCL);
-    co2Sensor.begin(Wire);
-
-    // stop potentially previously started measurement.
-    error = co2Sensor.stopPeriodicMeasurement();
-    if (error) {
-      errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " executing SCD4X stopPeriodicMeasurement()",1);
-      return false;
-    }
-
-    // Check onboard configuration settings while not in active measurement mode
-    // IMPROVEMENT: These don't handle error conditions, which should be rare as caught above
-    float offset;
-    error = co2Sensor.getTemperatureOffset(offset);
-    if (error == 0){
-        error = co2Sensor.setTemperatureOffset(sensorTempCOffset);
-        if (error == 0)
-          debugMessage(String("Initial SCD4X temperature offset ") + offset + " ,set to " + sensorTempCOffset,2);
-    }
-
-    // IMPROVEMENT: These don't handle error conditions, which should be rare as caught above
-    uint16_t sensor_altitude;
-    error = co2Sensor.getSensorAltitude(sensor_altitude);
-    if (error == 0){
-      error = co2Sensor.setSensorAltitude(SITE_ALTITUDE);  // optimizes CO2 reading
-      if (error == 0)
-        debugMessage(String("Initial SCD4X altitude ") + sensor_altitude + " meters, set to " + SITE_ALTITUDE,2);
-    }
-
-    // Start Measurement.  For high power mode, with a fixed update interval of 5 seconds
-    // (the typical usage mode), use startPeriodicMeasurement().  For low power mode, with
-    // a longer fixed sample interval of 30 seconds, use startLowPowerPeriodicMeasurement()
-    // uint16_t error = co2Sensor.startPeriodicMeasurement();
-    error = co2Sensor.startLowPowerPeriodicMeasurement();
-    if (error) {
-      errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " executing SCD4X startLowPowerPeriodicMeasurement()",1);
-      return false;
-    }
-    else
+  #ifdef SENSOR_SEN54SCD40
+    bool status = true;
+    if (!sensorPMRead())
     {
-      debugMessage("SCD4X starting low power periodic measurements",1);
-      return true;
+      // TODO: what else to do here, see OWM Reads...
+      debugMessage("PM sensor read failed",1);
+      status = false;
     }
-  #endif
+
+    if (!sensorCO2Read())
+    {
+      screenAlert("CO2 read fail");
+      debugMessage("CO2 sensor read failed",1);
+      status = false;
+    }
+    return(status);
+  #endif // SENSOR_SEN54SCD40
+
+  debugMessage("Read failed: no sensor(s) defined!",1);
+  return false;
 }
 
-bool sensorCO2Read()
-// sets global environment values from SCD4X sensor
-{
-  #ifdef HARDWARE_SIMULATE
-    sensorCO2Simulate();
+// Functions to be compiled in and used with the SEN66-based configuration
+#ifdef SENSOR_SEN66
+  // Initialize SEN66 sensor
+  bool sensorSEN6xInit()
+  {
+      static char errorMessage[64];
+      static int16_t error;
+
+      Wire.begin(CYD_SDA, CYD_SCL);
+      paqSensor.begin(Wire, SEN66_I2C_ADDR_6B);
+
+      error = paqSensor.deviceReset();
+      if (error != 0) {
+          debugMessage("Error trying to execute deviceReset(): ",1);
+          errorToString(error, errorMessage, sizeof errorMessage);
+          debugMessage(errorMessage,1);
+          return false;
+      }
+      delay(1200);
+      int8_t serialNumber[32] = {0};
+      error = paqSensor.getSerialNumber(serialNumber, 32);
+      if (error != 0) {
+          debugMessage("Error trying to execute SEN6x getSerialNumber(): ",1);
+          errorToString(error, errorMessage, sizeof errorMessage);
+          debugMessage(errorMessage,1);
+          return false;
+      }
+      debugMessage("SEN6x serial number: ",2);
+      debugMessage((const char *)serialNumber,2);
+      error = paqSensor.startContinuousMeasurement();
+      if (error != 0) {
+          debugMessage("Error trying to execute SEN6x startContinuousMeasurement(): ",1);
+          errorToString(error, errorMessage, sizeof errorMessage);
+          debugMessage(errorMessage,1);
+          return false;
+      }
+
+      // TODO: Add support for setting custom temperature offset for SEN66
+      return true;
+  }
+
+  // Read data from SEN66 sensor
+  bool sensorSEN6xRead()
+  {
+    #ifdef HARDWARE_SIMULATE
+      sensorSEN6xSimulate();
+      return true;
+    #endif
+      static char errorMessage[64];
+      static int16_t error;
+      float ambientTemperatureC;
+
+      // TODO: Add support for checking isDataReady flag on SEN66
+
+      error = paqSensor.readMeasuredValues(
+        sensorData.pm1, sensorData.pm25, sensorData.pm4,
+        sensorData.pm10, sensorData.ambientHumidity, ambientTemperatureC , sensorData.vocIndex,
+        sensorData.noxIndex, sensorData.ambientCO2);
+
+    if (error != 0) {
+        debugMessage("Error trying to execute readMeasuredValues(): ",1);
+        errorToString(error, errorMessage, sizeof errorMessage);
+        debugMessage(errorMessage,1);
+        return false;
+    }
+    // Convert temperature Celsius from sensor into Farenheit
+    sensorData.ambientTemperatureF = (1.8*ambientTemperatureC) + 32.0;
+    
+    debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + String(", CO2: ") + sensorData.ambientCO2 +
+      String(", VOC: ") + sensorData.vocIndex + String(", NOX: ") + sensorData.noxIndex + String(", ") + 
+      sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + String("%, "),1);
     return true;
+  }
+
+  #ifdef HARDWARE_SIMULATE
+    // Simulates sensor reading from SEN66 sensor
+    void  sensorSEN6xSimulate()
+    {
+      sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
+      sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
+      sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
+      sensorData.pm4 = random(sensorPMMin, sensorPMMax) / 100.0;
+      sensorData.vocIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
+      sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
+      sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
+      sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
+      sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
+
+      debugMessage(String("SIMULATED SEN66 PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex +
+        sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex + ",NOX index: " + sensorData.noxIndex,1);
+
+    }
+  #endif // HARDWARE_SIMULATE
+#endif // SENSOR_SEN66
+
+// Functions to be compiled in and use with the SEN54 + SCD40 configuration
+#ifdef SENSOR_SEN54SCD40
+  bool sensorPMInit()
+  {
+    #ifdef HARDWARE_SIMULATE
+      return true;
+    #else
+      uint16_t error;
+      char errorMessage[256];
+
+      // Wire.begin();
+      Wire.begin(CYD_SDA, CYD_SCL);
+      pmSensor.begin(Wire);
+
+      error = pmSensor.deviceReset();
+      if (error) {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " error during SEN5x reset", 1);
+        return false;
+      }
+
+      // set a temperature offset in degrees celsius
+      // By default, the temperature and humidity outputs from the sensor
+      // are compensated for the modules self-heating. If the module is
+      // designed into a device, the temperature compensation might need
+      // to be adapted to incorporate the change in thermal coupling and
+      // self-heating of other device components.
+      //
+      // A guide to achieve optimal performance, including references
+      // to mechanical design-in examples can be found in the app note
+      // “SEN5x – Temperature Compensation Instruction” at www.sensirion.com.
+      // Please refer to those application notes for further information
+      // on the advanced compensation settings used
+      // in `setTemperatureOffsetParameters`, `setWarmStartParameter` and
+      // `setRhtAccelerationMode`.
+      //
+      // Adjust tempOffset to account for additional temperature offsets
+      // exceeding the SEN module's self heating.
+      // float tempOffset = 0.0;
+      // error = pmSensor.setTemperatureOffsetSimple(tempOffset);
+      // if (error) {
+      //   errorToString(error, errorMessage, 256);
+      //   debugMessage(String(errorMessage) + " error setting temp offset", 1);
+      // } else {
+      //   debugMessage(String("Temperature Offset set to ") + tempOffset + " degrees C", 2);
+      // }
+
+      // Start Measurement
+      error = pmSensor.startMeasurement();
+      if (error) {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " error during SEN5x startMeasurement", 1);
+        return false;
+      }
+      debugMessage("SEN5X starting periodic measurements",1);
+      return true;
+    #endif
+  }
+
+  bool sensorPMRead()
+  {
+    #ifdef HARDWARE_SIMULATE
+      sensorPMSimulate();
+      return true;
+    #else
+      uint16_t error;
+      char errorMessage[256];
+      // we'll use the SCD4X values for these
+      // IMPROVEMENT: Compare to SCD4X values?
+      float sen5xTempF;
+      float sen5xHumidity;
+
+      debugMessage("SEN5X read initiated",1);
+
+      error = pmSensor.readMeasuredValues(
+        sensorData.pm1, sensorData.pm25, sensorData.pm4,
+        sensorData.pm10, sen5xHumidity, sen5xTempF, sensorData.vocIndex,
+        sensorData.noxIndex);
+      if (error) {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " error during SEN5x read",1);
+        return false;
+      }
+      debugMessage(String("SEN5X PM2.5: ") + sensorData.pm25 + ", VOC: " + sensorData.vocIndex, 1);
+      return true;
+    #endif
+  }
+
+  bool sensorCO2Init()
+  // initializes SCD4X to read
+  {
+    #ifdef HARDWARE_SIMULATE
+      return true;
   #else
-    char errorMessage[256];
-    bool status;
-    uint16_t co2 = 0;
-    float temperatureC = 0.0f;
-    float humidity = 0.0f;
-    uint16_t error;
+      char errorMessage[256];
+      uint16_t error;
 
-    debugMessage("SCD4X read initiated",1);
+      // Wire.begin();
+      // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
+      Wire.begin(CYD_SDA, CYD_SCL);
+      co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
 
-    // Loop attempting to read Measurement
-    status = false;
-    while(!status) {
-      delay(100);
-
-      // Is data ready to be read?
-      bool isDataReady = false;
-      error = co2Sensor.getDataReadyFlag(isDataReady);
+      // stop potentially previously started measurement.
+      error = co2Sensor.stopPeriodicMeasurement();
       if (error) {
-          errorToString(error, errorMessage, 256);
-          debugMessage(String("Error trying to execute getDataReadyFlag(): ") + errorMessage,1);
-          continue; // Back to the top of the loop
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " executing SCD4X stopPeriodicMeasurement()",1);
+        return false;
       }
-      if (!isDataReady) {
-          continue; // Back to the top of the loop
-      }
-      debugMessage("SCD4X data available",2);
 
-      error = co2Sensor.readMeasurement(co2, temperatureC, humidity);
-      if (error) {
-          errorToString(error, errorMessage, 256);
-          debugMessage(String("SCD4X executing readMeasurement(): ") + errorMessage,1);
-          // Implicitly continues back to the top of the loop
+      // Check onboard configuration settings while not in active measurement mode
+      // IMPROVEMENT: These don't handle error conditions, which should be rare as caught above
+      float offset;
+      error = co2Sensor.getTemperatureOffset(offset);
+      if (error == 0){
+          error = co2Sensor.setTemperatureOffset(sensorTempCOffset);
+          if (error == 0)
+            debugMessage(String("Initial SCD4X temperature offset ") + offset + " ,set to " + sensorTempCOffset,2);
       }
-      else if (co2 < sensorCO2Min || co2 > sensorCO2Max)
-      {
-        debugMessage(String("SCD4X CO2 reading: ") + sensorData.ambientCO2 + " is out of expected range",1);
-        //(sensorData.ambientCO2 < sensorCO2Min) ? sensorData.ambientCO2 = sensorCO2Min : sensorData.ambientCO2 = sensorCO2Max;
-        // Implicitly continues back to the top of the loop
+
+      // IMPROVEMENT: These don't handle error conditions, which should be rare as caught above
+      uint16_t sensor_altitude;
+      error = co2Sensor.getSensorAltitude(sensor_altitude);
+      if (error == 0){
+        error = co2Sensor.setSensorAltitude(SITE_ALTITUDE);  // optimizes CO2 reading
+        if (error == 0)
+          debugMessage(String("Initial SCD4X altitude ") + sensor_altitude + " meters, set to " + SITE_ALTITUDE,2);
+      }
+
+      // Start Measurement.  For high power mode, with a fixed update interval of 5 seconds
+      // (the typical usage mode), use startPeriodicMeasurement().  For low power mode, with
+      // a longer fixed sample interval of 30 seconds, use startLowPowerPeriodicMeasurement()
+      // uint16_t error = co2Sensor.startPeriodicMeasurement();
+      error = co2Sensor.startLowPowerPeriodicMeasurement();
+      if (error) {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " executing SCD4X startLowPowerPeriodicMeasurement()",1);
+        return false;
       }
       else
       {
-        // Successfully read valid data
-        sensorData.ambientTemperatureF = (temperatureC*1.8)+32.0;
-        sensorData.ambientHumidity = humidity;
-        sensorData.ambientCO2 = co2;
-        debugMessage(String("SCD4X: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
-        // Update global sensor readings
-        status = true;  // We have data, can break out of loop
+        debugMessage("SCD4X starting low power periodic measurements",1);
+        return true;
       }
-    }
-  #endif
-  return(true);
-}
-*/
+    #endif
+  }
+
+  bool sensorCO2Read()
+  // sets global environment values from SCD4X sensor
+  {
+    #ifdef HARDWARE_SIMULATE
+      sensorCO2Simulate();
+      return true;
+    #else
+      char errorMessage[256];
+      bool status;
+      uint16_t co2 = 0;
+      float temperatureC = 0.0f;
+      float humidity = 0.0f;
+      uint16_t error;
+
+      debugMessage("SCD4X read initiated",1);
+
+      // Loop attempting to read Measurement
+      status = false;
+      while(!status) {
+        delay(100);
+
+        // Is data ready to be read?
+        bool isDataReady = false;
+        error = co2Sensor.getDataReadyStatus(isDataReady);
+        if (error) {
+            errorToString(error, errorMessage, 256);
+            debugMessage(String("Error trying to execute getDataReadyStatus(): ") + errorMessage,1);
+            continue; // Back to the top of the loop
+        }
+        if (!isDataReady) {
+            continue; // Back to the top of the loop
+        }
+        debugMessage("SCD4X data available",2);
+
+        error = co2Sensor.readMeasurement(co2, temperatureC, humidity);
+        if (error) {
+            errorToString(error, errorMessage, 256);
+            debugMessage(String("SCD4X executing readMeasurement(): ") + errorMessage,1);
+            // Implicitly continues back to the top of the loop
+        }
+        else if (co2 < sensorCO2Min || co2 > sensorCO2Max)
+        {
+          debugMessage(String("SCD4X CO2 reading: ") + sensorData.ambientCO2 + " is out of expected range",1);
+          //(sensorData.ambientCO2 < sensorCO2Min) ? sensorData.ambientCO2 = sensorCO2Min : sensorData.ambientCO2 = sensorCO2Max;
+          // Implicitly continues back to the top of the loop
+        }
+        else
+        {
+          // Successfully read valid data
+          sensorData.ambientTemperatureF = (temperatureC*1.8)+32.0;
+          sensorData.ambientHumidity = humidity;
+          sensorData.ambientCO2 = co2;
+          debugMessage(String("SCD4X: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+          // Update global sensor readings
+          status = true;  // We have data, can break out of loop
+        }
+        delay(100); // reduces readMeasurement() "Not enough data received" errors
+      }
+    #endif
+    return(status);
+  }
+#endif // SENSOR_SEN54SCD40
 
 uint8_t co2Range(uint16_t co2)
 // converts co2 value to index value for labeling and color

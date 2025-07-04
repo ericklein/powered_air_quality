@@ -9,17 +9,25 @@
 // comment out to turn off; 1 = summary, 2 = verbose
 // #define DEBUG 1
 
-// Configuration Step 3: simulate WiFi and sensor hardware,
-// returning random but plausible values
-// comment out to turn off
+// Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
+// Comment out to turn off
 // #define HARDWARE_SIMULATE
 
 // Configuration Step 4: Set network data endpoints
-#define MQTT     // log sensor data to MQTT broker
+// #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
 #define INFLUX // Log data to InfluxDB server
-// #define DWEET       // Log data to Dweet service. NOTE: Dweet.io shut down in April 2025 :-(
-// #define THINGSPEAK  // Log data to ThingSpeak
+#define THINGSPEAK  // Log data to ThingSpeak
+
+// Configuration Step 5: Which sensor configuration do we have?  Later generation devices
+// use Sensirion SEN66 sensor which measures CO2, particulates, VOC, NOX, temperature and humidity
+// in one package.  Earlier generation devices use a combination of the SEN54 particulates
+// sensor and the SCD40 CO2 sensor (which also provides VOC, temperature and humidity readings).
+// Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
+// NOX Index).
+// Use the one that corresponds to your device hardware and leave the other commented out.
+#define SENSOR_SEN66
+// #define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 
@@ -34,14 +42,6 @@ const String weekDays[7] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursda
   // Specify Measurement to use with InfluxDB for sensor and device info
   const String influxEnvMeasurement = "weather";  // Used for environmental sensor data
   const String influxDevMeasurement =  "device";   // Used for logging AQI device data (e.g. battery)
-#endif
-
-#ifdef DWEET
-  // Post data to the internet via dweet.io.  Set DWEET_DEVICE to be a
-  // unique name you want associated with this reporting device, allowing
-  // data to be easily retrieved through the web or Dweet's REST API.
-  #define DWEET_HOST "dweet.io"   // Typically dweet.io
-  #define DWEET_DEVICE "makerhour-airquality"  // Must be unique across all of dweet.io
 #endif
 
 // Open Weather Map (OWM)
@@ -99,7 +99,6 @@ const uint16_t warningColor[4] = {
   const uint16_t sensorVOCMax = 50000; // divided by 100.0 to give float
 #endif
 
-// CO2 from SCD4x
 // CO2 value thresholds for labeling
 const uint16_t co2Fair = 800;
 const uint16_t co2Poor = 1200;
@@ -109,13 +108,12 @@ const uint16_t sensorCO2Min =      400;   // in ppm
 const uint16_t sensorCO2Max =      2000;  // in ppm
 const uint8_t sensorTempCOffset = 0;     // in Celcius
 
-// particulates (pm1, pm2.5, pm4, pm10) from SEN5x
-// CO2 value thresholds for labeling
+// Particulates (pm1, pm2.5, pm4, pm10) value thresholds for labeling
 const uint16_t pmFair = 25;
 const uint16_t pmPoor = 50;
 const uint16_t pm2Bad = 150;
 
-// VOC (volatile organic compounds) from SEN5x
+// VOC (volatile organic compounds) value thresholds for labeling
 const uint16_t vocFair = 150;
 const uint16_t vocPoor = 250;
 const uint16_t vocBad = 400;
@@ -123,7 +121,7 @@ const uint16_t vocBad = 400;
 // Sleep time in seconds if hardware error occurs
 const uint8_t hardwareRebootInterval = 10;
 
-// Display
+// Display related configuration information
 const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
 // Manage the suported display screens
 #define SCREEN_SAVER      0
