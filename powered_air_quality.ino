@@ -70,11 +70,6 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 // UI glyphs
 #include "glyphs.h"
 
-#if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
-  // NTP setup using Esperiff library
-  #include <time.h>
-#endif
-
 // external function dependencies
 
 #ifdef THINGSPEAK
@@ -192,7 +187,7 @@ int16_t co2data[GRAPH_POINTS];
 
 // Set first screen to display.  If that first screen is the screen saver then we need to
 // have the saved screen be something else so it'll get switched to on the first touch
-uint8_t screenCurrent = SCREEN_GRAPH; // DJB-DEV should be _SAVER
+uint8_t screenCurrent = SCREEN_SAVER; // Initial screen to display (on startup)
 uint8_t screenSaved   = SCREEN_INFO; // Saved when screen saver engages so it can be restored
 
 void setup() 
@@ -205,9 +200,9 @@ void setup()
     // wait for serial port connection
     while (!Serial);
     // Display key configuration parameters
-    debugMessage(String("Starting Powered Air Quality with ") + sensorSampleInterval + " second sample interval",1);
+    debugMessage(String("Starting Powered Air Quality with ") + sensorSampleInterval + String(" second sample interval"),1);
     #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
-      debugMessage(String("Report interval is ") + sensorReportInterval + " minutes",1);
+      debugMessage(String("Report interval is ") + reportInterval + " minutes",1);
     #endif
     debugMessage(String("Internet reconnect delay is ") + networkConnectAttemptInterval + " seconds",2);
   #endif
@@ -247,7 +242,7 @@ void setup()
 
   // start tracking timers
   timeLastSample = -(sensorSampleInterval*1000); // forces immediate sample in loop()
-  timeLastInput = timeLastReport = millis(); // We'll count starup as a "touch"
+  timeLastInput = millis(); // We'll count startup as a "touch"
   
 }
 
@@ -263,24 +258,24 @@ void loop()
   float maxPM25 = 0;            // maximum PM2.5 over report interval
   float avgNOX = 0;             // average NOX over report interval
 
-  // update current timer value
-  uint32_t timeCurrent = millis();
-
   // is it time to read the sensor?
-  if((timeCurrent - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
+  if((millis() - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
   {
     // Read sensor(s) to obtain all environmental values
     if (!sensorRead()) {
       // TODO: what else to do here...
+      debugMessage("Sensor read failed!",1);
     }
 
     // Get local weather and air quality info from Open Weather Map
     if (!OWMCurrentWeatherRead()) {
       owmCurrentData.tempF = 10000;
+      debugMessage("OWM weather read failed!",1);
     }
     
     if (!OWMAirPollutionRead()) {
       owmAirQuality.aqi = 10000;
+      debugMessage("OWM AQI read failed!",1);
     }
 
     // add to the running totals
@@ -337,7 +332,7 @@ void loop()
   else {
     // If we're not already in screen saver mode, is it time it should be enabled?
     if(screenCurrent != SCREEN_SAVER) {
-      if( (timeCurrent - timeLastInput) > (screenSaverInterval*1000)) {
+      if( (millis() - timeLastInput) > (screenSaverInterval*1000)) {
         // Activate screen saver, retaining current screen for easy return
         screenSaved = screenCurrent;
         screenCurrent = SCREEN_SAVER;
@@ -350,7 +345,7 @@ void loop()
   // do we have network endpoints to report to?
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK) || defined(HARDWARE_SIMULATE)
     // is it time to report to the network endpoints?
-    if ((timeCurrent - timeLastReport) >= (sensorReportInterval * 60 * 1000))  // converting sensorReportInterval into milliseconds
+    if ((millis() - timeLastReport) >= (reportInterval * 60 * 1000))  // converting reportInterval into milliseconds
     {
       // do we have samples to report?
       if (numSamples != 0) 
@@ -366,15 +361,11 @@ void loop()
         minPM25 = totalPM25.getMin();
         avgNOX = totalNOX.getAverage();
 
+        debugMessage(String("** ----- Reporting averages (") + reportInterval + " minute) ----- ",1);
 
-        debugMessage("----- Reporting -----",1);
-        debugMessage(String("Reporting averages (") + sensorReportInterval + " minute): ",1);
-        debugMessage(String("Temp: ") + avgTemperatureF + " F",1);
-        debugMessage(String("Humidity: ") + avgHumidity + "%",1);
-        debugMessage(String("CO2: ") + avgCO2 + " ppm",1);
-        debugMessage(String("VOC: ") + avgVOC,1);
-        debugMessage(String("PM2.5: ") + avgPM25 + " = AQI " + pm25toAQI_US(avgPM25),1);
-        debugMessage(String("NOX: ") + avgNOX,1);
+        debugMessage(String("** PM2.5: ") + avgPM25 + String(", CO2: ") + avgCO2 + " ppm" + 
+          String(", VOC: ") + avgVOC+ String(", NOX: ") + avgNOX + String(", ") + 
+          avgTemperatureF + "F, " + avgHumidity + String("%, ") + String(", AQI(US): ") + pm25toAQI_US(avgPM25),1);
 
         // Retain CO2 data for graphing (see below)
         retainCO2(avgCO2);
@@ -466,6 +457,9 @@ void screenUpdate(bool firstTime)
 void screenCurrentInfo() 
 // Display current particulate matter, CO2, and local weather on screen
 {
+  int16_t x1, y1; // For (x,y) calculations
+  uint16_t w1, h1;  // For text size calculations
+
   // screen layout assists in pixels
   const uint16_t yStatusRegion = display.height()/8;
   const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
@@ -483,18 +477,8 @@ void screenCurrentInfo()
   const uint16_t yAQIValue = 160;
   const uint16_t xWeatherIcon = xOutdoorPMCircle - 18;
   const uint16_t yWeatherIcon = yPMCircles - 20;
-  
-  //IMPROVEMENT: removed deprecated assists and code
-  // const uint16_t yCO2 = 160;
-  // const uint16_t ySparkline = 40;
-  // const uint8_t legendHeight = 15;
-  // const uint8_t legendWidth = 10;
-  // const uint16_t xLegend = ((display.width() / 2) - legendWidth);
-  // const uint16_t yLegend = 110;
-  // const uint16_t xPMLabel = ((display.width() / 2) - 25);
-  // const uint16_t yPMLabel = 125;
 
-  debugMessage("screenCurrentInfo() start", 1);
+  debugMessage("screenCurrentInfo() start", 2);  // DJB-DEV: was 1
 
   // clear screen
   display.fillScreen(ILI9341_BLACK);
@@ -506,17 +490,7 @@ void screenCurrentInfo()
   // screen helpers in status region
   // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
   screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
-
-  // // PM2.5 color legend
-  // for(uint8_t loop = 0; loop < 4; loop++){
-  //   display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
-  // }
-
-  // // PM2.5 legend label
-  // display.setTextColor(ILI9341_WHITE);
-  // display.setFont();
-  // display.setCursor(xPMLabel,yPMLabel);
-  // display.print("PM2.5");
+  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), yMargins);
 
   // Indoor
   // Indoor temp
@@ -524,6 +498,7 @@ void screenCurrentInfo()
   display.setTextColor(ILI9341_WHITE);
   display.setCursor(xMargins + xTempModifier, yTempHumdidity);
   display.print(String((uint8_t)(sensorData.ambientTemperatureF + .5)));
+  //display.drawBitmap(xMargins + xTempModifier + 35, yTempHumdidity, bitmapTempFSmall, 20, 28, ILI9341_WHITE);
   display.setFont(&meteocons12pt7b);
   display.print("+");
 
@@ -537,17 +512,11 @@ void screenCurrentInfo()
   display.print(String((uint8_t)(sensorData.ambientHumidity + 0.5)));
   // IMPROVEMENT: original icon ratio was 5:7?
   // IMPROVEMENT: move this into meteoicons so it can be inline text
-  display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, epd_bitmap_humidity_icon_sm4, 20, 28, ILI9341_WHITE);
+  display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, ILI9341_WHITE);
 
   // Indoor PM2.5 ring
   display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[aqiRange(sensorData.pm25)]);
   display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
-
-  // // Indoor PM2.5 value
-  // display.setFont(&FreeSans12pt7b);
-  // display.setTextColor(ILI9341_WHITE);
-  // display.setCursor(xIndoorPMCircle,yPMCircles);
-  // display.print(int(sensorData.pm25+.5));
 
   // Indoor CO2 level inside the circle
   // CO2 value line
@@ -575,17 +544,14 @@ void screenCurrentInfo()
     display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[aqiRange(owmAirQuality.pm25)]);
     display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
 
-    // // PM2.5 numeric value (displayed inside circle)
-    // display.setFont(&FreeSans12pt7b);
-    // display.setCursor(xOutdoorPMCircle,yPMCircles);
-    // display.setTextColor(ILI9341_WHITE);
-    // display.print(int(owmAirQuality.pm25+.5));
-
     // Outside air quality index (AQI)
     display.setFont(&FreeSans9pt7b);
     display.setTextColor(ILI9341_WHITE);
     // IMPROVEMENT: Dynamic x coordinate based on text length
-    display.setCursor((xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10);
+    // display.setCursor((xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10);
+    display.getTextBounds(OWMAQILabels[(owmAirQuality.aqi)],(xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10, &x1, &y1, &w1, &h1);
+    display.setCursor((xOutdoorPMCircle - (w1/2)),yPMCircles+10);
+
     display.print(OWMAQILabels[(owmAirQuality.aqi)]);
     display.setCursor(xOutdoorPMCircle-15,yPMCircles + 30);
     display.print("AQI");
@@ -616,7 +582,7 @@ void screenCurrentInfo()
     display.print(String((uint8_t)(owmCurrentData.humidity + 0.5)));
     // IMPROVEMENT: original icon ratio was 5:7?
     // IMPROVEMENT: move this into meteoicons so it can be inline text
-    display.drawBitmap(xOutdoorMargin + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, epd_bitmap_humidity_icon_sm4, 20, 28, ILI9341_WHITE);
+    display.drawBitmap(xOutdoorMargin + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, ILI9341_WHITE);
 
     // weather icon
     String weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
@@ -629,7 +595,7 @@ void screenCurrentInfo()
       display.print(weatherIcon);
     }
   }
-  debugMessage("screenCurrentInfo() end", 1);
+  debugMessage("screenCurrentInfo() end", 2);  // DJB-DEV: was 1
 }
 
 void screenAggregateData()
@@ -709,26 +675,81 @@ void screenAggregateData()
 
 }
 
-void screenAlert(String messageText)
-// Display error message centered on screen
+bool screenAlert(String messageText)
+// Description: Display error message centered on screen, using different font sizes and/or splitting to fit on screen
+// Parameters: String containing error message text
+// Output: NA (void)
+// Improvement: ?
 {
-  debugMessage(String("screenAlert '") + messageText + "' start",1);
+  debugMessage("screenAlert start",1);
 
+  bool status = true;
   int16_t x1, y1;
-  uint16_t width, height;
+  uint16_t largeFontPhraseOneWidth, largeFontPhraseOneHeight;
+  uint16_t smallFontWidth, smallFontHeight;
 
   display.setTextColor(ILI9341_WHITE);
   display.setFont(&FreeSans24pt7b);
   // Clear the screen
   display.fillScreen(ILI9341_BLACK);
-  display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &width, &height);
-  if (width >= display.width()) {
-    debugMessage(String("ERROR: screenAlert '") + messageText + "' is " + abs(display.width()-width) + " pixels too long", 1);
-  }
 
-  display.setCursor(display.width() / 2 - width / 2, display.height() / 2 + height / 2);
-  display.print(messageText);
+  display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
+  if (largeFontPhraseOneWidth <= (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2))))
+  {
+    // fits with large font, display
+    display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,display.height()/2+largeFontPhraseOneHeight/2);
+    display.print(messageText);
+  }
+  else
+  {
+    debugMessage(String("ERROR: screenAlert messageText '") + messageText + "' with large font is " + abs(largeFontPhraseOneWidth - (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) + " pixels too long", 1);
+    // does the string break into two pieces based on a space character?
+    uint8_t spaceLocation;
+    String messageTextPartOne, messageTextPartTwo;
+    uint16_t largeFontPhraseTwoWidth, largeFontPhraseTwoHeight;
+
+    spaceLocation = messageText.indexOf(' ');
+    if (spaceLocation)
+    {
+      // has a space character, will it fit on two lines?
+      messageTextPartOne = messageText.substring(0,spaceLocation);
+      messageTextPartTwo = messageText.substring(spaceLocation+1);
+      display.getTextBounds(messageTextPartOne.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
+      display.getTextBounds(messageTextPartTwo.c_str(), 0, 0, &x1, &y1, &largeFontPhraseTwoWidth, &largeFontPhraseTwoHeight);
+      if ((largeFontPhraseOneWidth <= (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) && (largeFontPhraseTwoWidth <= (display.width()-(display.width()/2-(largeFontPhraseTwoWidth/2)))))
+      {
+        // fits on two lines, display
+        display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,(display.height()/2+largeFontPhraseOneHeight/2)+6);
+        display.print(messageTextPartOne);
+        display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,(display.height()/2+largeFontPhraseOneHeight/2)-18);
+        display.print(messageTextPartTwo);
+      }
+    }
+    debugMessage(String("Message part one with large fonts is ") + largeFontPhraseOneWidth + " pixels wide vs. available " + (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2))) + " pixels",1);
+    debugMessage(String("Message part two with large fonts is ") + largeFontPhraseTwoWidth + " pixels wide vs. available " + (display.width()-(display.width()/2-(largeFontPhraseTwoWidth/2))) + " pixels",1);
+    // at large font size, string doesn't fit even if it can be broken into two lines
+    // does the string fit with small size text?
+    display.setFont(&FreeSans18pt7b);
+    display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &smallFontWidth, &smallFontHeight);
+    if (smallFontWidth <= (display.width()-(display.width()/2-(smallFontWidth/2))))
+    {
+      // fits with small size
+      display.setCursor(display.width()/2-smallFontWidth/2,display.height()/2+smallFontHeight/2);
+      display.print(messageText);
+    }
+    else
+    {
+      debugMessage(String("ERROR: screenAlert messageText '") + messageText + "' with small font is " + abs(smallFontWidth - (display.width()-(display.width()/2-(smallFontWidth/2)))) + " pixels too long", 1);
+      // doesn't fit at any size/line split configuration, display as truncated, large text
+      display.setFont(&FreeSans12pt7b);
+      display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
+      display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,display.height()/2+largeFontPhraseOneHeight/2);
+      display.print(messageText);
+      status = false;
+    }
+  }
   debugMessage("screenAlert end",1);
+  return status;
 }
 
 // Draw a simple graph of recent CO2 values. Time-ordered data to be plottted is stored in an array with the
@@ -882,12 +903,12 @@ void screenVOC()
   const uint8_t legendHeight = 20;
   const uint8_t legendWidth = 10;
   const uint16_t xLegend = (display.width() - xMargins - legendWidth);
-  const uint16_t yLegend = ((display.height() /2 ) + (legendHeight * 2));
+  const uint16_t yLegend = ((display.height() / 2 ) - (legendHeight * 2));
   const uint16_t circleRadius = 100;
   const uint16_t xVOCCircle = (display.width() / 2);
   const uint16_t yVOCCircle = (display.height() / 2);
-  const uint16_t xVOCLabel = (display.width() - xMargins - legendWidth);
-  const uint16_t yVOCLabel = ((display.height() /2 ) + (legendHeight * 2) + 25);
+  const uint16_t xVOCLabel = xVOCCircle - 35;
+  const uint16_t yVOCLabel = yVOCCircle + 35;
 
   debugMessage("screenVOC start",1);
 
@@ -896,23 +917,21 @@ void screenVOC()
 
   // VOC color circle
   display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[vocRange(sensorData.vocIndex)]);
+  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,ILI9341_BLACK);
 
   // VOC color legend
   for(uint8_t loop = 0; loop < 4; loop++){
     display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
   }
 
-  // VOC legend label
+  // VOC value and label (displayed inside circle)
+  display.setFont(&FreeSans18pt7b);
+  display.setTextColor(warningColor[vocRange(sensorData.vocIndex)]);  // Use highlight color look-up table
+  display.setCursor(xVOCCircle-20,yVOCCircle);
+  display.print(int(sensorData.vocIndex+.5));
   display.setTextColor(ILI9341_WHITE);
-  display.setFont();
   display.setCursor(xVOCLabel,yVOCLabel);
   display.print("VOC");
-
-  // VOC value (displayed inside circle)
-  display.setFont(&FreeSans18pt7b);
-  display.setTextColor(ILI9341_WHITE);
-  display.setCursor(xVOCCircle,yVOCCircle);
-  display.print(int(sensorData.vocIndex+.5));
 
   debugMessage("screenVOC end",1);
 }
@@ -938,15 +957,19 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
   }
 }
 
-void screenHelperStatusMessage(uint16_t initialX, uint16_t initialY, String messageText)
-// helper function for screenXXX() routines that draws a status message
-// uses system default font, so text drawn x+,y+ from initialX,Y
+void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
+// Description: helper function for screenXXX() routines that displays an icon relaying success of network endpoint writes
+// Parameters: initial x and y coordinate to draw from
+// Output : NA
+// Improvement : NA
+// 
 {
-  // IMPROVEMENT: Screen dimension boundary checks for function parameters
-  #ifdef SCREEN
-    display.setFont();  // resets to system default monospace font (6x8 pixels)
-    display.setCursor(initialX, initialY);
-    display.print(messageText);
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+    if ((timeLastReport == 0) || ((millis() - timeLastReport) >= ((reportInterval * 60 * 1000) * reportFailureThreshold)))  // converting reportInterval into milliseconds
+        // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
+        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_RED);
+      else
+        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_GREEN);
   #endif
 }
 
@@ -1029,6 +1052,7 @@ bool OWMCurrentWeatherRead()
       debugMessage("Raw JSON from OWM Current Weather feed", 2);
       debugMessage(jsonBuffer, 2);
       if (jsonBuffer == "HTTP GET error") {
+        debugMessage("OWM Weather: HTTP Get error",1);
         return false;
       }
 
@@ -1074,7 +1098,10 @@ bool OWMCurrentWeatherRead()
       debugMessage(String("OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "% RH", 1);
       return true;
     }
-    return false;
+    else {
+      debugMessage("OWM Weather: Network disconnected",1);
+      return false;
+    }
   #endif
 }
 
@@ -1097,6 +1124,7 @@ bool OWMAirPollutionRead()
       debugMessage("Raw JSON from OWM AQI feed", 2);
       debugMessage(jsonBuffer, 2);
       if (jsonBuffer == "HTTP GET error") {
+        debugMessage("OWM AQI: HTTP Get error",1);
         return false;
       }
 
@@ -1124,7 +1152,10 @@ bool OWMAirPollutionRead()
       debugMessage(String("OWM PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
       return true;
     }
-    return false;
+    else {
+      debugMessage("OWM AQI: Network disconnected",1);
+      return false;
+    }
   #endif
 }
 
@@ -1238,6 +1269,7 @@ void networkDisconnect()
     }
   }
 
+
   String networkHTTPGETRequest(const char* serverName) 
   {
     String payload = "{}";
@@ -1266,83 +1298,8 @@ void networkDisconnect()
       return payload;
     #endif
   }
-
-  void setTimeZone(String timezone)
-  // Set local time based on timezone set in config.h
-  {
-    debugMessage(String("setting Timezone to ") + timezone.c_str(),2);
-    setenv("TZ",networkTimeZone.c_str(),1);
-    tzset();
-    debugMessage(String("Local time: ") + dateTimeString("short"),1);
-  }
-
-  String dateTimeString(String formatType)
-  // Converts time into human readable string
-  {
-    // https://cplusplus.com/reference/ctime/tm/
-
-    String dateTime;
-    struct tm timeInfo;
-
-    if (getLocalTime(&timeInfo)) 
-    {
-      if (formatType == "short")
-      {
-        // short human readable format
-        dateTime = weekDays[timeInfo.tm_wday];
-        dateTime += " at ";
-        if (timeInfo.tm_hour < 10) dateTime += "0";
-        dateTime += timeInfo.tm_hour;
-        dateTime += ":";
-        if (timeInfo.tm_min < 10) dateTime += "0";
-        dateTime += timeInfo.tm_min;
-      }
-      else if (formatType == "long")
-      {
-        // long human readable
-        dateTime = weekDays[timeInfo.tm_wday];
-        dateTime += ", ";
-        if (timeInfo.tm_mon<10) dateTime += "0";
-        dateTime += timeInfo.tm_mon;
-        dateTime += "-";
-        if (timeInfo.tm_wday<10) dateTime += "0";
-        dateTime += timeInfo.tm_wday;
-        dateTime += " at ";
-        if (timeInfo.tm_hour<10) dateTime += "0";
-        dateTime += timeInfo.tm_hour;
-        dateTime += ":";
-        if (timeInfo.tm_min<10) dateTime += "0";
-        dateTime += timeInfo.tm_min;
-      }
-    }
-    else dateTime = "Can't reach time service";
-    return dateTime;
-  }
-#endif
-
-bool networkGetTime(String timezone)
-// Set local time from NTP server specified in config.h
-{
-  // !!! ESP32 hardware dependent, using Esperif library
-  // https://randomnerdtutorials.com/esp32-ntp-timezones-daylight-saving/
-  #ifdef HARDWARE_SIMULATE
-    // IMPROVEMENT: Add random time
-    return false;
-  #else
-    struct tm timeinfo;
-
-    // connect to NTP server with 0 TZ offset
-    configTime(0, 0, networkNTPAddress.c_str());
-    if(!getLocalTime(&timeinfo))
-    {
-      debugMessage("Failed to obtain time from NTP Server",1);
-      return false;
-    }
-    // set local timezone
-    setTimeZone(timezone);
-    return true;
-  #endif
-}
+#endif // HARDWARE_SIMULATE
+  
 
 /**************************************************************************************
  *                 SENSOR SPECIFIC ROUTINES AND CONVENIENCE FUNCTIONS                 *
@@ -1653,26 +1610,35 @@ bool sensorRead()
   }
 
   bool sensorCO2Read()
-  // sets global environment values from SCD4X sensor
-  {
+// Description: Sets global environment values from SCD40 sensor
+// Parameters: none
+// Output : true if successful read, false if not
+// Improvement : NA  
+{
     #ifdef HARDWARE_SIMULATE
       sensorCO2Simulate();
+      debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
       return true;
     #else
       char errorMessage[256];
-      bool status;
+      bool status = false;
       uint16_t co2 = 0;
-      float temperatureC = 0.0f;
+      float temperature = 0.0f;
       float humidity = 0.0f;
       uint16_t error;
+      uint8_t errorCount = 0;
 
-      debugMessage("SCD4X read initiated",1);
+      debugMessage("CO2 read initiated",1);
 
       // Loop attempting to read Measurement
       status = false;
+      debugMessage("CO2 sensor read initiated",1);
       while(!status) {
         delay(100);
-
+        errorCount++;
+        if (errorCount > co2SensorReadFailureLimit) {
+          break;
+        }
         // Is data ready to be read?
         bool isDataReady = false;
         error = co2Sensor.getDataReadyStatus(isDataReady);
@@ -1689,24 +1655,25 @@ bool sensorRead()
         error = co2Sensor.readMeasurement(co2, temperatureC, humidity);
         if (error) {
             errorToString(error, errorMessage, 256);
-            debugMessage(String("SCD4X executing readMeasurement(): ") + errorMessage,1);
+            debugMessage(String("SCD40 executing readMeasurement(): ") + errorMessage,1);
             // Implicitly continues back to the top of the loop
         }
         else if (co2 < sensorCO2Min || co2 > sensorCO2Max)
         {
-          debugMessage(String("SCD4X CO2 reading: ") + sensorData.ambientCO2 + " is out of expected range",1);
+          debugMessage(String("SCD40 CO2 reading: ") + sensorData.ambientCO2 + " is out of expected range",1);
           //(sensorData.ambientCO2 < sensorCO2Min) ? sensorData.ambientCO2 = sensorCO2Min : sensorData.ambientCO2 = sensorCO2Max;
           // Implicitly continues back to the top of the loop
         }
         else
         {
-          // Successfully read valid data
-          sensorData.ambientTemperatureF = (temperatureC*1.8)+32.0;
+          // Valid measurement available, update globals
+          sensorData.ambientTemperatureF = (temperature*1.8)+32.0;
           sensorData.ambientHumidity = humidity;
           sensorData.ambientCO2 = co2;
-          debugMessage(String("SCD4X: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+          debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
           // Update global sensor readings
-          status = true;  // We have data, can break out of loop
+          status = true;
+          break;
         }
         delay(100); // reduces readMeasurement() "Not enough data received" errors
       }

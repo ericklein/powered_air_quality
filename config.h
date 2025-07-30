@@ -31,12 +31,6 @@
 
 // Configuration variables that are less likely to require changes
 
-// Time
-// NTP time parameters
-const String networkNTPAddress = "pool.ntp.org";
-const String networkTimeZone = "PST8PDT,M3.2.0,M11.1.0"; // America/Los_Angeles
-const String weekDays[7] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
-
 // network endpoints
 #ifdef INFLUX  
   // Specify Measurement to use with InfluxDB for sensor and device info
@@ -51,14 +45,15 @@ const String weekDays[7] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursda
 // aqi labels from https://openweathermap.org/api/air-pollution
 const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 
-// Sample and reporting intervals
+// Sampling and reporting intervals
 #ifdef DEBUG
-  const uint16_t sensorSampleInterval = 30;   // time between samples in seconds
-  const uint8_t sensorReportInterval = 2;     // time between reports in minutes
+  const uint16_t sensorSampleInterval = 30;   // time between samples in seconds (30 typical)
+  const uint8_t reportInterval = 2;     // time between reports in minutes (2 typical)
 #else
   const uint16_t sensorSampleInterval = 60;
-  const uint8_t sensorReportInterval = 15;
+  const uint8_t reportInterval = 15;
 #endif
+const uint8_t reportFailureThreshold = 3; // number of times reporting has to fail before UI reflects issue
 
 // Screen saver timeout.  Will automatically switch to screen saver if
 // no user input (via touchscreen) in this many seconds
@@ -106,7 +101,8 @@ const uint16_t co2Bad = 2000;
 
 const uint16_t sensorCO2Min =      400;   // in ppm
 const uint16_t sensorCO2Max =      2000;  // in ppm
-const uint8_t sensorTempCOffset = 0;     // in Celcius
+const uint8_t sensorTempCOffset = 0;     // in Celsius
+const uint8_t co2SensorReadFailureLimit = 20;
 
 // Particulates (pm1, pm2.5, pm4, pm10) value thresholds for labeling
 const uint16_t pmFair = 25;
