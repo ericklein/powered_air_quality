@@ -14,13 +14,21 @@
 #include "measure.h"
 
 #ifndef HARDWARE_SIMULATE
-  // instanstiate SEN5X hardware object
-  #include <SensirionI2CSen5x.h>
-  SensirionI2CSen5x pmSensor;
+  #ifdef SENSOR_SEN66
+    // Instanstiate SEN66 hardware object, if being used
+    #include <SensirionI2cSen66.h>
+    SensirionI2cSen66 paqSensor;
+  #endif // SENSOR_SEN66
 
-  // instanstiate SCD4X hardware object
-  #include <SensirionI2cScd4x.h>
-  SensirionI2cScd4x co2Sensor;
+  #ifdef SENSOR_SEN54SCD40
+    // instanstiate SEN5X hardware object
+    #include <SensirionI2CSen5x.h>
+    SensirionI2CSen5x pmSensor;
+
+    // instanstiate SCD4X hardware object
+    #include <SensirionI2cScd4x.h>
+    SensirionI2cScd4x co2Sensor;
+  #endif // SENSOR_SEN54SCD40
 
   // WiFi support
   #if defined(ESP8266)
@@ -62,8 +70,10 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 // UI glyphs
 #include "glyphs.h"
 
+// external function dependencies
 #ifdef THINGSPEAK
-  extern void post_thingspeak(float pm25, float minaqi, float maxaqi, float aqi);
+  extern bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, 
+    float vocIndex, float noxIndex, float aqi);
 #endif
 
 #ifdef INFLUX
@@ -93,23 +103,21 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 // environment sensor data
 typedef struct envData
 {
-  // SCD40 data
+  // All data measured via SEN66
   float ambientTemperatureF;    // range -10C to 60C
   float ambientHumidity;        // RH [%], range 0 to 100
   uint16_t  ambientCO2;         // ppm, range 400 to 2000
-
-  // SEN5x data
   float pm25;                   // PM2.5 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
   float pm1;                    // PM1.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
   float pm10;                   // PM10.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
   float pm4;                    // PM4.0 [µg/m³], range 0 to 1000, NAN if unknown
   float vocIndex;               // Sensiron VOC Index, range 0 to 500, NAN in unknown
-  float noxIndex;               // NAN for SEN54, also NAN for first 10-11 seconds on SEN55
+  float noxIndex;               // NAN for first 10-11 seconds where supported (SEN55, SEN66)
 } envData;
 envData sensorData;
 
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.
-Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25;
+Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25, totalNOX;
 
 uint8_t numSamples = 0;       // Number of overall sensor readings over reporting interval
 uint32_t timeLastSample = 0;  // timestamp (in ms) for last captured sample 
@@ -173,21 +181,24 @@ typedef struct {
 OpenWeatherMapAirQuality owmAirQuality;  // global variable for OWM current data
 
 bool screenWasTouched = false;
+int16_t co2data[GRAPH_POINTS];
 
 // Set first screen to display.  If that first screen is the screen saver then we need to
 // have the saved screen be something else so it'll get switched to on the first touch
-uint8_t screenCurrent = SCREEN_SAVER;
+uint8_t screenCurrent = SCREEN_SAVER; // Initial screen to display (on startup)
 uint8_t screenSaved   = SCREEN_INFO; // Saved when screen saver engages so it can be restored
 
 void setup() 
 {
+  int i;
+
   // handle Serial first so debugMessage() works
   #ifdef DEBUG
     Serial.begin(115200);
     // wait for serial port connection
     while (!Serial);
     // Display key configuration parameters
-    debugMessage(String("Starting Powered Air Quality with ") + sensorSampleInterval + " second sample interval",1);
+    debugMessage(String("Starting Powered Air Quality with ") + sensorSampleInterval + String(" second sample interval"),1);
     #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
       debugMessage(String("Report interval is ") + reportInterval + " minutes",1);
     #endif
@@ -196,6 +207,11 @@ void setup()
 
   // generate random numbers for every boot cycle
   randomSeed(analogRead(0));
+
+  // Initialize array of retained CO2 data values (for graphing -- see below)
+  for(i=0;i<GRAPH_POINTS;i++) {
+    co2data[i] = -1;
+  }
 
   // initialize screen first to display hardware error messages
   pinMode(TFT_BACKLIGHT, OUTPUT);
@@ -207,19 +223,11 @@ void setup()
   display.fillScreen(ILI9341_BLACK);
   screenAlert("Initializing");
 
-  // Initialize PM25 sensor
-  if (!sensorPMInit()) {
-    debugMessage("SEN5X initialization failure", 1);
-    screenAlert("No SEN5X");
-  }
-
-  // Initialize SCD4X
-  if (!sensorCO2Init()) {
-    debugMessage("SCD4X initialization failure",1);
-    screenAlert("No SCD4X");
-    // This error often occurs right after a firmware flash and reset.
-    // Hardware deep sleep typically resolves it, so quickly cycle the hardware
-    powerDisable(hardwareRebootInterval);
+  // *** Initialize sensors and other connected/onboard devices ***
+  // SEN66 initialization
+  if( !sensorInit()) {
+    Serial.println("ERROR: Sensor initialization failure");
+    screenAlert("No Sensors");    
   }
 
   // Setup the VSPI to use custom pins for the touchscreen
@@ -232,11 +240,64 @@ void setup()
 
   // start tracking timers
   timeLastSample = -(sensorSampleInterval*1000); // forces immediate sample in loop()
-  timeLastInput = millis(); // We'll count starup as a "touch"
+  timeLastInput = millis(); // We'll count startup as a "touch"
 }
 
 void loop()
 {
+  // For conveniently handling frequent reference to average values
+  float avgTemperatureF = 0;    // average temperature over report interval
+  float avgHumidity = 0;        // average humidity over report interval
+  uint16_t avgCO2 = 0;          // average CO2 over report interval
+  float avgVOC = 0;             // average VOC over report interval
+  float avgPM25 = 0;            // average PM2.5 over report interval
+  float minPM25 = 0;            // minimum PM2.5 over report interval
+  float maxPM25 = 0;            // maximum PM2.5 over report interval
+  float avgNOX = 0;             // average NOX over report interval
+
+  // is it time to read the sensor?
+  if((millis() - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
+  {
+    // Read sensor(s) to obtain all environmental values
+    if (!sensorRead()) {
+      // TODO: what else to do here...
+      debugMessage("Sensor read failed!",1);
+    }
+
+    // Get local weather and air quality info from Open Weather Map
+    if (!OWMCurrentWeatherRead()) {
+      owmCurrentData.tempF = 10000;
+      debugMessage("OWM weather read failed!",1);
+    }
+    
+    if (!OWMAirPollutionRead()) {
+      owmAirQuality.aqi = 10000;
+      debugMessage("OWM AQI read failed!",1);
+    }
+
+    // add to the running totals
+    numSamples++;
+    totalTemperatureF.include(sensorData.ambientTemperatureF);
+    totalHumidity.include(sensorData.ambientHumidity);
+    totalCO2.include(sensorData.ambientCO2);
+    totalVOC.include(sensorData.vocIndex);
+    totalPM25.include(sensorData.pm25);
+    totalNOX.include(sensorData.noxIndex);  // TODO: Skip invalid values immediately after initialization
+
+    debugMessage(String("Sample #") + numSamples + ", running totals: ",2);
+    debugMessage(String("TemperatureF total: ") + totalTemperatureF.getTotal(),2);
+    debugMessage(String("Humidity total: ") + totalHumidity.getTotal(),2);
+    debugMessage(String("CO2 total: ") + totalCO2.getTotal(),2);    
+    debugMessage(String("VOC total: ") + totalVOC.getTotal(),2);
+    debugMessage(String("PM25 total: ") + totalPM25.getTotal(),2);
+    debugMessage(String("NOX total: ") + totalNOX.getTotal(),2);
+
+    screenUpdate(false);
+
+    // Save last sample time
+    timeLastSample = millis();
+  }
+
   // User input = change screens. If screen saver is active a touch means revert to the
   // previously active screen, otherwise step to the next screen
   boolean istouched = ts.touched();
@@ -278,51 +339,8 @@ void loop()
     }
   }
 
-  // is it time to read the sensor?
-  if((millis() - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
-  {
-    if (!sensorPMRead())
-    {
-      // TODO: what else to do here, see OWM Reads...
-    }
-
-    if (!sensorCO2Read())
-    {
-      screenAlert("CO2 read fail");
-    }
-
-    // Get local weather and air quality info from Open Weather Map
-    if (!OWMCurrentWeatherRead()) {
-      owmCurrentData.tempF = 10000;
-    }
-    
-    if (!OWMAirPollutionRead()) {
-      owmAirQuality.aqi = 10000;
-    }
-
-    // add to the running totals
-    numSamples++;
-    totalTemperatureF.include(sensorData.ambientTemperatureF);
-    totalHumidity.include(sensorData.ambientHumidity);
-    totalCO2.include(sensorData.ambientCO2);
-    totalVOC.include(sensorData.vocIndex);
-    totalPM25.include(sensorData.pm25);
-
-    debugMessage(String("Sample #") + numSamples + ", running totals: ",2);
-    debugMessage(String("temperatureF total: ") + totalTemperatureF.getTotal(),2);
-    debugMessage(String("Humidity total: ") + totalHumidity.getTotal(),2);
-    debugMessage(String("CO2 total: ") + totalCO2.getTotal(),2);    
-    debugMessage(String("VOC total: ") + totalVOC.getTotal(),2);
-    debugMessage(String("PM25 total: ") + totalPM25.getTotal(),2);
-
-    screenUpdate(false);
-
-    // Save last sample time
-    timeLastSample = millis();
-  }
-
   // do we have network endpoints to report to?
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK) || defined(HARDWARE_SIMULATE)
     // is it time to report to the network endpoints?
     if ((millis() - timeLastReport) >= (reportInterval * 60 * 1000))  // converting reportInterval into milliseconds
     {
@@ -330,46 +348,53 @@ void loop()
       if (numSamples != 0) 
       {
         // Get averaged sample values from the Measure utliity class objects
-        float avgtemperatureF = totalTemperatureF.getAverage(); // average temperature over report interval
-        float avgHumidity = totalHumidity.getAverage();         // average humidity over report interval
-        uint16_t avgCO2 = totalCO2.getAverage();                // average CO2 over report interval
-        float avgVOC = totalVOC.getAverage();                   // average VOC over report interval
-        float avgPM25 = totalPM25.getAverage();                 // average PM2.5 over report interval
-        float maxPM25 = totalPM25.getMax();                     // maximum PM2.5 over report interval
-        float minPM25 = totalPM25.getMin();                     // minimum PM2.5 over report interval
+        avgTemperatureF = totalTemperatureF.getAverage();
+        avgHumidity = totalHumidity.getAverage();
+        avgCO2 = totalCO2.getAverage();
+        avgVOC = totalVOC.getAverage();
+        avgPM25 = totalPM25.getAverage();
+        maxPM25 = totalPM25.getMax();
+        minPM25 = totalPM25.getMin();
+        avgNOX = totalNOX.getAverage();
 
-        debugMessage("----- Reporting -----",1);
-        debugMessage(String("Reporting averages (") + reportInterval + " minute): ",1);
-        debugMessage(String("Temp: ") + avgtemperatureF + " F",1);
-        debugMessage(String("Humidity: ") + avgHumidity + "%",1);
-        debugMessage(String("CO2: ") + avgCO2 + " ppm",1);
-        debugMessage(String("VOC: ") + avgVOC,1);
-        debugMessage(String("PM2.5: ") + avgPM25 + " = AQI " + pm25toAQI(avgPM25),1);
+        debugMessage(String("** ----- Reporting averages (") + reportInterval + " minute) ----- ",1);
+
+        debugMessage(String("** PM2.5: ") + avgPM25 + String(", CO2: ") + avgCO2 + " ppm" + 
+          String(", VOC: ") + avgVOC+ String(", NOX: ") + avgNOX + String(", ") + 
+          avgTemperatureF + "F, " + avgHumidity + String("%, ") + String(", AQI(US): ") + pm25toAQI_US(avgPM25),1);
+
+        // Retain CO2 data for graphing (see below)
+        retainCO2(avgCO2);
 
         if (networkConnect())
         {
-          /* Post both the current readings and historical max/min readings to the internet */
-          // Also post the AQI sensor data to ThingSpeak
+          // TODO: Modify reporting routines to include NOX readings
+
+          // Post the AQI sensor data to ThingSpeak. Make sure to use the PM25 to AQI conversion formula for the
+          // desired country as there is no global standard.
+
           #ifdef THINGSPEAK
-            post_thingspeak(avgPM25, pm25toAQI(minPm25), pm25toAQI(maxPm25), pm25toAQI(avgPM25));
+            if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
+              Serial.println("ERROR: Did not write to ThingSpeak");
+            }
           #endif
 
           #ifdef INFLUX
-            if (!post_influx(avgPM25, avgtemperatureF, avgVOC, avgHumidity, avgCO2 , hardwareData.rssi))
-              debugMessage("Did not write to influxDB",1);
+            if (!post_influx(avgPM25, avgTemperatureF, avgVOC, avgHumidity, avgCO2 , hardwareData.rssi))
+              Serial.println("ERROR: Did not write to influxDB");
           #endif
 
           #ifdef MQTT
             if (!mqttDeviceWiFiUpdate(hardwareData.rssi))
-                debugMessage("Did not write device data to MQTT broker",1);
-            if ((!mqttSensorTemperatureFUpdate(avgtemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorVOCIndexUpdate(avgVOC)) || (!mqttSensorCO2Update(avgCO2)))
-                debugMessage("Did not write environment data to MQTT broker",1);
+                Serial.println("ERROR: Did not write device data to MQTT broker");
+            if ((!mqttSensorTemperatureFUpdate(avgTemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorVOCIndexUpdate(avgVOC)) || (!mqttSensorCO2Update(avgCO2)))
+                Serial.println("ERROR: Did not write environment data to MQTT broker");
             #ifdef HASSIO_MQTT
               debugMessage("Establishing MQTT for Home Assistant",1);
               // Either configure sensors in Home Assistant's configuration.yaml file
               // directly or attempt to do it via MQTT auto-discovery
               // hassio_mqtt_setup();  // Config for MQTT auto-discovery
-              hassio_mqtt_publish(avgPM25, avgtemperatureF, avgVOC, avgHumidity);
+              hassio_mqtt_publish(avgPM25, avgTemperatureF, avgVOC, avgHumidity);
             #endif
           #endif
         }
@@ -380,9 +405,13 @@ void loop()
         totalCO2.clear();
         totalVOC.clear();
         totalPM25.clear();
+        totalNOX.clear();
 
         // save last report time
         timeLastReport = millis();
+      }
+      else {
+        Serial.println ("ERROR: No samples to report");
       }
     }
   #endif
@@ -420,6 +449,9 @@ void screenUpdate(bool firstTime)
 void screenCurrentInfo() 
 // Display current particulate matter, CO2, and local weather on screen
 {
+  int16_t x1, y1; // For (x,y) calculations
+  uint16_t w1, h1;  // For text size calculations
+
   // screen layout assists in pixels
   const uint16_t yStatusRegion = display.height()/8;
   const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
@@ -438,7 +470,7 @@ void screenCurrentInfo()
   const uint16_t xWeatherIcon = xOutdoorPMCircle - 18;
   const uint16_t yWeatherIcon = yPMCircles - 20;
 
-  debugMessage("screenCurrentInfo() start", 1);
+  debugMessage("screenCurrentInfo() start",2);
 
   // clear screen
   display.fillScreen(ILI9341_BLACK);
@@ -508,7 +540,10 @@ void screenCurrentInfo()
     display.setFont(&FreeSans9pt7b);
     display.setTextColor(ILI9341_WHITE);
     // IMPROVEMENT: Dynamic x coordinate based on text length
-    display.setCursor((xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10);
+    // display.setCursor((xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10);
+    display.getTextBounds(OWMAQILabels[(owmAirQuality.aqi)],(xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10, &x1, &y1, &w1, &h1);
+    display.setCursor((xOutdoorPMCircle - (w1/2)),yPMCircles+10);
+
     display.print(OWMAQILabels[(owmAirQuality.aqi)]);
     display.setCursor(xOutdoorPMCircle-15,yPMCircles + 30);
     display.print("AQI");
@@ -552,65 +587,84 @@ void screenCurrentInfo()
       display.print(weatherIcon);
     }
   }
-  debugMessage("screenCurrentInfo() end", 1);
+  debugMessage("screenCurrentInfo() end", 2);  // DJB-DEV: was 1
 }
 
 void screenAggregateData()
-// Displays minimum, average, and maximum values for CO2, temperature and humidity
+// Displays minimum, average, and maximum values for primary sensor values
 // using a table-style layout (with labels)
 {
+  const uint16_t xValueColumn =  10;
+  const uint16_t xMinColumn   = 115;
+  const uint16_t xAvgColumn   = 185;
+  const uint16_t xMaxColumn   = 255;
+  const uint16_t yHeaderRow   =  10;
+  const uint16_t yPM25Row     =  40;
+  const uint16_t yCO2Row      =  70;
+  const uint16_t yVOCRow      = 100;
+  const uint16_t yNOXRow      = 130;
+  const uint16_t yTempFRow    = 160;
+  const uint16_t yHumidityRow = 190;
+  const uint16_t yAQIRow      = 220;
 
-  const uint16_t xHeaderColumn = 10;
-  const uint16_t xCO2Column = 70;
-  const uint16_t xTempColumn = 130;
-  const uint16_t xHumidityColumn = 200;
-  const uint16_t yHeaderRow = 10;
-  const uint16_t yMaxRow = 40;
-  const uint16_t yAvgRow = 70;
-  const uint16_t yMinRow = 100;
-
-  // clear screen
+  // clear screen and initialize properties
   display.fillScreen(ILI9341_BLACK);
-
-  // display headers
   display.setFont();  // Revert to built-in font
   display.setTextSize(2);
   display.setTextColor(ILI9341_WHITE);
-  // column
-  display.setCursor(xCO2Column, yHeaderRow); display.print("CO2");
-  display.setCursor(xTempColumn, yHeaderRow); display.print("  F");
-  display.setCursor(xHumidityColumn, yHeaderRow); display.print("RH");
-  // row
-  display.setCursor(xHeaderColumn, yMaxRow); display.print("Max");
-  display.setCursor(xHeaderColumn, yAvgRow); display.print("Avg");
-  display.setCursor(xHeaderColumn, yMinRow); display.print("Min");
 
-  // Fill in the maximum values row
-  display.setCursor(xCO2Column, yMaxRow);
-  display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);  // Use highlight color look-up table
-  display.print(totalCO2.getMax(),0);
+  // Display column headings
+  display.setTextColor(ILI9341_BLUE);
+  display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
+  display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,ILI9341_BLUE);
   display.setTextColor(ILI9341_WHITE);
-  
-  display.setCursor(xTempColumn, yMaxRow); display.print(totalTemperatureF.getMax(),1);
-  display.setCursor(xHumidityColumn, yMaxRow); display.print(totalHumidity.getMax(),0);
+  display.setCursor(0,yHeaderRow); display.print("REPORT:");
+  display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
+  display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
 
-  // Fill in the average value row
-  display.setCursor(xCO2Column, yAvgRow);
-  display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);  // Use highlight color look-up table
-  display.print(totalCO2.getAverage(),0);
-  display.setTextColor(ILI9341_WHITE);
+  // Display row headings
+  display.setCursor(xValueColumn, yPM25Row); display.print("PM25");
+  display.setCursor(xValueColumn, yCO2Row); display.print("CO2");
+  display.setCursor(xValueColumn, yVOCRow); display.print("VOC");
+  display.setCursor(xValueColumn, yNOXRow); display.print("NOX");
+  display.setCursor(xValueColumn, yTempFRow); display.print(" F");
+  display.setCursor(xValueColumn, yHumidityRow); display.print("%RH");
+  display.setCursor(xValueColumn, yAQIRow); display.print("AQI");
 
-  display.setCursor(xTempColumn, yAvgRow); display.print(totalTemperatureF.getAverage(),1);
-  display.setCursor(xHumidityColumn, yAvgRow); display.print(totalHumidity.getAverage(),0);
+  // Fill in the data row by row
+  display.setCursor(xMinColumn,yPM25Row); display.print(totalPM25.getMin(),1);
+  display.setCursor(xAvgColumn,yPM25Row); display.print(totalPM25.getAverage(),1);
+  display.setCursor(xMaxColumn,yPM25Row); display.print(totalPM25.getMax(),1);
 
-  // Fill in the minimum value row
-  display.setCursor(xCO2Column,yMinRow);
+  // Color code the CO2 row
   display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
-  display.print(totalCO2.getMin(),0);
-  display.setTextColor(ILI9341_WHITE);
+  display.setCursor(xMinColumn,yCO2Row); display.print(totalCO2.getMin(),0);
+  display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);  // Use highlight color look-up table
+  display.setCursor(xAvgColumn,yCO2Row); display.print(totalCO2.getAverage(),0);
+  display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);  // Use highlight color look-up table
+  display.setCursor(xMaxColumn,yCO2Row); display.print(totalCO2.getMax(),0);
+  display.setTextColor(ILI9341_WHITE);  // Restore text color
 
-  display.setCursor(xTempColumn,yMinRow); display.print(totalTemperatureF.getMin(),1);
-  display.setCursor(xHumidityColumn,yMinRow); display.print(totalHumidity.getMin(),0);
+  display.setCursor(xMinColumn,yVOCRow); display.print(totalVOC.getMin(),0);
+  display.setCursor(xAvgColumn,yVOCRow); display.print(totalVOC.getAverage(),0);
+  display.setCursor(xMaxColumn,yVOCRow); display.print(totalVOC.getMax(),0);
+
+  display.setCursor(xMinColumn,yNOXRow); display.print(totalNOX.getMin(),1);
+  display.setCursor(xAvgColumn,yNOXRow); display.print(totalNOX.getAverage(),1);
+  display.setCursor(xMaxColumn,yNOXRow); display.print(totalNOX.getMax(),1);
+
+  display.setCursor(xMinColumn,yTempFRow); display.print(totalTemperatureF.getMin(),1);
+  display.setCursor(xAvgColumn,yTempFRow); display.print(totalTemperatureF.getAverage(),1);
+  display.setCursor(xMaxColumn,yTempFRow); display.print(totalTemperatureF.getMax(),1);
+
+  display.setCursor(xMinColumn,yHumidityRow); display.print(totalHumidity.getMin(),0);
+  display.setCursor(xAvgColumn,yHumidityRow); display.print(totalHumidity.getAverage(),0);
+  display.setCursor(xMaxColumn,yHumidityRow); display.print(totalHumidity.getMax(),0);
+
+  display.setCursor(xMinColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMin()),1);
+  display.setCursor(xAvgColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getAverage()),1);
+  display.setCursor(xMaxColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMax()),1);
+
 }
 
 bool screenAlert(String messageText)
@@ -690,16 +744,116 @@ bool screenAlert(String messageText)
   return status;
 }
 
+// Draw a simple graph of recent CO2 values. Time-ordered data to be plottted is stored in an array with the
+// most recent point last.  Values of -1 are to be skipped in the plotting, allowing the line of points to
+// always have the most recent value at the right edge of the graph but still work if not enough data has yet
+// been reported to fully cover the plot area.
 void screenGraph()
 // Displays CO2 values over time as a graph
 {
-  // screen layout assists in pixels
-  // const uint16_t ySparkline = 95;
-  // const uint16_t sparklineHeight = 40;
+  int16_t i, x1, y1;
+  uint16_t width, height, deltax, w1, h1, x, y, xp, yp;
+  uint16_t gx0, gy0, gx1, gy1;  // Drawing area bouding box
+  String minlabel, maxlabel, xlabel;
+  float c, minvalue, maxvalue;
+  bool firstpoint = true, nodata = true;
 
   debugMessage("screenGraph start",1);
-  screenAlert("Graph");
+  width = display.width();
+  height = display.height();
+
+  // Set drawing area bounding box values
+  gx0 = 50;
+  gy0 = 10;
+  gx1 = width-30;
+  gy1 = height-30;  // Room at the bottom for the graph label
+
+  display.fillScreen(ILI9341_BLACK);
+  display.setFont(&FreeSans9pt7b);
+
+  // Scan the retained CO2 data for max & min to scale the plot
+  minvalue = 5000;
+  maxvalue = 0;
+  for(i=0;i<GRAPH_POINTS;i++) {
+    if(co2data[i] == -1) continue;   // Skip "empty" slots
+    nodata = false;  // At least one data point
+    if(co2data[i] < minvalue) minvalue = co2data[i];
+    if(co2data[i] > maxvalue) maxvalue = co2data[i];
+  }
+  // Deal with no data condition (e.g., just booted)
+  if(nodata) {
+    // Label plot with "awating" message
+    display.setTextColor(ILI9341_WHITE);
+    xlabel = String("Awaiting CO2 Values");  // Center overall graph label below the drawing area
+    display.getTextBounds(xlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
+    display.setCursor( ((width-w1)/2),(height-(h1/2)) );
+    display.print(xlabel);
+    // Set reasonable bounds for the (empty) plot
+    minvalue = 400;
+    maxvalue = 1200;
+  }
+  else {
+    // We have data to plot, so say so
+    display.setTextColor(ILI9341_WHITE);
+    xlabel = String("Recent CO2 Values");  // Center overall graph label below the drawing area
+    display.getTextBounds(xlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
+    display.setCursor( ((width-w1)/2),(height-(h1/2)) );
+    display.print(xlabel);
+
+    // Pad min and max CO2 to add room and be multiples of 50 (for nicer axis labels)
+    minvalue = (int(minvalue)/50)*50;
+    maxvalue = ((int(maxvalue)/50)+1)*50;
+  }
+  
+  display.setTextColor(ILI9341_LIGHTGREY);
+  // Draw Y axis labels
+  minlabel = String(int(minvalue));
+  maxlabel = String(int(maxvalue));
+  display.getTextBounds(maxlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
+  display.setCursor(gx0-5-w1,h1+5); display.print(maxlabel);
+  display.getTextBounds(minlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
+  display.setCursor(gx0-5-w1,gy1); display.print(minlabel);
+
+  // Draw axis lines
+  display.drawLine(gx0,gy0,gx0,gy1,ILI9341_LIGHTGREY);
+  display.drawLine(gx0,gy1,gx1,gy1,ILI9341_LIGHTGREY);
+  display.setTextColor(ILI9341_WHITE);
+
+  // Plot however many data points we have both with filled circles at each
+  // point and lines connecting the points.  Color the filled circles with the
+  // appropriate CO2 warning level color.
+  deltax = (gx1 - gx0 - 10)/ (GRAPH_POINTS-1);  // 10 pixel padding for Y axis
+  xp = gx0;
+  yp = gy1;
+  for(i=0;i<GRAPH_POINTS;i++) {
+    if(co2data[i] == -1) continue;
+    c = co2data[i];
+    x = gx0 + 10 + (i*deltax);  // Include 10 pixel padding for Y axis
+    y = gy1 - (((c - minvalue)/(maxvalue-minvalue)) * (gy1-gy0));
+    display.fillCircle(x,y,4,warningColor[co2Range(c)]);
+    if(firstpoint) {
+      // If this is the first drawn point then don't try to draw a line
+      firstpoint = false;
+    }
+    else {
+      // Draw line from previous point (if one) to this point
+      display.drawLine(xp,yp,x,y,ILI9341_WHITE);
+    }
+    // Save x & y of this point to use as previous point for next one.
+    xp = x;
+    yp = y;
+  }
+
   debugMessage("screenGraph end",1);
+}
+// Accumulate a CO2 value into the data array used by the screen graphing function above
+void retainCO2(uint16_t co2)
+{
+  int i;
+  for(i=1;i<GRAPH_POINTS;i++) {
+    co2data[i-1] = co2data[i];
+  }
+  co2data[GRAPH_POINTS-1] = co2;
 }
 
 void screenColor()
@@ -727,7 +881,7 @@ void screenSaver()
   display.setFont(&FreeSans24pt7b);
 
   // Pick a random location that'll show up
-  int16_t x = random(xMargins,display.width()-xMargins-72);  // 64 pixels leaves room for 4 digit CO2 value
+  int16_t x = random(xMargins,display.width()-xMargins-100);  // 90 pixels leaves room for 4 digit CO2 value
   int16_t y = random(44,display.height()-yMargins); // 35 pixels leaves vertical room for text display
   display.setCursor(x,y);
   display.setTextColor(warningColor[co2Range(sensorData.ambientCO2)]);  // Use highlight color LUT
@@ -843,6 +997,7 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
     debugMessage(String("SIMULATED WiFi RSSI: ") + hardwareData.rssi,1);
   }
 
+
   void  sensorPMSimulate()
   // Simulates sensor reading from PMSA003I sensor
   {
@@ -866,7 +1021,7 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
     sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
     sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
     sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
-    debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+    debugMessage(String("SIMULATED SEN5x PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex,1);
   }
 #endif
 
@@ -889,6 +1044,7 @@ bool OWMCurrentWeatherRead()
       debugMessage("Raw JSON from OWM Current Weather feed", 2);
       debugMessage(jsonBuffer, 2);
       if (jsonBuffer == "HTTP GET error") {
+        debugMessage("OWM Weather: HTTP Get error",1);
         return false;
       }
 
@@ -934,7 +1090,10 @@ bool OWMCurrentWeatherRead()
       debugMessage(String("OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "% RH", 1);
       return true;
     }
-    return false;
+    else {
+      debugMessage("OWM Weather: Network disconnected",1);
+      return false;
+    }
   #endif
 }
 
@@ -957,6 +1116,7 @@ bool OWMAirPollutionRead()
       debugMessage("Raw JSON from OWM AQI feed", 2);
       debugMessage(jsonBuffer, 2);
       if (jsonBuffer == "HTTP GET error") {
+        debugMessage("OWM AQI: HTTP Get error",1);
         return false;
       }
 
@@ -984,7 +1144,10 @@ bool OWMAirPollutionRead()
       debugMessage(String("OWM PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
       return true;
     }
-    return false;
+    else {
+      debugMessage("OWM AQI: Network disconnected",1);
+      return false;
+    }
   #endif
 }
 
@@ -1098,6 +1261,7 @@ void networkDisconnect()
     }
   }
 
+
   String networkHTTPGETRequest(const char* serverName) 
   {
     String payload = "{}";
@@ -1126,211 +1290,389 @@ void networkDisconnect()
       return payload;
     #endif
   }
-#endif
+#endif // HARDWARE_SIMULATE
 
-bool sensorPMInit()
+/**************************************************************************************
+ *                 SENSOR SPECIFIC ROUTINES AND CONVENIENCE FUNCTIONS                 *
+ *************************************************************************************/
+
+// Generalized entry point for sensor initialization
+bool sensorInit()
 {
-  #ifdef HARDWARE_SIMULATE
-    return true;
-  #else
-    uint16_t error;
-    char errorMessage[256];
-
-    // Wire.begin();
-    Wire.begin(CYD_SDA, CYD_SCL);
-    pmSensor.begin(Wire);
-
-    error = pmSensor.deviceReset();
-    if (error) {
-      errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " error during SEN5x reset", 1);
-      return false;
-    }
-
-    // set a temperature offset in degrees celsius
-    // By default, the temperature and humidity outputs from the sensor
-    // are compensated for the modules self-heating. If the module is
-    // designed into a device, the temperature compensation might need
-    // to be adapted to incorporate the change in thermal coupling and
-    // self-heating of other device components.
-    //
-    // A guide to achieve optimal performance, including references
-    // to mechanical design-in examples can be found in the app note
-    // “SEN5x – Temperature Compensation Instruction” at www.sensirion.com.
-    // Please refer to those application notes for further information
-    // on the advanced compensation settings used
-    // in `setTemperatureOffsetParameters`, `setWarmStartParameter` and
-    // `setRhtAccelerationMode`.
-    //
-    // Adjust tempOffset to account for additional temperature offsets
-    // exceeding the SEN module's self heating.
-    // float tempOffset = 0.0;
-    // error = pmSensor.setTemperatureOffsetSimple(tempOffset);
-    // if (error) {
-    //   errorToString(error, errorMessage, 256);
-    //   debugMessage(String(errorMessage) + " error setting temp offset", 1);
-    // } else {
-    //   debugMessage(String("Temperature Offset set to ") + tempOffset + " degrees C", 2);
-    // }
-
-    // Start Measurement
-    error = pmSensor.startMeasurement();
-    if (error) {
-      errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " error during SEN5x startMeasurement", 1);
-      return false;
-    }
-    debugMessage("SEN5X starting periodic measurements",1);
-    return true;
+  // Conditionally compiled based on the sensor configuration as defined in config.h
+  #ifdef SENSOR_SEN66
+    return(sensorSEN6xInit());
   #endif
+
+  #ifdef SENSOR_SEN54SCD40
+    bool status = true;
+    // Initialize PM25 sensor (SEN54)
+    if (!sensorPMInit()) {
+      debugMessage("SEN5X initialization failure", 1);
+      screenAlert("No SEN5X");
+      status = false;
+    }
+
+    // Initialize CO2 Sensor (SCD4X)
+    if (!sensorCO2Init()) {
+      debugMessage("SCD4X initialization failure",1);
+      screenAlert("No SCD4X");
+      // This error often occurs right after a firmware flash and reset.
+      // Hardware deep sleep typically resolves it, so quickly cycle the hardware
+      powerDisable(hardwareRebootInterval);
+      status = false;  // Not executed given power reset
+    }
+    return(status);
+  #endif // SENSOR_SEN54SCD40
+
+  debugMessage("Initialization failed: no sensor(s) defined!",1);
+  return false;
 }
 
-bool sensorPMRead()
+// Generalized entry point for reading sensor values
+bool sensorRead()
 {
-  #ifdef HARDWARE_SIMULATE
-    sensorPMSimulate();
-    return true;
-  #else
-    uint16_t error;
-    char errorMessage[256];
-    // we'll use the SCD4X values for these
-    // IMPROVEMENT: Compare to SCD4X values?
-    float sen5xTempF;
-    float sen5xHumidity;
+  #ifdef SENSOR_SEN66
+    return(sensorSEN6xRead());
+  #endif // SENSOR_SEN66
 
-    debugMessage("SEN5X read initiated",1);
-
-    error = pmSensor.readMeasuredValues(
-      sensorData.pm1, sensorData.pm25, sensorData.pm4,
-      sensorData.pm10, sen5xHumidity, sen5xTempF, sensorData.vocIndex,
-      sensorData.noxIndex);
-    if (error) {
-      errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " error during SEN5x read",1);
-      return false;
-    }
-    debugMessage(String("SEN5X PM2.5: ") + sensorData.pm25 + ", VOC: " + sensorData.vocIndex, 1);
-    return true;
-  #endif
-}
-
-bool sensorCO2Init()
-// initializes SCD4X to read
-{
-  #ifdef HARDWARE_SIMULATE
-    return true;
- #else
-    char errorMessage[256];
-    uint16_t error;
-
-    // Wire.begin();
-    // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
-    Wire.begin(CYD_SDA, CYD_SCL);
-    co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
-
-    // stop potentially previously started measurement.
-    error = co2Sensor.stopPeriodicMeasurement();
-    if (error) {
-      errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " executing SCD4X stopPeriodicMeasurement()",1);
-      return false;
-    }
-
-    // Check onboard configuration settings while not in active measurement mode
-    // IMPROVEMENT: These don't handle error conditions, which should be rare as caught above
-    float offset;
-    error = co2Sensor.getTemperatureOffset(offset);
-    if (error == 0){
-        error = co2Sensor.setTemperatureOffset(sensorTempCOffset);
-        if (error == 0)
-          debugMessage(String("Initial SCD4X temperature offset ") + offset + " ,set to " + sensorTempCOffset,2);
-    }
-
-    // IMPROVEMENT: These don't handle error conditions, which should be rare as caught above
-    uint16_t sensor_altitude;
-    error = co2Sensor.getSensorAltitude(sensor_altitude);
-    if (error == 0){
-      error = co2Sensor.setSensorAltitude(SITE_ALTITUDE);  // optimizes CO2 reading
-      if (error == 0)
-        debugMessage(String("Initial SCD4X altitude ") + sensor_altitude + " meters, set to " + SITE_ALTITUDE,2);
-    }
-
-    // Start Measurement.  For high power mode, with a fixed update interval of 5 seconds
-    // (the typical usage mode), use startPeriodicMeasurement().  For low power mode, with
-    // a longer fixed sample interval of 30 seconds, use startLowPowerPeriodicMeasurement()
-    // uint16_t error = co2Sensor.startPeriodicMeasurement();
-    error = co2Sensor.startLowPowerPeriodicMeasurement();
-    if (error) {
-      errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " executing SCD4X startLowPowerPeriodicMeasurement()",1);
-      return false;
-    }
-    else
+  #ifdef SENSOR_SEN54SCD40
+    bool status = true;
+    if (!sensorPMRead())
     {
-      debugMessage("SCD4X starting low power periodic measurements",1);
-      return true;
+      // TODO: what else to do here, see OWM Reads...
+      debugMessage("PM sensor read failed",1);
+      status = false;
     }
-  #endif
+
+    if (!sensorCO2Read())
+    {
+      screenAlert("CO2 read fail");
+      debugMessage("CO2 sensor read failed",1);
+      status = false;
+    }
+    return(status);
+  #endif // SENSOR_SEN54SCD40
+
+  debugMessage("Read failed: no sensor(s) defined!",1);
+  return false;
 }
 
-bool sensorCO2Read()
-// Description: Sets global environment values from SCD40 sensor
-// Parameters: none
-// Output : true if successful read, false if not
-// Improvement : NA
-{
-  #ifdef HARDWARE_SIMULATE
-    sensorCO2Simulate();
-    debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
-  #else
-    char errorMessage[256];
-    bool status = false;
-    uint16_t co2 = 0;
-    float temperature = 0.0f;
-    float humidity = 0.0f;
-    uint16_t error;
-    uint8_t errorCount = 0;
+// Functions to be compiled in and used with the SEN66-based configuration
+#ifdef SENSOR_SEN66
+  // Initialize SEN66 sensor
+  bool sensorSEN6xInit()
+  {
+      static char errorMessage[64];
+      static int16_t error;
 
-    debugMessage("CO2 sensor read initiated",1);
-    while(!status) {
-      errorCount++;
-      if (errorCount>co2SensorReadFailureLimit)
-        break;
-      // Is data ready to be read?
-      bool isDataReady = false;
-      error = co2Sensor.getDataReadyStatus(isDataReady);
-      if (error) {
-          errorToString(error, errorMessage, 256);
-          debugMessage(String("Error trying to execute getDataReadyFlag(): ") + errorMessage,1);
-          continue; // Back to the top of the loop
+      Wire.begin(CYD_SDA, CYD_SCL);
+      paqSensor.begin(Wire, SEN66_I2C_ADDR_6B);
+
+      error = paqSensor.deviceReset();
+      if (error != 0) {
+          debugMessage("Error trying to execute deviceReset(): ",1);
+          errorToString(error, errorMessage, sizeof errorMessage);
+          debugMessage(errorMessage,1);
+          return false;
       }
-      error = co2Sensor.readMeasurement(co2, temperature, humidity);
-      if (error) {
-          errorToString(error, errorMessage, 256);
-          debugMessage(String("SCD40 executing readMeasurement(): ") + errorMessage,2);
-          // Implicitly continues back to the top of the loop
+      delay(1200);
+      int8_t serialNumber[32] = {0};
+      error = paqSensor.getSerialNumber(serialNumber, 32);
+      if (error != 0) {
+          debugMessage("Error trying to execute SEN6x getSerialNumber(): ",1);
+          errorToString(error, errorMessage, sizeof errorMessage);
+          debugMessage(errorMessage,1);
+          return false;
       }
-      else if (co2 < sensorCO2Min || co2 > sensorCO2Max)
-      {
-        debugMessage(String("SCD40 CO2 reading: ") + sensorData.ambientCO2 + " is out of expected range",1);
-        //(sensorData.ambientCO2 < sensorCO2Min) ? sensorData.ambientCO2 = sensorCO2Min : sensorData.ambientCO2 = sensorCO2Max;
-        // Implicitly continues back to the top of the loop
+      debugMessage("SEN6x serial number: ",2);
+      debugMessage((const char *)serialNumber,2);
+      error = paqSensor.startContinuousMeasurement();
+      if (error != 0) {
+          debugMessage("Error trying to execute SEN6x startContinuousMeasurement(): ",1);
+          errorToString(error, errorMessage, sizeof errorMessage);
+          debugMessage(errorMessage,1);
+          return false;
+      }
+
+      // TODO: Add support for setting custom temperature offset for SEN66
+      return true;
+  }
+
+  // Read data from SEN66 sensor
+  bool sensorSEN6xRead()
+  {
+    #ifdef HARDWARE_SIMULATE
+      sensorSEN6xSimulate();
+      return true;
+    #endif
+      static char errorMessage[64];
+      static int16_t error;
+      float ambientTemperatureC;
+
+      // TODO: Add support for checking isDataReady flag on SEN66
+
+      error = paqSensor.readMeasuredValues(
+        sensorData.pm1, sensorData.pm25, sensorData.pm4,
+        sensorData.pm10, sensorData.ambientHumidity, ambientTemperatureC , sensorData.vocIndex,
+        sensorData.noxIndex, sensorData.ambientCO2);
+
+    if (error != 0) {
+        debugMessage("Error trying to execute readMeasuredValues(): ",1);
+        errorToString(error, errorMessage, sizeof errorMessage);
+        debugMessage(errorMessage,1);
+        return false;
+    }
+    // Convert temperature Celsius from sensor into Farenheit
+    sensorData.ambientTemperatureF = (1.8*ambientTemperatureC) + 32.0;
+    
+    debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + String(", CO2: ") + sensorData.ambientCO2 +
+      String(", VOC: ") + sensorData.vocIndex + String(", NOX: ") + sensorData.noxIndex + String(", ") + 
+      sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + String("%, "),1);
+    return true;
+  }
+
+  #ifdef HARDWARE_SIMULATE
+    // Simulates sensor reading from SEN66 sensor
+    void  sensorSEN6xSimulate()
+    {
+      sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
+      sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
+      sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
+      sensorData.pm4 = random(sensorPMMin, sensorPMMax) / 100.0;
+      sensorData.vocIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
+      sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
+      sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
+      sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
+      sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
+
+      debugMessage(String("SIMULATED SEN66 PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex +
+        sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex + ",NOX index: " + sensorData.noxIndex,1);
+
+    }
+  #endif // HARDWARE_SIMULATE
+#endif // SENSOR_SEN66
+
+// Functions to be compiled in and use with the SEN54 + SCD40 configuration
+#ifdef SENSOR_SEN54SCD40
+  bool sensorPMInit()
+  {
+    #ifdef HARDWARE_SIMULATE
+      return true;
+    #else
+      uint16_t error;
+      char errorMessage[256];
+
+      // Wire.begin();
+      // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
+      Wire.begin(CYD_SDA, CYD_SCL);
+      pmSensor.begin(Wire);
+
+      error = pmSensor.deviceReset();
+      if (error) {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " error during SEN5x reset", 1);
+        return false;
+      }
+
+      // set a temperature offset in degrees celsius
+      // By default, the temperature and humidity outputs from the sensor
+      // are compensated for the modules self-heating. If the module is
+      // designed into a device, the temperature compensation might need
+      // to be adapted to incorporate the change in thermal coupling and
+      // self-heating of other device components.
+      //
+      // A guide to achieve optimal performance, including references
+      // to mechanical design-in examples can be found in the app note
+      // “SEN5x – Temperature Compensation Instruction” at www.sensirion.com.
+      // Please refer to those application notes for further information
+      // on the advanced compensation settings used
+      // in `setTemperatureOffsetParameters`, `setWarmStartParameter` and
+      // `setRhtAccelerationMode`.
+      //
+      // Adjust tempOffset to account for additional temperature offsets
+      // exceeding the SEN module's self heating.
+      // float tempOffset = 0.0;
+      // error = pmSensor.setTemperatureOffsetSimple(tempOffset);
+      // if (error) {
+      //   errorToString(error, errorMessage, 256);
+      //   debugMessage(String(errorMessage) + " error setting temp offset", 1);
+      // } else {
+      //   debugMessage(String("Temperature Offset set to ") + tempOffset + " degrees C", 2);
+      // }
+
+      // Start Measurement
+      error = pmSensor.startMeasurement();
+      if (error) {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " error during SEN5x startMeasurement", 1);
+        return false;
+      }
+      debugMessage("SEN5X starting periodic measurements",1);
+      return true;
+    #endif
+  }
+
+  bool sensorPMRead()
+  {
+    #ifdef HARDWARE_SIMULATE
+      sensorPMSimulate();
+      return true;
+    #else
+      uint16_t error;
+      char errorMessage[256];
+      // we'll use the SCD4X values for these
+      // IMPROVEMENT: Compare to SCD4X values?
+      float sen5xTempF;
+      float sen5xHumidity;
+
+      debugMessage("SEN5X read initiated",1);
+
+      error = pmSensor.readMeasuredValues(
+        sensorData.pm1, sensorData.pm25, sensorData.pm4,
+        sensorData.pm10, sen5xHumidity, sen5xTempF, sensorData.vocIndex,
+        sensorData.noxIndex);
+      if (error) {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " error during SEN5x read",1);
+        return false;
+      }
+      debugMessage(String("SEN5X PM2.5: ") + sensorData.pm25 + ", VOC: " + sensorData.vocIndex, 1);
+      return true;
+    #endif
+  }
+
+  bool sensorCO2Init()
+  // initializes SCD4X to read
+  {
+    #ifdef HARDWARE_SIMULATE
+      return true;
+  #else
+      char errorMessage[256];
+      uint16_t error;
+
+      // Wire.begin();
+      // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
+      Wire.begin(CYD_SDA, CYD_SCL);
+      co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
+
+      // stop potentially previously started measurement.
+      error = co2Sensor.stopPeriodicMeasurement();
+      if (error) {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " executing SCD4X stopPeriodicMeasurement()",1);
+        return false;
+      }
+
+      // Check onboard configuration settings while not in active measurement mode
+      // IMPROVEMENT: These don't handle error conditions, which should be rare as caught above
+      float offset;
+      error = co2Sensor.getTemperatureOffset(offset);
+      if (error == 0){
+          error = co2Sensor.setTemperatureOffset(sensorTempCOffset);
+          if (error == 0)
+            debugMessage(String("Initial SCD4X temperature offset ") + offset + " ,set to " + sensorTempCOffset,2);
+      }
+
+      // IMPROVEMENT: These don't handle error conditions, which should be rare as caught above
+      uint16_t sensor_altitude;
+      error = co2Sensor.getSensorAltitude(sensor_altitude);
+      if (error == 0){
+        error = co2Sensor.setSensorAltitude(SITE_ALTITUDE);  // optimizes CO2 reading
+        if (error == 0)
+          debugMessage(String("Initial SCD4X altitude ") + sensor_altitude + " meters, set to " + SITE_ALTITUDE,2);
+      }
+
+      // Start Measurement.  For high power mode, with a fixed update interval of 5 seconds
+      // (the typical usage mode), use startPeriodicMeasurement().  For low power mode, with
+      // a longer fixed sample interval of 30 seconds, use startLowPowerPeriodicMeasurement()
+      // uint16_t error = co2Sensor.startPeriodicMeasurement();
+      error = co2Sensor.startLowPowerPeriodicMeasurement();
+      if (error) {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " executing SCD4X startLowPowerPeriodicMeasurement()",1);
+        return false;
       }
       else
       {
-        // valid measurement available, update globals
-        sensorData.ambientTemperatureF = (temperature*1.8)+32.0;
-        sensorData.ambientHumidity = humidity;
-        sensorData.ambientCO2 = co2;
-        debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
-        status = true;
-        break;
+        debugMessage("SCD4X starting low power periodic measurements",1);
+        return true;
       }
-    delay(100); // reduces readMeasurement() Not enough data received errors
-    }
-  #endif
-  return(status);
-}
+    #endif
+  }
+
+  bool sensorCO2Read()
+// Description: Sets global environment values from SCD40 sensor
+// Parameters: none
+// Output : true if successful read, false if not
+// Improvement : NA  
+{
+    #ifdef HARDWARE_SIMULATE
+      sensorCO2Simulate();
+      debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+      return true;
+    #else
+      char errorMessage[256];
+      bool status = false;
+      uint16_t co2 = 0;
+      float temperature = 0.0f;
+      float humidity = 0.0f;
+      uint16_t error;
+      uint8_t errorCount = 0;
+
+      debugMessage("CO2 read initiated",1);
+
+      // Loop attempting to read Measurement
+      status = false;
+      debugMessage("CO2 sensor read initiated",1);
+      while(!status) {
+        delay(100);
+        errorCount++;
+        if (errorCount > co2SensorReadFailureLimit) {
+          break;
+        }
+        // Is data ready to be read?
+        bool isDataReady = false;
+        error = co2Sensor.getDataReadyStatus(isDataReady);
+        if (error) {
+            errorToString(error, errorMessage, 256);
+            debugMessage(String("Error trying to execute getDataReadyStatus(): ") + errorMessage,1);
+            continue; // Back to the top of the loop
+        }
+        if (!isDataReady) {
+            continue; // Back to the top of the loop
+        }
+        debugMessage("SCD4X data available",2);
+
+        error = co2Sensor.readMeasurement(co2, temperatureC, humidity);
+        if (error) {
+            errorToString(error, errorMessage, 256);
+            debugMessage(String("SCD40 executing readMeasurement(): ") + errorMessage,1);
+            // Implicitly continues back to the top of the loop
+        }
+        else if (co2 < sensorCO2Min || co2 > sensorCO2Max)
+        {
+          debugMessage(String("SCD40 CO2 reading: ") + sensorData.ambientCO2 + " is out of expected range",1);
+          //(sensorData.ambientCO2 < sensorCO2Min) ? sensorData.ambientCO2 = sensorCO2Min : sensorData.ambientCO2 = sensorCO2Max;
+          // Implicitly continues back to the top of the loop
+        }
+        else
+        {
+          // Valid measurement available, update globals
+          sensorData.ambientTemperatureF = (temperature*1.8)+32.0;
+          sensorData.ambientHumidity = humidity;
+          sensorData.ambientCO2 = co2;
+          debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+          // Update global sensor readings
+          status = true;
+          break;
+        }
+        delay(100); // reduces readMeasurement() "Not enough data received" errors
+      }
+    #endif
+    return(status);
+  }
+#endif // SENSOR_SEN54SCD40
 
 uint8_t co2Range(uint16_t co2)
 // converts co2 value to index value for labeling and color
@@ -1368,19 +1710,19 @@ uint8_t vocRange(float vocIndex)
   return vocRange;
 }
 
-float pm25toAQI(float pm25)
-// Converts pm25 reading to AQI using the AQI Equation
-// (https://forum.airnowtech.org/t/the-aqi-equation/169)
+float pm25toAQI_US(float pm25)
+// Converts pm25 reading to AQI using the US EPA standard (revised Feb 7, 2024) and detailed
+// here: https://www.epa.gov/system/files/documents/2024-02/pm-naaqs-air-quality-index-fact-sheet.pdf.
 {  
   float aqiValue;
-  if(pm25 <= 12.0)       aqiValue = (fmap(pm25,  0.0, 12.0,  0.0, 50.0));
-  else if(pm25 <= 35.4)  aqiValue = (fmap(pm25, 12.1, 35.4, 51.0,100.0));
-  else if(pm25 <= 55.4)  aqiValue = (fmap(pm25, 35.5, 55.4,101.0,150.0));
-  else if(pm25 <= 150.4) aqiValue = (fmap(pm25, 55.5,150.4,151.0,200.0));
-  else if(pm25 <= 250.4) aqiValue = (fmap(pm25,150.5,250.4,201.0,300.0));
-  else if(pm25 <= 500.4) aqiValue = (fmap(pm25,250.5,500.4,301.0,500.0));
-  else aqiValue = (505.0); // AQI above 500 not recognized
-  debugMessage(String("PM2.5 value of ") + pm25 + " converts to AQI value of " + aqiValue, 2);
+  if(pm25 <= 9.0)        aqiValue = (fmap(pm25,  0.0,  9.0,  0.0, 50.0)); // "Good"
+  else if(pm25 <= 35.4)  aqiValue = (fmap(pm25, 12.1, 35.4, 51.0,100.0)); // "Moderate"
+  else if(pm25 <= 55.4)  aqiValue = (fmap(pm25, 35.5, 55.4,101.0,150.0)); // "Unhealthy for Sensitive Groups"
+  else if(pm25 <= 125.4) aqiValue = (fmap(pm25, 55.5,125.4,151.0,200.0)); // "Unhnealthy"
+  else if(pm25 <= 225.4) aqiValue = (fmap(pm25,125.5,225.4,201.0,300.0)); // "Very Unhealthy"
+  else if(pm25 <= 500.0) aqiValue = (fmap(pm25,225.5,500.0,301.0,500.0)); // "Hazardous"
+  else aqiValue = (501.0); // AQI above 500 not recognized
+  debugMessage(String("PM2.5 value of ") + pm25 + " converts to US AQI value of " + aqiValue, 2);
 
   return aqiValue;
 }
@@ -1408,6 +1750,7 @@ void powerDisable(uint8_t deepSleepTime)
 
   // power down SCD4X by stopping potentially started measurement then power down SCD4X
   #ifndef HARDWARE_SIMULATE
+    /* DJB-DEV
     uint16_t error = co2Sensor.stopPeriodicMeasurement();
     if (error) {
       char errorMessage[256];
@@ -1416,6 +1759,7 @@ void powerDisable(uint8_t deepSleepTime)
     }
     co2Sensor.powerDown();
     debugMessage("power off: SCD4X",2);
+    */
   #endif
   
   // turn off TFT backlight
