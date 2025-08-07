@@ -71,11 +71,9 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 #include "glyphs.h"
 
 // external function dependencies
-
 #ifdef THINGSPEAK
   extern bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, 
     float vocIndex, float noxIndex, float aqi);
-
 #endif
 
 #ifdef INFLUX
@@ -243,7 +241,6 @@ void setup()
   // start tracking timers
   timeLastSample = -(sensorSampleInterval*1000); // forces immediate sample in loop()
   timeLastInput = millis(); // We'll count startup as a "touch"
-  
 }
 
 void loop()
@@ -350,7 +347,6 @@ void loop()
       // do we have samples to report?
       if (numSamples != 0) 
       {
-
         // Get averaged sample values from the Measure utliity class objects
         avgTemperatureF = totalTemperatureF.getAverage();
         avgHumidity = totalHumidity.getAverage();
@@ -376,6 +372,7 @@ void loop()
 
           // Post the AQI sensor data to ThingSpeak. Make sure to use the PM25 to AQI conversion formula for the
           // desired country as there is no global standard.
+
           #ifdef THINGSPEAK
             if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
               Serial.println("ERROR: Did not write to ThingSpeak");
@@ -403,11 +400,6 @@ void loop()
         }
         // Reset sample counters
         numSamples = 0;
-        // temperatureFTotal = 0;
-        // humidityTotal = 0;
-        // co2Total = 0;
-        // vocTotal = 0;
-        // pm25Total = 0;
         totalTemperatureF.clear();
         totalHumidity.clear();
         totalCO2.clear();
@@ -478,7 +470,7 @@ void screenCurrentInfo()
   const uint16_t xWeatherIcon = xOutdoorPMCircle - 18;
   const uint16_t yWeatherIcon = yPMCircles - 20;
 
-  debugMessage("screenCurrentInfo() start", 2);  // DJB-DEV: was 1
+  debugMessage("screenCurrentInfo() start",2);
 
   // clear screen
   display.fillScreen(ILI9341_BLACK);
@@ -1299,7 +1291,6 @@ void networkDisconnect()
     #endif
   }
 #endif // HARDWARE_SIMULATE
-  
 
 /**************************************************************************************
  *                 SENSOR SPECIFIC ROUTINES AND CONVENIENCE FUNCTIONS                 *
@@ -1473,6 +1464,7 @@ bool sensorRead()
       char errorMessage[256];
 
       // Wire.begin();
+      // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
       Wire.begin(CYD_SDA, CYD_SCL);
       pmSensor.begin(Wire);
 

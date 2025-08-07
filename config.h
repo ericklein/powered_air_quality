@@ -7,7 +7,7 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 1
+// #define DEBUG 2
 
 // Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -45,10 +45,10 @@
 // aqi labels from https://openweathermap.org/api/air-pollution
 const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 
-// Sampling and reporting intervals
+// sampling and reporting intervals
 #ifdef DEBUG
-  const uint16_t sensorSampleInterval = 30;   // time between samples in seconds (30 typical)
-  const uint8_t reportInterval = 2;     // time between reports in minutes (2 typical)
+  const uint16_t sensorSampleInterval = 30;   // time between samples in seconds
+  const uint8_t reportInterval = 2;     // time between reports in minutes
 #else
   const uint16_t sensorSampleInterval = 60;
   const uint8_t reportInterval = 15;
