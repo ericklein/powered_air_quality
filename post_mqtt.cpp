@@ -28,32 +28,35 @@
   #include <Adafruit_MQTT_Client.h>
   extern Adafruit_MQTT_Client aq_mqtt;
 
-  void mqttConnect()
-  // Connects and reconnects to MQTT broker, call as needed to maintain connection
-  {  
-    // exit if already connected
-    if (aq_mqtt.connected())
-    {
-      debugMessage(String("Already connected to MQTT broker ") + MQTT_BROKER,2);
-      return;
-    }
-    
-    int8_t mqttErr;
+bool mqttConnect()
+// Connects and reconnects to MQTT broker, call as needed to maintain connection
+{
+  // exit if already connected
+  if (bl_mqtt.connected())
+  {
+    debugMessage(String("Already connected to MQTT broker ") + MQTT_BROKER,2);
+    return true;
+  }
 
-    // Attempts MQTT connection, and if unsuccessful, re-attempts after networkConnectAttemptInterval second delay for networkConnectAttemptLimit times
-    for(int tries = 1; tries <= networkConnectAttemptLimit; tries++)
+  // Q: does this need to be signed?
+  int8_t mqttErr;
+
+  for(uint8_t loop = 1; loop <= networkConnectAttemptLimit; loop++)
+  {
+    if ((mqttErr = bl_mqtt.connect()) == 0)
     {
-      if ((mqttErr = aq_mqtt.connect()) == 0)
-      {
-        debugMessage(String("Connected to MQTT broker ") + MQTT_BROKER,2);
-        return;
-      }
-      aq_mqtt.disconnect();
-      debugMessage(String("MQTT connection attempt ") + tries + " of " + networkConnectAttemptLimit + " failed with error msg: " + aq_mqtt.connectErrorString(mqttErr),1);
-      delay(networkConnectAttemptInterval*1000);
-      // }
+      debugMessage(String("Connected to MQTT broker ") + MQTT_BROKER,1);
+      return true;
     }
-  } 
+
+    // report problem
+    bl_mqtt.disconnect();
+    debugMessage(String("MQTT connection attempt ") + loop + " of " + networkConnectAttemptLimit + " failed with error msg: " + bl_mqtt.connectErrorString(mqttErr),1);
+    delay(timeNetworkConnectTimeoutMS);
+  }
+  // MQTT connection did not happen after multiple attempts
+  return false;
+}
 
   // Utility function to streamline dynamically generating MQTT topics using site and device 
   // parameters defined in config.h and our standard naming scheme using values set in data.h
