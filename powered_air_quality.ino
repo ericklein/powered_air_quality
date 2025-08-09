@@ -123,6 +123,7 @@ uint8_t numSamples = 0;       // Number of overall sensor readings over reportin
 uint32_t timeLastSample = 0;  // timestamp (in ms) for last captured sample 
 uint32_t timeLastReport = 0;  // timestamp (in ms) for last report to network endpoints
 uint32_t timeLastInput =  0;  // timestamp (in ms) for last user input (screensaver)
+uint32_t timeLastWiFiConnectMS = 0;
 
 // used by thingspeak
 float MinPm25 = 1999; /* Observed minimum PM2.5 */
@@ -202,7 +203,6 @@ void setup()
     #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
       debugMessage(String("Report interval is ") + reportInterval + " minutes",1);
     #endif
-    debugMessage(String("Internet reconnect delay is ") + networkConnectAttemptInterval + " seconds",2);
   #endif
 
   // generate random numbers for every boot cycle
@@ -254,6 +254,20 @@ void loop()
   float minPM25 = 0;            // minimum PM2.5 over report interval
   float maxPM25 = 0;            // maximum PM2.5 over report interval
   float avgNOX = 0;             // average NOX over report interval
+
+  // re-establish WiFi connection if needed
+  if ((WiFi.status() != WL_CONNECTED) && (millis() - timeLastWiFiConnectMS > timeWiFiKeepAliveIntervalMS)) {
+    timeLastWiFiConnectMS = millis();
+    if (!networkConnect()) {
+      // alert user to the WiFi connectivity problem
+      hardwareData.rssi = 0;
+      debugMessage(String("Connection to ") + WIFI_SSID + " failed", 1);
+      // IMPROVEMENT: How do we want to handle this? the rest of the code will barf...
+      // ESP.restart();
+    }
+    // IMPROVEMENT: Log RSSI?
+    // mqttDeviceWiFiUpdate(rssi);
+  }
 
   // is it time to read the sensor?
   if((millis() - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
@@ -1207,26 +1221,27 @@ bool networkConnect()
       debugMessage("Already connected to WiFi",2);
       return true;
     }
+
+    WiFi.mode(WIFI_STA); // IMPROVEMENT: test to see if this improves connection time
     // set hostname has to come before WiFi.begin
     WiFi.hostname(DEVICE_ID);
-
     WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-    for (uint8_t loop = 1; loop <= networkConnectAttemptLimit; loop++)
-    // Attempts WiFi connection, and if unsuccessful, re-attempts after networkConnectAttemptInterval second delay for networkConnectAttemptLimit times
-    {
-      if (WiFi.status() == WL_CONNECTED) {
+    uint32_t timeWiFiConnectStart = millis();
+    while ((WiFi.status() != WL_CONNECTED) && ((millis() - timeWiFiConnectStart) < timeNetworkConnectTimeoutMS)) {
+      delay(100);
+    }
+
+    if (WiFi.status() == WL_CONNECTED) 
+      {
         hardwareData.rssi = abs(WiFi.RSSI());
-        debugMessage(String("WiFi IP address lease from ") + WIFI_SSID + ": " + WiFi.localIP().toString(), 1);
-        debugMessage(String("WiFi RSSI: ") + hardwareData.rssi + " dBm", 1);
+        debugMessage(String("WiFi IP address lease from ") + WIFI_SSID + " is " + WiFi.localIP().toString(), 1);
+        debugMessage(String("WiFi RSSI is: ") + hardwareData.rssi + " dBm", 2);
         return true;
       }
-      debugMessage(String("Connection attempt ") + loop + " of " + networkConnectAttemptLimit + " to " + WIFI_SSID + " failed", 1);
-      debugMessage(String("WiFi status message ") + networkWiFiMessage(WiFi.status()),2);
-      // use of delay() OK as this is initialization code
-      delay(networkConnectAttemptInterval * 1000);  // converted into milliseconds
+    else {
+      return false;
     }
-    return false;
   #endif
 }
 
@@ -1615,7 +1630,7 @@ bool sensorRead()
       char errorMessage[256];
       bool status = false;
       uint16_t co2 = 0;
-      float temperature = 0.0f;
+      float temperatureC = 0.0f;
       float humidity = 0.0f;
       uint16_t error;
       uint8_t errorCount = 0;
@@ -1659,7 +1674,7 @@ bool sensorRead()
         else
         {
           // Valid measurement available, update globals
-          sensorData.ambientTemperatureF = (temperature*1.8)+32.0;
+          sensorData.ambientTemperatureF = (temperatureC*1.8)+32.0;
           sensorData.ambientHumidity = humidity;
           sensorData.ambientCO2 = co2;
           debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);

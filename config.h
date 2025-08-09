@@ -17,7 +17,7 @@
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
 #define INFLUX // Log data to InfluxDB server
-#define THINGSPEAK  // Log data to ThingSpeak
+// #define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration Step 5: Which sensor configuration do we have?  Later generation devices
 // use Sensirion SEN66 sensor which measures CO2, particulates, VOC, NOX, temperature and humidity
@@ -26,10 +26,14 @@
 // Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
-#define SENSOR_SEN66
-// #define SENSOR_SEN54SCD40
+// #define SENSOR_SEN66
+#define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
+
+// Internet
+const uint32_t timeWiFiKeepAliveIntervalMS = 30000; // check every 30 seconds
+const uint32_t timeNetworkConnectTimeoutMS = 10000;
 
 // network endpoints
 #ifdef INFLUX  
@@ -37,6 +41,10 @@
   const String influxEnvMeasurement = "weather";  // Used for environmental sensor data
   const String influxDevMeasurement =  "device";   // Used for logging AQI device data (e.g. battery)
 #endif
+// max connection attempts to network endpoints
+const uint8_t networkConnectAttemptLimit = 3;
+// seconds between network endpoint connect attempts
+const uint8_t networkConnectAttemptInterval = 10;
 
 // Open Weather Map (OWM)
 #define OWM_SERVER      "http://api.openweathermap.org/data/2.5/"
@@ -54,6 +62,29 @@ const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"}
   const uint8_t reportInterval = 15;
 #endif
 const uint8_t reportFailureThreshold = 3; // number of times reporting has to fail before UI reflects issue
+
+// display
+
+// Display related configuration information
+const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
+// Manage the suported display screens
+#define SCREEN_SAVER      0
+#define SCREEN_INFO       1
+#define SCREEN_VOC        2 
+#define SCREEN_COLOR      3
+#define SCREEN_GRAPH      4
+#define SCREEN_AGGREGATE  5
+const uint8_t screenCount = 6;
+
+// screen layout assists in pixels
+const uint8_t xMargins = 5;
+const uint8_t yMargins = 5;
+const uint8_t wifiBarWidth = 3;
+const uint8_t wifiBarHeightIncrement = 3;
+const uint8_t wifiBarSpacing = 5;
+
+// How many CO2 points to retain for the graphing screen
+#define GRAPH_POINTS 10
 
 // Screen saver timeout.  Will automatically switch to screen saver if
 // no user input (via touchscreen) in this many seconds
@@ -117,21 +148,7 @@ const uint16_t vocBad = 400;
 // Sleep time in seconds if hardware error occurs
 const uint8_t hardwareRebootInterval = 10;
 
-// Display related configuration information
-const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
-// Manage the suported display screens
-#define SCREEN_SAVER      0
-#define SCREEN_INFO       1
-#define SCREEN_VOC        2 
-#define SCREEN_COLOR      3
-#define SCREEN_GRAPH      4
-#define SCREEN_AGGREGATE  5
-const uint8_t screenCount = 6;
-
-// How many CO2 points to retain for the graphing screen
-#define GRAPH_POINTS 10
-
-// CYD pinout
+// CYD display pinout
 #define TFT_BACKLIGHT 21
 #define TFT_CS 15
 #define TFT_DC 2
@@ -140,30 +157,13 @@ const uint8_t screenCount = 6;
 #define TFT_SCLK 14
 #define TFT_RST -1
 
-// screen layout assists in pixels
-const uint8_t xMargins = 5;
-const uint8_t yMargins = 5;
-const uint8_t wifiBarWidth = 3;
-const uint8_t wifiBarHeightIncrement = 3;
-const uint8_t wifiBarSpacing = 5;
-
-// Buttons
-// const uint8_t buttonD1Pin = 1; // initially LOW
-// const int buttonDebounceDelay = 50; // time in milliseconds to debounce button
-
+// CYD touchscreen pinout
 #define XPT2046_IRQ 36
 #define XPT2046_MOSI 32
 #define XPT2046_MISO 39
 #define XPT2046_CLK 25
 #define XPT2046_CS 33
 
-// Network
-// max connection attempts to network services
-const uint8_t networkConnectAttemptLimit = 3;
-// seconds between network service connect attempts
-const uint8_t networkConnectAttemptInterval = 10;
-
-// CYD specific i2c pin configuration
-// used in Wire.begin()
+// CYD i2c pin configuration, used in Wire.begin()
 #define CYD_SDA 22
 #define CYD_SCL 27
