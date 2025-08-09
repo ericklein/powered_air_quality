@@ -60,13 +60,13 @@
     dbenvdata.addTag(TAG_KEY_SITE, DEVICE_SITE);
     dbenvdata.addTag(TAG_KEY_LOCATION, DEVICE_LOCATION);
     dbenvdata.addTag(TAG_KEY_ROOM, DEVICE_ROOM);
-    // DEVICE_ID not implemented yet
-    // dbenvdata.addTag(TAG_KEY_DEVICE_ID, DEVICE_ID);
+    dbenvdata.addTag(TAG_KEY_DEVICE_ID, DEVICE_ID);
     // And again for device data
     dbdevdata.addTag(TAG_KEY_DEVICE, DEVICE);
     dbdevdata.addTag(TAG_KEY_SITE, DEVICE_SITE);
     dbdevdata.addTag(TAG_KEY_LOCATION, DEVICE_LOCATION);
     dbdevdata.addTag(TAG_KEY_ROOM, DEVICE_ROOM);
+    dbdevdata.addTag(TAG_KEY_DEVICE_ID, DEVICE_ID);
 
     // Attempts influxDB connection, and if unsuccessful, re-attempts after networkConnectAttemptInterval second delay for networkConnectAttempLimit times
     for (int tries = 1; tries <= networkConnectAttemptLimit; tries++) {

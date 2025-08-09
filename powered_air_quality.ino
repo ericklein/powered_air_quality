@@ -1276,7 +1276,6 @@ void networkDisconnect()
     }
   }
 
-
   String networkHTTPGETRequest(const char* serverName) 
   {
     String payload = "{}";
@@ -1744,7 +1743,7 @@ float pm25toAQI_US(float pm25)
 
 float fmap(float x, float xmin, float xmax, float ymin, float ymax)
 {
-    return( ymin + ((x - xmin)*(ymax-ymin)/(xmax - xmin)));
+  return( ymin + ((x - xmin)*(ymax-ymin)/(xmax - xmin)));
 }
 
 void debugMessage(String messageText, int messageLevel)
