@@ -55,11 +55,11 @@ const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"}
 
 // sampling and reporting intervals
 #ifdef DEBUG
-  const uint16_t sensorSampleInterval = 30;   // time between samples in seconds
-  const uint8_t reportInterval = 2;     // time between reports in minutes
+  const uint32_t sensorSampleIntervalMS = 30000;   // time between samples
+  const uint32_t reportIntervalMS = 120000;     // time between reports
 #else
-  const uint16_t sensorSampleInterval = 60;
-  const uint8_t reportInterval = 15;
+  const uint32_t sensorSampleIntervalMS = 60000;
+  const uint32_t reportIntervalMS = 900000;
 #endif
 const uint8_t reportFailureThreshold = 3; // number of times reporting has to fail before UI reflects issue
 

@@ -119,11 +119,11 @@ envData sensorData;
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.
 Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25, totalNOX;
 
-uint8_t numSamples = 0;       // Number of overall sensor readings over reporting interval
-uint32_t timeLastSample = 0;  // timestamp (in ms) for last captured sample 
-uint32_t timeLastReport = 0;  // timestamp (in ms) for last report to network endpoints
-uint32_t timeLastInput =  0;  // timestamp (in ms) for last user input (screensaver)
-uint32_t timeLastWiFiConnectMS = 0;
+uint8_t numSamples              = 0;  // Number of overall sensor readings over reporting interval
+uint32_t timeLastSampleMS       = 0;  // timestamp for last captured sample 
+uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
+uint32_t timeLastInputMS        = 0;  // timestamp for last user input (screensaver)
+uint32_t timeLastWiFiConnectMS  = 0;
 
 // used by thingspeak
 float MinPm25 = 1999; /* Observed minimum PM2.5 */
@@ -199,9 +199,9 @@ void setup()
     // wait for serial port connection
     while (!Serial);
     // Display key configuration parameters
-    debugMessage(String("Starting Powered Air Quality with ") + sensorSampleInterval + String(" second sample interval"),1);
+    debugMessage(String("Starting Powered Air Quality with ") + (sensorSampleIntervalMS/1000) + String(" second sample interval"),1);
     #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
-      debugMessage(String("Report interval is ") + reportInterval + " minutes",1);
+      debugMessage(String("Report interval is ") + (reportIntervalMS/60000) + " minutes",1);
     #endif
   #endif
 
@@ -239,8 +239,8 @@ void setup()
     hardwareData.rssi = 0;            // 0 = no WiFi
 
   // start tracking timers
-  timeLastSample = -(sensorSampleInterval*1000); // forces immediate sample in loop()
-  timeLastInput = millis(); // We'll count startup as a "touch"
+  timeLastSampleMS = -(sensorSampleIntervalMS); // forces immediate sample in loop()
+  timeLastInputMS = millis(); // We'll count startup as a "touch"
 }
 
 void loop()
@@ -270,7 +270,7 @@ void loop()
   }
 
   // is it time to read the sensor?
-  if((millis() - timeLastSample) >= (sensorSampleInterval * 1000)) // converting sensorSampleInterval into milliseconds
+  if((millis() - timeLastSampleMS) >= sensorSampleIntervalMS)
   {
     // Read sensor(s) to obtain all environmental values
     if (!sensorRead()) {
@@ -309,7 +309,7 @@ void loop()
     screenUpdate(false);
 
     // Save last sample time
-    timeLastSample = millis();
+    timeLastSampleMS = millis();
   }
 
   // User input = change screens. If screen saver is active a touch means revert to the
@@ -337,13 +337,13 @@ void loop()
       screenUpdate(true);
     }
     // Save time touch input occurred
-    timeLastInput = millis();
+    timeLastInputMS = millis();
   }
   //  No touch input received, is it time to enable the screensaver?
   else {
     // If we're not already in screen saver mode, is it time it should be enabled?
     if(screenCurrent != SCREEN_SAVER) {
-      if( (millis() - timeLastInput) > (screenSaverInterval*1000)) {
+      if( (millis() - timeLastInputMS) > (screenSaverInterval*1000)) {
         // Activate screen saver, retaining current screen for easy return
         screenSaved = screenCurrent;
         screenCurrent = SCREEN_SAVER;
@@ -356,7 +356,7 @@ void loop()
   // do we have network endpoints to report to?
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK) || defined(HARDWARE_SIMULATE)
     // is it time to report to the network endpoints?
-    if ((millis() - timeLastReport) >= (reportInterval * 60 * 1000))  // converting reportInterval into milliseconds
+    if ((millis() - timeLastReportMS) >= reportIntervalMS)
     {
       // do we have samples to report?
       if (numSamples != 0) 
@@ -371,7 +371,7 @@ void loop()
         minPM25 = totalPM25.getMin();
         avgNOX = totalNOX.getAverage();
 
-        debugMessage(String("** ----- Reporting averages (") + reportInterval + " minute) ----- ",1);
+        debugMessage(String("** ----- Reporting averages (") + (reportIntervalMS/60000) + " minutes) ----- ",1);
 
         debugMessage(String("** PM2.5: ") + avgPM25 + String(", CO2: ") + avgCO2 + " ppm" + 
           String(", VOC: ") + avgVOC+ String(", NOX: ") + avgNOX + String(", ") + 
@@ -422,7 +422,7 @@ void loop()
         totalNOX.clear();
 
         // save last report time
-        timeLastReport = millis();
+        timeLastReportMS = millis();
       }
       else {
         Serial.println ("ERROR: No samples to report");
@@ -971,7 +971,7 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
 // 
 {
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-    if ((timeLastReport == 0) || ((millis() - timeLastReport) >= ((reportInterval * 60 * 1000) * reportFailureThreshold)))  // converting reportInterval into milliseconds
+    if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (reportIntervalMS * reportFailureThreshold)))
         // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
         display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_RED);
       else
