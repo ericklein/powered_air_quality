@@ -1689,26 +1689,26 @@ bool sensorRead()
   }
 #endif // SENSOR_SEN54SCD40
 
-uint8_t co2Range(uint16_t co2)
+uint8_t co2Range(uint16_t co2) 
 // converts co2 value to index value for labeling and color
 {
-  uint8_t co2Range;
-  if (co2 <= co2Fair) co2Range = 0;
-  else if (co2 <= co2Poor) co2Range = 1;
-  else if (co2 <= co2Bad) co2Range = 2;
-  else co2Range =3;
-  debugMessage(String("CO2 input of ") + co2 + " yields co2Range of " + co2Range,2);
+  uint8_t co2Range = 
+    (co2 <= co2Fair) ? 0 :
+    (co2 <= co2Poor) ? 1 :
+    (co2 <= co2Bad)  ? 2 : 3;
+
+  debugMessage(String("CO2 input of ") + co2 + " yields co2Range of " + co2Range, 2);
   return co2Range;
 }
 
 uint8_t aqiRange(float pm25)
 // converts pm25 value to index value for labeling and color
 {
-  uint8_t aqi;
-  if (pm25 <= pmFair) aqi = 0;
-  else if (pm25 <= pmPoor) aqi = 1;
-  else if (pm25 <= pm2Bad) aqi = 2;
-  else aqi = 3;
+  uint8_t aqi =
+  (pm25 <= pmFair) ? 0 :
+  (pm25 <= pmPoor) ? 1 :
+  (pm25 <= pm2Bad) ? 2 : 3;
+
   debugMessage(String("PM2.5 input of ") + pm25 + " yields " + aqi + " aqi",2);
   return aqi;
 }
@@ -1716,11 +1716,11 @@ uint8_t aqiRange(float pm25)
 uint8_t vocRange(float vocIndex)
 // converts vocIndex value to index value for labeling and color
 {
-  uint8_t vocRange;
-  if (vocIndex <= vocFair) vocRange = 0;
-  else if (vocIndex <= vocPoor) vocRange = 1;
-  else if (vocIndex <= vocBad) vocRange = 2;
-  else vocRange = 3;
+  uint8_t vocRange =
+  (vocIndex <= vocFair) ? 0 :
+  (vocIndex <= vocPoor) ? 1 :
+  (vocIndex <= vocBad)  ? 2 : 3;
+
   debugMessage(String("VOC index input of ") + vocIndex + " yields " + vocRange + " vocRange",2);
   return vocRange;
 }
