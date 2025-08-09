@@ -13,7 +13,7 @@
 // expected to be customized there on a per installation basis.  These,
 // however, should not be changed.
 #define TAG_KEY_DEVICE     "device"     // Maps to DEVICE in config.h
-// #define TAG_KEY_DEVICE_ID  "device_id"  // Maps to DEVICE_ID in config.h
+#define TAG_KEY_DEVICE_ID  "device_id"  // Maps to DEVICE_ID in config.h
 #define TAG_KEY_SITE       "site"       // Maps to SITE in config.h
 #define TAG_KEY_LOCATION   "location"   // Maps to LOCATION in config.h
 #define TAG_KEY_ROOM       "room"       // Maps to ROOM in config.h
@@ -26,14 +26,10 @@
 #define VALUE_KEY_TEMPERATURE   "tempF"
 #define VALUE_KEY_HUMIDITY      "humidity"
 #define VALUE_KEY_CO2           "co2"
-// #define VALUE_KEY_PRESSURE      "pressure"
+// #define VALUE_KEY_PRESSURE   "pressure"
 #define VALUE_KEY_PM25          "pm25"
 #define VALUE_KEY_AQI           "aqi"
-#define VALUE_KEY_VOC			"vocIndex"
-// #define VALUE_KEY_BATTERY_VOLTS "battery_volts"
-// #define VALUE_KEY_BATTERY_PCT   "battery_pct"
+#define VALUE_KEY_VOC           "vocIndex"
 #define VALUE_KEY_RSSI          "rssi"
-// #define VALUE_KEY_NETWORK_IP    "network_ip"
-// #define VALUE_KEY_VERSION       "version"
 
 #endif  // #ifdef DATA_H
