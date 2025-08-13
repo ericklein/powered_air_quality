@@ -60,7 +60,7 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSans24pt7b.h>
-#include "Fonts/meteocons20pt7b.h"
+//#include "Fonts/meteocons20pt7b.h"
 #include "Fonts/meteocons16pt7b.h"
 #include "Fonts/meteocons12pt7b.h"
 
@@ -871,18 +871,48 @@ void retainCO2(uint16_t co2)
 }
 
 void screenColor()
-// Represents CO2 and PM25 values as a single color rectangles
+// Represent CO2, VOC, PM25, temperature, and humidity values as a single color objects
 {
+  // screen assists
+  const uint8_t halfBorderWidth = 2;
+  const uint8_t cornerRoundRadius = 4;
+
   debugMessage("screenColor start",1);
+
   display.setFont(&FreeSans18pt7b);
-  display.setTextColor(ILI9341_WHITE);
+  display.setTextColor(ILI9341_BLACK);
   display.fillScreen(ILI9341_BLACK);
-  display.fillRoundRect(0, 0, ((display.width()/2)-2), display.height(), 4, warningColor[co2Range(sensorData.ambientCO2)]);
-  display.setCursor(display.width()/8,display.height()/2);
+  // CO2
+  display.fillRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[co2Range(sensorData.ambientCO2)]);
+  display.setCursor((display.width()/8),(display.height()/4));
   display.print("CO2");
-  display.fillRoundRect(((display.width()/2)+2), 0, ((display.width()/2)-2), display.height(), 4, warningColor[aqiRange(sensorData.pm25)]);
-  display.setCursor(display.width()*5/8,display.height()/2);
+  // PM25
+  display.fillRoundRect(((display.width()/2)+halfBorderWidth), 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[aqiRange(sensorData.pm25)]);
+  display.setCursor((display.width()*5/8),(display.height()/4));
   display.print("PM25");
+  // VOC
+  display.fillRoundRect(0, ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[vocRange(sensorData.vocIndex)]);
+  display.setCursor((display.width()/8),((display.height()*3)/4));
+  display.print("VOC");
+  // Temperature
+  if ((sensorData.ambientTemperatureF<65) || (sensorData.ambientTemperatureF>85))
+    //display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),display.height(),ILI9341_RED);
+    display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_RED);
+  else
+    // display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
+    display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
+  display.setCursor(((display.width()*5)/8),((display.height()*3)/4));
+  display.setFont(&meteocons16pt7b);
+  display.print("+");
+  // Humdity
+  if ((sensorData.ambientHumidity<40) || (sensorData.ambientHumidity>60))
+    // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_RED);
+    display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_RED);
+  else
+    // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
+    display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
+  display.drawBitmap(((display.width()*7)/8),((display.height()*5)/8), bitmapHumidityIconSmall, 20, 28, ILI9341_BLACK);
+
   debugMessage("screenColor end",1);
 }
 
