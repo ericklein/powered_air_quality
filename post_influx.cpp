@@ -1,6 +1,6 @@
 /*
   Project:      Powered Air Quality
-  Description:  write PM2.5 sensor data to InfluxDB
+  Description:  write sensor data to InfluxDB
 
   See README.md for target information and revision history
 */
@@ -16,11 +16,10 @@
 
 // Only compile if InfluxDB enabled
 #ifdef INFLUX
+  #include <InfluxDbClient.h>
 
   // Shared helper function
   extern void debugMessage(String messageText, int messageLevel);
-
-  #include <InfluxDbClient.h>
 
   // InfluxDB setup.  See config.h and secrets.h for site-specific settings.  Both InfluxDB v1.X
   // and v2.X are supported here depending on configuration settings in secrets.h.  Code here

@@ -1,9 +1,12 @@
-// ThingSpeak data upload.  Uses the ThingSpeak Arduino library from MathWorks
-// https://github.com/mathworks/thingspeak-arduino 
+/*
+  Project Name:   Powered Air Quality
+  Description:    write sensor data to thingspeak
+
+  Uses the ThingSpeak Arduino library from MathWorks
+  https://github.com/mathworks/thingspeak-arduino
+*/
 
 #include "Arduino.h"
-#include <WiFi.h>
-#include "ThingSpeak.h"
 
 // hardware and internet configuration parameters
 #include "config.h"
@@ -12,6 +15,8 @@
 
 
 #ifdef THINGSPEAK
+  #include "ThingSpeak.h"
+
   // Shared helper function(s)
   extern void debugMessage(String messageText, int messageLevel);
 
@@ -41,5 +46,4 @@
     if(httpcode == 200) return true;
     else return false;
   }
-
 #endif

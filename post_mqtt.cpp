@@ -1,6 +1,6 @@
 /*
   Project Name:   Powered Air Quality
-  Description:    write PM2.5 sensor data to MQTT broker
+  Description:    write sensor data to MQTT broker
 */
 
 #include "Arduino.h"
@@ -14,6 +14,10 @@
 
 // only compile if MQTT enabled
 #ifdef MQTT
+  // MQTT setup
+  #include <Adafruit_MQTT.h>
+  #include <Adafruit_MQTT_Client.h>
+  extern Adafruit_MQTT_Client aq_mqtt;
 
   // Shared helper function
   extern void debugMessage(String messageText, int messageLevel);
@@ -22,11 +26,6 @@
     extern void hassio_mqtt_setup();
     extern void hassio_mqtt_publish(float pm25, float temperatureF, float vocIndex, float humidity);
   #endif
-
-  // MQTT setup
-  #include <Adafruit_MQTT.h>
-  #include <Adafruit_MQTT_Client.h>
-  extern Adafruit_MQTT_Client aq_mqtt;
 
 bool mqttConnect()
 // Connects and reconnects to MQTT broker, call as needed to maintain connection
