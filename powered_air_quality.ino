@@ -31,11 +31,7 @@
   #endif // SENSOR_SEN54SCD40
 
   // WiFi support
-  #if defined(ESP8266)
-    #include <ESP8266WiFi.h>
-  #elif defined(ESP32)
-    #include <WiFi.h>
-  #endif
+  #include <WiFi.h>
   #include <HTTPClient.h>
   WiFiClient client;   // used by OWM and MQTT
 #endif
@@ -87,7 +83,7 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
   #include <Adafruit_MQTT_Client.h>
   Adafruit_MQTT_Client aq_mqtt(&client, MQTT_BROKER, MQTT_PORT, DEVICE_ID, MQTT_USER, MQTT_PASS);
 
-  extern bool mqttDeviceWiFiUpdate(uint8_t rssi);
+  extern bool mqttDeviceWiFiUpdate(uint32_t rssi);
   extern bool mqttSensorTemperatureFUpdate(float temperatureF);
   extern bool mqttSensorHumidityUpdate(float humidity);
   extern bool mqttSensorCO2Update(uint16_t co2);
@@ -1222,7 +1218,6 @@ bool networkConnect()
       return true;
     }
 
-    WiFi.mode(WIFI_STA); // IMPROVEMENT: test to see if this improves connection time
     // set hostname has to come before WiFi.begin
     WiFi.hostname(DEVICE_ID);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
