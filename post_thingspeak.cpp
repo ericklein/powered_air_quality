@@ -1,12 +1,13 @@
 /*
   Project Name:   Powered Air Quality
-  Description:    write sensor data to thingspeak
+  Description:    Write sensor data to ThingSpeak (https://thingspeak.mathworks.com)
 
   Uses the ThingSpeak Arduino library from MathWorks
   https://github.com/mathworks/thingspeak-arduino
 */
 
 #include "Arduino.h"
+#include <WiFi.h>
 
 // hardware and internet configuration parameters
 #include "config.h"
