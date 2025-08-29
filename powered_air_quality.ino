@@ -13,32 +13,26 @@
 // Utility class for easy handling of aggregate sensor data
 #include "measure.h"
 
-#ifndef HARDWARE_SIMULATE
-  #ifdef SENSOR_SEN66
-    // Instanstiate SEN66 hardware object, if being used
-    #include <SensirionI2cSen66.h>
-    SensirionI2cSen66 paqSensor;
-  #endif // SENSOR_SEN66
+#ifdef SENSOR_SEN66
+  // Instanstiate SEN66 hardware object, if being used
+  #include <SensirionI2cSen66.h>
+  SensirionI2cSen66 paqSensor;
+#endif // SENSOR_SEN66
 
-  #ifdef SENSOR_SEN54SCD40
-    // instanstiate SEN5X hardware object
-    #include <SensirionI2CSen5x.h>
-    SensirionI2CSen5x pmSensor;
+#ifdef SENSOR_SEN54SCD40
+  // instanstiate SEN5X hardware object
+  #include <SensirionI2CSen5x.h>
+  SensirionI2CSen5x pmSensor;
 
-    // instanstiate SCD4X hardware object
-    #include <SensirionI2cScd4x.h>
-    SensirionI2cScd4x co2Sensor;
-  #endif // SENSOR_SEN54SCD40
+  // instanstiate SCD4X hardware object
+  #include <SensirionI2cScd4x.h>
+  SensirionI2cScd4x co2Sensor;
+#endif // SENSOR_SEN54SCD40
 
-  // WiFi support
-  #if defined(ESP8266)
-    #include <ESP8266WiFi.h>
-  #elif defined(ESP32)
-    #include <WiFi.h>
-  #endif
-  #include <HTTPClient.h>
-  WiFiClient client;   // used by OWM and MQTT
-#endif
+// WiFi support
+#include <WiFi.h>
+#include <HTTPClient.h>
+WiFiClient client;   // used by OWM and MQTT
 
 #include <SPI.h>
 // Note: the ESP32 has 2 SPI ports, to have ESP32-2432S028R work with the TFT and Touch on different SPI ports each needs to be defined and passed to the library
@@ -55,12 +49,10 @@ Adafruit_ILI9341 display = Adafruit_ILI9341(&hspi, TFT_DC, TFT_CS, TFT_RST);
 #include <XPT2046_Touchscreen.h>
 XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
 
-// IMPROVEMENT: not all of these are used
 #include <Fonts/FreeSans9pt7b.h>
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSans24pt7b.h>
-#include "Fonts/meteocons20pt7b.h"
 #include "Fonts/meteocons16pt7b.h"
 #include "Fonts/meteocons12pt7b.h"
 
@@ -87,7 +79,7 @@ XPT2046_Touchscreen ts(XPT2046_CS,XPT2046_IRQ);
   #include <Adafruit_MQTT_Client.h>
   Adafruit_MQTT_Client aq_mqtt(&client, MQTT_BROKER, MQTT_PORT, DEVICE_ID, MQTT_USER, MQTT_PASS);
 
-  extern bool mqttDeviceWiFiUpdate(uint8_t rssi);
+  extern bool mqttDeviceWiFiUpdate(uint32_t rssi);
   extern bool mqttSensorTemperatureFUpdate(float temperatureF);
   extern bool mqttSensorHumidityUpdate(float humidity);
   extern bool mqttSensorCO2Update(uint16_t co2);
@@ -1222,7 +1214,6 @@ bool networkConnect()
       return true;
     }
 
-    WiFi.mode(WIFI_STA); // IMPROVEMENT: test to see if this improves connection time
     // set hostname has to come before WiFi.begin
     WiFi.hostname(DEVICE_ID);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -1616,18 +1607,20 @@ bool sensorRead()
   }
 
   bool sensorCO2Read()
-// Description: Sets global environment values from SCD40 sensor
-// Parameters: none
-// Output : true if successful read, false if not
-// Improvement : NA  
-{
+  // Description: Sets global environment values from SCD40 sensor
+  // Parameters: none
+  // Output : true if successful read, false if not
+  // Improvement : NA  
+  {
+    bool success = false;
+
     #ifdef HARDWARE_SIMULATE
+      success = true;
       sensorCO2Simulate();
       debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
-      return true;
+      return (success);
     #else
       char errorMessage[256];
-      bool status = false;
       uint16_t co2 = 0;
       float temperatureC = 0.0f;
       float humidity = 0.0f;
@@ -1637,9 +1630,8 @@ bool sensorRead()
       debugMessage("CO2 read initiated",1);
 
       // Loop attempting to read Measurement
-      status = false;
       debugMessage("CO2 sensor read initiated",1);
-      while(!status) {
+      while(!success) {
         delay(100);
         errorCount++;
         if (errorCount > co2SensorReadFailureLimit) {
@@ -1678,13 +1670,13 @@ bool sensorRead()
           sensorData.ambientCO2 = co2;
           debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
           // Update global sensor readings
-          status = true;
+          success = true;
           break;
         }
         delay(100); // reduces readMeasurement() "Not enough data received" errors
       }
     #endif
-    return(status);
+    return(success);
   }
 #endif // SENSOR_SEN54SCD40
 
