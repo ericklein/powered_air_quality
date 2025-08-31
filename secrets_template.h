@@ -40,6 +40,10 @@
 	// #define INFLUXDB_TOKEN		"key_value"
 	// #define INFLUXDB_ORG			"key_value"
 	// #define INFLUXDB_BUCKET		"key_value"
+
+  // Specify Measurement to use with InfluxDB for sensor and device info
+  // const String influxEnvMeasurement = "key_value";  // Used for environmental sensor data
+  // const String influxDevMeasurement =  "key_value";   // Used for logging AQI device data (e.g. battery)
 // #endif
 
 // Configuration Step 6: Set key device and installation configuration parameters.  These are used
