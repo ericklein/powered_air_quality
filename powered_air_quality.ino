@@ -111,15 +111,9 @@ envData sensorData;
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.
 Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25, totalNOX;
 
-uint8_t numSamples              = 0;  // Number of overall sensor readings over reporting interval
-uint32_t timeLastSampleMS       = 0;  // timestamp for last captured sample 
-uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
-uint32_t timeLastInputMS        = 0;  // timestamp for last user input (screensaver)
-uint32_t timeLastWiFiConnectMS  = 0;
+int16_t co2data[GRAPH_POINTS];
 
-// used by thingspeak
-float MinPm25 = 1999; /* Observed minimum PM2.5 */
-float MaxPm25 = -99;  /* Observed maximum PM2.5 */
+uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
 
 // hardware status data
 typedef struct hdweData
@@ -173,14 +167,6 @@ typedef struct {
 } OpenWeatherMapAirQuality;
 OpenWeatherMapAirQuality owmAirQuality;  // global variable for OWM current data
 
-bool screenWasTouched = false;
-int16_t co2data[GRAPH_POINTS];
-
-// Set first screen to display.  If that first screen is the screen saver then we need to
-// have the saved screen be something else so it'll get switched to on the first touch
-uint8_t screenCurrent = SCREEN_SAVER; // Initial screen to display (on startup)
-uint8_t screenSaved   = SCREEN_INFO; // Saved when screen saver engages so it can be restored
-
 void setup() 
 {
   int i;
@@ -219,7 +205,7 @@ void setup()
   // SEN66 initialization
   if( !sensorInit()) {
     Serial.println("ERROR: Sensor initialization failure");
-    screenAlert("No Sensors");    
+    screenAlert("No Sensors");
   }
 
   // Setup the VSPI to use custom pins for the touchscreen
@@ -229,56 +215,27 @@ void setup()
   // start WiFi (for OWM)
   if (!networkConnect())
     hardwareData.rssi = 0;            // 0 = no WiFi
-
-  // start tracking timers
-  timeLastSampleMS = -(sensorSampleIntervalMS); // forces immediate sample in loop()
-  timeLastInputMS = millis(); // We'll count startup as a "touch"
 }
 
 void loop()
 {
-  // For conveniently handling frequent reference to average values
-  float avgTemperatureF = 0;    // average temperature over report interval
-  float avgHumidity = 0;        // average humidity over report interval
-  uint16_t avgCO2 = 0;          // average CO2 over report interval
-  float avgVOC = 0;             // average VOC over report interval
-  float avgPM25 = 0;            // average PM2.5 over report interval
-  float minPM25 = 0;            // minimum PM2.5 over report interval
-  float maxPM25 = 0;            // maximum PM2.5 over report interval
-  float avgNOX = 0;             // average NOX over report interval
+  static uint8_t numSamples               = 0;  // Number of sensor readings over reporting interval
+  static uint32_t timeLastSampleMS        = -(sensorSampleIntervalMS); // forces immediate sample in loop() 
+  static uint32_t timeLastInputMS         = millis();  // timestamp for last user input (screensaver)
+  static uint32_t timeLastWiFiConnectMS   = 0;
+  static uint32_t timeLastOWMUpdateMS     = -(OWMIntervalMS); // forces immediate sample in loop()
 
-  // re-establish WiFi connection if needed
-  if ((WiFi.status() != WL_CONNECTED) && (millis() - timeLastWiFiConnectMS > timeWiFiKeepAliveIntervalMS)) {
-    timeLastWiFiConnectMS = millis();
-    if (!networkConnect()) {
-      // alert user to the WiFi connectivity problem
-      hardwareData.rssi = 0;
-      debugMessage(String("Connection to ") + WIFI_SSID + " failed", 1);
-      // IMPROVEMENT: How do we want to handle this? the rest of the code will barf...
-      // ESP.restart();
-    }
-    // IMPROVEMENT: Log RSSI?
-    // mqttDeviceWiFiUpdate(rssi);
-  }
+  // Set first screen to display.  If that first screen is the screen saver then we need to
+  // have the saved screen be something else so it'll get switched to on the first touch
+  static uint8_t screenSaved   = SCREEN_INFO; // Saved when screen saver engages so it can be restored
+  static uint8_t screenCurrent = SCREEN_SAVER; // Initial screen to display (on startup)
 
   // is it time to read the sensor?
-  if((millis() - timeLastSampleMS) >= sensorSampleIntervalMS)
-  {
+  if ((millis() - timeLastSampleMS) >= sensorSampleIntervalMS) {
     // Read sensor(s) to obtain all environmental values
     if (!sensorRead()) {
       // TODO: what else to do here...
       debugMessage("Sensor read failed!",1);
-    }
-
-    // Get local weather and air quality info from Open Weather Map
-    if (!OWMCurrentWeatherRead()) {
-      owmCurrentData.tempF = 10000;
-      debugMessage("OWM weather read failed!",1);
-    }
-    
-    if (!OWMAirPollutionRead()) {
-      owmAirQuality.aqi = 10000;
-      debugMessage("OWM AQI read failed!",1);
     }
 
     // add to the running totals
@@ -298,22 +255,19 @@ void loop()
     debugMessage(String("PM25 total: ") + totalPM25.getTotal(),2);
     debugMessage(String("NOX total: ") + totalNOX.getTotal(),2);
 
-    screenUpdate(false);
+    screenUpdate(screenCurrent);
 
     // Save last sample time
     timeLastSampleMS = millis();
   }
 
-  // User input = change screens. If screen saver is active a touch means revert to the
-  // previously active screen, otherwise step to the next screen
-  boolean istouched = ts.touched();
-  if (istouched)
-  {
+  // is there user input to process?
+  if (ts.touched()) {
     // If screen saver was active, switch to the previous active screen
     if( screenCurrent == SCREEN_SAVER) {
         screenCurrent = screenSaved;
         debugMessage(String("touchscreen pressed, screen saver off => ") + screenCurrent,1);
-        screenUpdate(true);
+        screenUpdate(screenCurrent);
     }
     // Otherwise step to the next screen (and wrap around if necessary)
     else {
@@ -326,104 +280,61 @@ void loop()
         screenSaved = SCREEN_INFO;  // Technically, (SCREEN_SAVER+1) to preserve the sequence
       }
       debugMessage(String("touchscreen pressed, switch to screen ") + screenCurrent,1);
-      screenUpdate(true);
+      screenUpdate(screenCurrent);
     }
     // Save time touch input occurred
     timeLastInputMS = millis();
   }
-  //  No touch input received, is it time to enable the screensaver?
-  else {
-    // If we're not already in screen saver mode, is it time it should be enabled?
-    if(screenCurrent != SCREEN_SAVER) {
-      if( (millis() - timeLastInputMS) > (screenSaverInterval*1000)) {
-        // Activate screen saver, retaining current screen for easy return
-        screenSaved = screenCurrent;
-        screenCurrent = SCREEN_SAVER;
-        debugMessage(String("Screen saver engaged, will restore to ") + screenSaved,1);
-        screenUpdate(true);
-      }
+
+  // is it time to enable the screensaver AND we're not in screen saver mode already?
+  if ((screenCurrent != SCREEN_SAVER) && ((millis() - timeLastInputMS) > screenSaverIntervalMS)) {
+    // Activate screen saver, retaining current screen for easy return
+    screenSaved = screenCurrent;
+    screenCurrent = SCREEN_SAVER;
+    debugMessage(String("Screen saver engaged, will restore to ") + screenSaved,1);
+    screenUpdate(screenCurrent);
+  }
+
+  // is it time to check the WiFi connection before network endpoint write or OWM update?
+  if ((WiFi.status() != WL_CONNECTED) && (millis() - timeLastWiFiConnectMS > reportIntervalMS)) {
+    if (networkConnect()) {
+      timeLastWiFiConnectMS = millis();
+    }
+    else
+    {
+      // alert user to the WiFi connectivity problem
+      hardwareData.rssi = 0;
+      debugMessage(String("Connection to ") + WIFI_SSID + " failed", 1);
+      // IMPROVEMENT: How do we want to handle this? the rest of the code will barf...
+      // ESP.restart();
     }
   }
 
-  // do we have network endpoints to report to?
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK) || defined(HARDWARE_SIMULATE)
-    // is it time to report to the network endpoints?
-    if ((millis() - timeLastReportMS) >= reportIntervalMS)
-    {
-      // do we have samples to report?
-      if (numSamples != 0) 
-      {
-        // Get averaged sample values from the Measure utliity class objects
-        avgTemperatureF = totalTemperatureF.getAverage();
-        avgHumidity = totalHumidity.getAverage();
-        avgCO2 = totalCO2.getAverage();
-        avgVOC = totalVOC.getAverage();
-        avgPM25 = totalPM25.getAverage();
-        maxPM25 = totalPM25.getMax();
-        minPM25 = totalPM25.getMin();
-        avgNOX = totalNOX.getAverage();
+  // is it time to update OWM data?
+  if ((millis() - timeLastOWMUpdateMS) >= OWMIntervalMS) {
 
-        debugMessage(String("** ----- Reporting averages (") + (reportIntervalMS/60000) + " minutes) ----- ",1);
-
-        debugMessage(String("** PM2.5: ") + avgPM25 + String(", CO2: ") + avgCO2 + " ppm" + 
-          String(", VOC: ") + avgVOC+ String(", NOX: ") + avgNOX + String(", ") + 
-          avgTemperatureF + "F, " + avgHumidity + String("%, ") + String(", AQI(US): ") + pm25toAQI_US(avgPM25),1);
-
-        // Retain CO2 data for graphing (see below)
-        retainCO2(avgCO2);
-
-        if (networkConnect())
-        {
-          // TODO: Modify reporting routines to include NOX readings
-
-          // Post the AQI sensor data to ThingSpeak. Make sure to use the PM25 to AQI conversion formula for the
-          // desired country as there is no global standard.
-
-          #ifdef THINGSPEAK
-            if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
-              Serial.println("ERROR: Did not write to ThingSpeak");
-            }
-          #endif
-
-          #ifdef INFLUX
-            if (!post_influx(avgPM25, avgTemperatureF, avgVOC, avgHumidity, avgCO2 , hardwareData.rssi))
-              Serial.println("ERROR: Did not write to influxDB");
-          #endif
-
-          #ifdef MQTT
-            if (!mqttDeviceWiFiUpdate(hardwareData.rssi))
-                Serial.println("ERROR: Did not write device data to MQTT broker");
-            if ((!mqttSensorTemperatureFUpdate(avgTemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorVOCIndexUpdate(avgVOC)) || (!mqttSensorCO2Update(avgCO2)))
-                Serial.println("ERROR: Did not write environment data to MQTT broker");
-            #ifdef HASSIO_MQTT
-              debugMessage("Establishing MQTT for Home Assistant",1);
-              // Either configure sensors in Home Assistant's configuration.yaml file
-              // directly or attempt to do it via MQTT auto-discovery
-              // hassio_mqtt_setup();  // Config for MQTT auto-discovery
-              hassio_mqtt_publish(avgPM25, avgTemperatureF, avgVOC, avgHumidity);
-            #endif
-          #endif
-        }
-        // Reset sample counters
-        numSamples = 0;
-        totalTemperatureF.clear();
-        totalHumidity.clear();
-        totalCO2.clear();
-        totalVOC.clear();
-        totalPM25.clear();
-        totalNOX.clear();
-
-        // save last report time
-        timeLastReportMS = millis();
-      }
-      else {
-        Serial.println ("ERROR: No samples to report");
-      }
+    // update local weather data
+    if (!OWMCurrentWeatherRead()) {
+      owmCurrentData.tempF = 10000;
+      debugMessage("OWM weather read failed!",1);
     }
-  #endif
+    
+    // update local air quality data
+    if (!OWMAirPollutionRead()) {
+      owmAirQuality.aqi = 10000;
+      debugMessage("OWM AQI read failed!",1);
+    }
+    timeLastOWMUpdateMS = millis();
+  }
+
+  // is it time to write to the network endpoints?
+  if ((millis() - timeLastReportMS) >= reportIntervalMS) {
+    endPointWrite(numSamples);
+    numSamples = 0;
+  }
 }
 
-void screenUpdate(bool firstTime) 
+void screenUpdate(uint8_t screenCurrent) 
 {
   switch(screenCurrent) {
     case SCREEN_SAVER:
@@ -855,9 +766,8 @@ void screenGraph()
 // Accumulate a CO2 value into the data array used by the screen graphing function above
 void retainCO2(uint16_t co2)
 {
-  int i;
-  for(i=1;i<GRAPH_POINTS;i++) {
-    co2data[i-1] = co2data[i];
+  for(uint8_t loop=1;loop<GRAPH_POINTS;loop++) {
+    co2data[loop-1] = co2data[loop];
   }
   co2data[GRAPH_POINTS-1] = co2;
 }
@@ -1200,6 +1110,80 @@ String OWMtoMeteoconIcon(String icon)
   return ")";
 }
 
+void endPointWrite(uint8_t numSamples)
+{
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+      // do we have samples to report?
+    if (numSamples) 
+    {
+      // Get averaged sample values from the Measure utliity class objects
+      float avgTemperatureF = totalTemperatureF.getAverage();
+      float avgHumidity = totalHumidity.getAverage();
+      uint16_t avgCO2 = totalCO2.getAverage();
+      float avgVOC = totalVOC.getAverage();
+      float avgPM25 = totalPM25.getAverage();
+      float maxPM25 = totalPM25.getMax();
+      float minPM25 = totalPM25.getMin();
+      float avgNOX = totalNOX.getAverage();
+
+      debugMessage(String("** ----- Reporting averages (") + (reportIntervalMS/60000) + " minutes) ----- ",1);
+
+      debugMessage(String("** PM2.5: ") + avgPM25 + String(", CO2: ") + avgCO2 + " ppm" + 
+        String(", VOC: ") + avgVOC+ String(", NOX: ") + avgNOX + String(", ") + 
+        avgTemperatureF + "F, " + avgHumidity + String("%, ") + String(", AQI(US): ") + pm25toAQI_US(avgPM25),1);
+
+      if (networkConnect())
+      {
+        // TODO: Modify reporting routines to include NOX readings
+
+        // Post the AQI sensor data to ThingSpeak. Make sure to use the PM25 to AQI conversion formula for the
+        // desired country as there is no global standard.
+
+        #ifdef THINGSPEAK
+          if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
+            Serial.println("ERROR: Did not write to ThingSpeak");
+          }
+        #endif
+
+        #ifdef INFLUX
+          if (!post_influx(avgPM25, avgTemperatureF, avgVOC, avgHumidity, avgCO2 , hardwareData.rssi))
+            Serial.println("ERROR: Did not write to influxDB");
+        #endif
+
+        #ifdef MQTT
+          if (!mqttDeviceWiFiUpdate(hardwareData.rssi))
+              Serial.println("ERROR: Did not write device data to MQTT broker");
+          if ((!mqttSensorTemperatureFUpdate(avgTemperatureF)) || (!mqttSensorHumidityUpdate(avgHumidity)) || (!mqttSensorPM25Update(avgPM25)) || (!mqttSensorVOCIndexUpdate(avgVOC)) || (!mqttSensorCO2Update(avgCO2)))
+              Serial.println("ERROR: Did not write environment data to MQTT broker");
+          #ifdef HASSIO_MQTT
+            debugMessage("Establishing MQTT for Home Assistant",1);
+            // Either configure sensors in Home Assistant's configuration.yaml file
+            // directly or attempt to do it via MQTT auto-discovery
+            // hassio_mqtt_setup();  // Config for MQTT auto-discovery
+            hassio_mqtt_publish(avgPM25, avgTemperatureF, avgVOC, avgHumidity);
+          #endif
+        #endif
+      }
+
+      // Retain CO2 data for graphing (see below)
+      retainCO2(avgCO2);
+
+      // Reset sample counters
+      totalTemperatureF.clear();
+      totalHumidity.clear();
+      totalCO2.clear();
+      totalVOC.clear();
+      totalPM25.clear();
+      totalNOX.clear();
+
+      // save last report time
+      timeLastReportMS = millis();
+    }
+    else
+      debugMessage("No data available for endpoint reporting",1);
+  #endif
+}
+
 bool networkConnect() 
 // Connect to WiFi network specified in secrets.h
 {
@@ -1439,7 +1423,7 @@ bool sensorRead()
 
   #ifdef HARDWARE_SIMULATE
     // Simulates sensor reading from SEN66 sensor
-    void  sensorSEN6xSimulate()
+    void sensorSEN6xSimulate()
     {
       sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
       sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;

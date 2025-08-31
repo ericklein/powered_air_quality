@@ -11,12 +11,12 @@
 
 // Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
-#define HARDWARE_SIMULATE
+// #define HARDWARE_SIMULATE
 
 // Configuration Step 4: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-// #define INFLUX // Log data to InfluxDB server
+#define INFLUX // Log data to InfluxDB server
 // #define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration Step 5: Which sensor configuration do we have?  Later generation devices
@@ -31,20 +31,12 @@
 
 // Configuration variables that are less likely to require changes
 
-// Internet
-const uint32_t timeWiFiKeepAliveIntervalMS = 30000; // check every 30 seconds
-const uint32_t timeNetworkConnectTimeoutMS = 10000;
-
-// network endpoints
-#ifdef INFLUX  
-  // Specify Measurement to use with InfluxDB for sensor and device info
-  const String influxEnvMeasurement = "weather";  // Used for environmental sensor data
-  const String influxDevMeasurement =  "device";   // Used for logging AQI device data (e.g. battery)
-#endif
+// Internet and network endpoints
 // max connection attempts to network endpoints
 const uint8_t networkConnectAttemptLimit = 3;
 // seconds between network endpoint connect attempts
 const uint8_t networkConnectAttemptInterval = 10;
+const uint32_t timeNetworkConnectTimeoutMS = 10000;
 
 // Open Weather Map (OWM)
 #define OWM_SERVER      "http://api.openweathermap.org/data/2.5/"
@@ -52,20 +44,19 @@ const uint8_t networkConnectAttemptInterval = 10;
 #define OWM_AQM_PATH    "air_pollution?"
 // aqi labels from https://openweathermap.org/api/air-pollution
 const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
+const uint32_t OWMIntervalMS = 1800000;
 
 // sampling and reporting intervals
 #ifdef DEBUG
   const uint32_t sensorSampleIntervalMS = 30000;   // time between samples
-  const uint32_t reportIntervalMS = 120000;     // time between reports
+  const uint32_t reportIntervalMS = 90000;     // time between reports
 #else
   const uint32_t sensorSampleIntervalMS = 60000;
   const uint32_t reportIntervalMS = 900000;
 #endif
 const uint8_t reportFailureThreshold = 3; // number of times reporting has to fail before UI reflects issue
 
-// display
-
-// Display related configuration information
+// Display
 const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
 // Manage the suported display screens
 #define SCREEN_SAVER      0
@@ -88,7 +79,7 @@ const uint8_t wifiBarSpacing = 5;
 
 // Screen saver timeout.  Will automatically switch to screen saver if
 // no user input (via touchscreen) in this many seconds
-const uint16_t screenSaverInterval = 300;    // In seconds
+const uint32_t screenSaverIntervalMS = 300000;
 
 // warnings
 const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
