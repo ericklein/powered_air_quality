@@ -1,23 +1,19 @@
 /*
   Project Name:   Powered Air Quality
-  Description:    write sensor data to MQTT broker
+  Description:    MQTT functions for Powered Air Quality
 */
 
 #include "Arduino.h"
 
-// hardware and internet configuration parameters
-#include "config.h"
-// Overall data and metadata naming scheme
-#include "data.h"
-// private credentials for network, MQTT, weather provider
-#include "secrets.h"
+#include "powered_air_quality.h"
+#include "config.h"   // hardware and internet configuration parameters
+#include "secrets.h"  // private credentials for network, MQTT, weather provider
+#include "data.h"     // Overall data and metadata naming scheme
 
 // only compile if MQTT enabled
 #ifdef MQTT
-  // MQTT setup
-  #include <Adafruit_MQTT.h>
-  #include <Adafruit_MQTT_Client.h>
-  extern Adafruit_MQTT_Client aq_mqtt;
+  #include <PubSubClient.h>
+  extern PubSubClient mqtt;
 
   // Shared helper function
   extern void debugMessage(String messageText, int messageLevel);
@@ -27,176 +23,50 @@
     extern void hassio_mqtt_publish(float pm25, float temperatureF, float vocIndex, float humidity);
   #endif
 
-  bool mqttConnect()
-  // Connects and reconnects to MQTT broker, call as needed to maintain connection
-  {
-    // exit if already connected
-    if (bl_mqtt.connected())
-    {
-      debugMessage(String("Already connected to MQTT broker ") + MQTT_BROKER,2);
-      return true;
-    }
-
-    // Q: does this need to be signed?
-    int8_t mqttErr;
-
-    for(uint8_t loop = 1; loop <= networkConnectAttemptLimit; loop++)
-    {
-      if ((mqttErr = bl_mqtt.connect()) == 0)
-      {
-        debugMessage(String("Connected to MQTT broker ") + MQTT_BROKER,1);
-        return true;
-      }
-
-      // report problem
-      bl_mqtt.disconnect();
-      debugMessage(String("MQTT connection attempt ") + loop + " of " + networkConnectAttemptLimit + " failed with error msg: " + bl_mqtt.connectErrorString(mqttErr),1);
-      delay(timeNetworkConnectTimeoutMS);
-    }
-    // MQTT connection did not happen after multiple attempts
-    return false;
-  }
-
+  const char* generateMQTTTopic(String key)
   // Utility function to streamline dynamically generating MQTT topics using site and device 
-  // parameters defined in config.h and our standard naming scheme using values set in data.h
-  String generateTopic(String key)
+  // parameters defined in config.h and our standard naming scheme using values set in secrets.h
   {
-    String topic;
-    topic = DEVICE_SITE + "/" + DEVICE_LOCATION + "/" + DEVICE_ROOM +
-          "/" + DEVICE + "/" + DEVICE_ID + "/" + key;
+    String topic = endpointPath.site + "/" + endpointPath.location + "/" + endpointPath.room +
+            "/" + hardwareDeviceType + "/" + endpointPath.deviceID + "/" + key;
     debugMessage(String("Generated MQTT topic: ") + topic,2);
-    return(topic);
+    return(topic.c_str());
   }
 
-  bool mqttDeviceWiFiUpdate(uint32_t rssi)
-  {
-    bool published = false;
+  bool mqttConnect() {
+    if (mqttBrokerConfig.host.isEmpty() || mqttBrokerConfig.port == 0)
+      return false;
 
-    if (mqttConnect()){
-      String topic = generateTopic(VALUE_KEY_RSSI);  // Generate topic using secrets.h and data.h parameters 
-      // add ,MQTT_QOS_1); if problematic, remove QOS parameter
-      Adafruit_MQTT_Publish rssiLevelPub = Adafruit_MQTT_Publish(&aq_mqtt, topic.c_str());
+    mqtt.setServer(mqttBrokerConfig.host.c_str(), mqttBrokerConfig.port);
+    // Serial.printf("Connecting to MQTT %s:%u ...\n", mqttBrokerConfig.host.c_str(), mqttBrokerConfig.port);
 
-      if (rssiLevelPub.publish(rssi))
-      {
-        debugMessage("MQTT publish: WiFi RSSI succeeded",1);
-        published = true;
+    bool connected;
+    if (mqttBrokerConfig.user.length() > 0) {
+      connected = mqtt.connect(endpointPath.deviceID.c_str(), mqttBrokerConfig.user.c_str(), mqttBrokerConfig.password.c_str());
+    } else {
+      connected = mqtt.connect(endpointPath.deviceID.c_str());
+    }
+
+    if (connected) {
+      debugMessage(String("Connected to MQTT broker ") + mqttBrokerConfig.host,1);
+    } else {
+      debugMessage(String("MQTT connection to ") + mqttBrokerConfig.host + " failed, rc=" + mqtt.state(),1);
+    }
+    return connected;
+  }
+
+  bool mqttPublish(const char* topic, const String& payload) {
+    bool success = false;
+
+    if (mqtt.connected()) {
+      if (mqtt.publish(topic, payload.c_str())) {
+        success = true;
+        debugMessage(String("MQTT publish topic is ") + topic + ", message is " + payload,2);
       }
       else
-        debugMessage("MQTT publish: WiFi RSSI failed",1);
+        debugMessage(String("MQTT publish to topic ") + topic + " failed",1);
     }
-    else
-      debugMessage("No MQTT connection to publish with",1);
-    return(published);
+    return success;
   }
-
-  bool mqttSensorTemperatureFUpdate(float temperatureF)
-  // Publishes temperature data to MQTT broker
-  {
-    bool result = false;
-    String topic;
-    topic = generateTopic(VALUE_KEY_TEMPERATURE);  // Generate topic using config.h and data.h parameters
-    // add ,MQTT_QOS_1); if problematic, remove QOS parameter
-    Adafruit_MQTT_Publish tempPub = Adafruit_MQTT_Publish(&aq_mqtt, topic.c_str());
-    
-    mqttConnect();
-
-    // Attempt to publish sensor data
-    if(tempPub.publish(temperatureF))
-    {
-      debugMessage("MQTT publish: Temperature succeeded",1);
-      result = true;
-    }
-    else
-      debugMessage("MQTT publish: Temperature failed",1);
-    return(result);
-  }
-
-  bool mqttSensorHumidityUpdate(float humidity)
-  // Publishes humidity data to MQTT broker
-  {
-    bool result = false;
-    String topic;
-    topic = generateTopic(VALUE_KEY_HUMIDITY);  // Generate topic using config.h and data.h parameters
-    // add ,MQTT_QOS_1); if problematic, remove QOS parameter
-    Adafruit_MQTT_Publish humidityPub = Adafruit_MQTT_Publish(&aq_mqtt, topic.c_str());
-    
-    mqttConnect();
-    
-    // Attempt to publish sensor data
-    if(humidityPub.publish(humidity))
-    {
-      debugMessage("MQTT publish: Humidity succeeded",1);
-      result = true;
-    }
-    else
-      debugMessage("MQTT publish: Humidity failed",1);
-    return(result);
-  }
-
-  bool mqttSensorPM25Update(float pm25)
-  // Publishes pm2.5 data to MQTT broker
-  {
-    bool result = false;
-    String topic;
-    topic = generateTopic(VALUE_KEY_PM25);  // Generate topic using config.h and data.h parameters
-    // add ,MQTT_QOS_1); if problematic, remove QOS parameter
-    Adafruit_MQTT_Publish pm25Pub = Adafruit_MQTT_Publish(&aq_mqtt, topic.c_str());
-    
-    mqttConnect();
-    
-    // Attempt to publish sensor data
-    if(pm25Pub.publish(pm25))
-    {
-      debugMessage("MQTT publish: pm2.5 succeeded",1);
-      result = true;
-    }
-    else
-      debugMessage("MQTT publish: pm2.5 failed",1);
-    return(result);
-  }
-
-  bool mqttSensorVOCIndexUpdate(float vocIndex)
-  // Publishes VoC Index data to MQTT broker
-  {
-    bool result = false;
-    String topic;
-    topic = generateTopic(VALUE_KEY_VOC);  // Generate topic using config.h and data.h parameters
-    // add ,MQTT_QOS_1); if problematic, remove QOS parameter
-    Adafruit_MQTT_Publish vocPub = Adafruit_MQTT_Publish(&aq_mqtt, topic.c_str());
-    
-    mqttConnect();
-    
-    // Attempt to publish sensor data
-    if(vocPub.publish(vocIndex))
-    {
-      debugMessage("MQTT publish: VoC Index succeeded",1);
-      result = true;
-    }
-    else
-      debugMessage("MQTT publish: VoC Index failed",1);
-    return(result);
-  }
-
-  bool mqttSensorCO2Update(uint16_t co2)
-  // Publishes CO2 data to MQTT broker
-  {
-    bool result = false;
-    String topic;
-    topic = generateTopic(VALUE_KEY_CO2);  // Generate topic using config.h and data.h parameters
-    // add ,MQTT_QOS_1); if problematic, remove QOS parameter
-    Adafruit_MQTT_Publish co2Pub = Adafruit_MQTT_Publish(&aq_mqtt, topic.c_str());   
-    
-    mqttConnect();
-
-    // Attempt to publish sensor data
-    if(co2Pub.publish((uint32_t)co2))
-    {
-      debugMessage("MQTT publish: CO2 succeeded",1);
-      result = true;
-    }
-    else
-      debugMessage("MQTT publish: CO2 failed",1);
-    return(result);
-  } 
+  
 #endif

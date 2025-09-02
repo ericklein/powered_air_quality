@@ -21,21 +21,11 @@
   // Shared helper function
   extern void debugMessage(String messageText, int messageLevel);
 
-  // InfluxDB setup.  See config.h and secrets.h for site-specific settings.  Both InfluxDB v1.X
-  // and v2.X are supported here depending on configuration settings in secrets.h.  Code here
+  // InfluxDB 2.x setup.  See config.h and secrets.h for site-specific settings. Code
   // reflects a number of presumptions about the data schema and InfluxDB configuration:
-  //
 
-  #ifdef INFLUX_V1
-  // InfluxDB client instance for InfluxDB 1
-  InfluxDBClient dbclient(INFLUXDB_URL, INFLUXDB_DB_NAME);
-  #endif
-
-  #ifdef INFLUX_V2
-  // InfluxDB client instance for InfluxDB 2
+  // InfluxDB client instance
   InfluxDBClient dbclient(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
-  #endif
-
 
   // Post data to Influx DB using the connection established during setup
   boolean post_influx(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2, uint8_t rssi)
@@ -45,12 +35,6 @@
     // InfluxDB Data point, binds to InfluxDB 'measurement' to use for data. See config.h for value used
     Point dbenvdata(influxEnvMeasurement);
     Point dbdevdata(influxDevMeasurement);
-
-    #ifdef INFLUX_V1
-      // Set InfluxDB v1.X authentication params using values defined in secrets.h.  Not needed as such
-      // for InfluxDB v2.X (which uses a token-based scheme via the constructor).
-      dbclient.setConnectionParamsV1(INFLUXDB_URL, INFLUXDB_DB_NAME, INFLUXDB_USER, INFLUXDB_PASSWORD);
-    #endif
     
     // Add constant Influx data point tags - only do once, will be added to all individual data points
     // Modify if required to reflect your InfluxDB data model (and set values in config.h)

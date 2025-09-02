@@ -37,11 +37,12 @@ const uint8_t networkConnectAttemptLimit = 3;
 // seconds between network endpoint connect attempts
 const uint8_t networkConnectAttemptInterval = 10;
 const uint32_t timeNetworkConnectTimeoutMS = 10000;
+const uint32_t timeNetworkRetryIntervalMS = 30000;
 
 // Open Weather Map (OWM)
-#define OWM_SERVER      "http://api.openweathermap.org/data/2.5/"
-#define OWM_WEATHER_PATH  "weather?"
-#define OWM_AQM_PATH    "air_pollution?"
+const String OWMServer = "http://api.openweathermap.org/data/2.5/";
+const String OWMWeatherPath =  "weather?";
+const String OWMAQMPath = "air_pollution?";
 // aqi labels from https://openweathermap.org/api/air-pollution
 const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 const uint32_t OWMIntervalMS = 1800000;
@@ -93,6 +94,9 @@ const uint16_t warningColor[4] = {
 
 // Hardware
 
+// hardware
+const String hardwareDeviceType = "AirQuality";
+
 // Simulation boundary values
 #ifdef HARDWARE_SIMULATE
   const uint16_t sensorTempMinF =       1400; // divided by 100.0 to give floats
@@ -138,6 +142,11 @@ const uint16_t vocBad = 400;
 
 // Sleep time in seconds if hardware error occurs
 const uint8_t hardwareRebootInterval = 10;
+
+// button
+const uint8_t hardwareWipeButton = 0; // boot button on most ESP32 boards
+// const uint8_t hardwareWipeButton = 38; // second button on Adafruit Feather ESP32V2 board
+const uint16_t timeResetButtonHoldMS = 10000; // Long-press duration to wipe config
 
 // CYD display pinout
 #define TFT_BACKLIGHT 21
