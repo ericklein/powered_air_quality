@@ -127,7 +127,6 @@ const uint16_t co2Bad = 2000;
 
 const uint16_t sensorCO2Min =      400;   // in ppm
 const uint16_t sensorCO2Max =      2000;  // in ppm
-const uint8_t sensorTempCOffset = 0;     // in Celsius
 const uint8_t co2SensorReadFailureLimit = 20;
 
 // Particulates (pm1, pm2.5, pm4, pm10) value thresholds for labeling

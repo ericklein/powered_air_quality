@@ -14,7 +14,6 @@
 // private credentials for network, MQTT, weather provider
 #include "secrets.h"
 
-
 #ifdef THINGSPEAK
   #include "ThingSpeak.h"
 

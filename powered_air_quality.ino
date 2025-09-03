@@ -519,75 +519,80 @@ bool screenAlert(String messageText)
 // Output: NA (void)
 // Improvement: ?
 {
-  debugMessage("screenAlert start",1);
-
-  bool status = true;
+  bool success = false;
   int16_t x1, y1;
   uint16_t largeFontPhraseOneWidth, largeFontPhraseOneHeight;
-  uint16_t smallFontWidth, smallFontHeight;
+
+  debugMessage("screenAlert start",1);
 
   display.setTextColor(ILI9341_WHITE);
-  display.setFont(&FreeSans24pt7b);
-  // Clear the screen
   display.fillScreen(ILI9341_BLACK);
 
+  debugMessage(String("screenAlert text is '") + messageText + "'",2);
+
+  // does message fit on one line?
+  display.setFont(&FreeSans24pt7b);
   display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
-  if (largeFontPhraseOneWidth <= (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2))))
-  {
+  if (largeFontPhraseOneWidth <= (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) {
     // fits with large font, display
-    display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,display.height()/2+largeFontPhraseOneHeight/2);
+    display.setCursor(((display.width()/2)-(largeFontPhraseOneWidth/2)),((display.height()/2)+(largeFontPhraseOneHeight/2)));
     display.print(messageText);
+    success = true;
   }
-  else
-  {
-    debugMessage(String("ERROR: screenAlert messageText '") + messageText + "' with large font is " + abs(largeFontPhraseOneWidth - (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) + " pixels too long", 1);
+  else {
+    // does message fit on two lines?
+    debugMessage(String("text with large font is ") + abs(largeFontPhraseOneWidth - (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) + " pixels too long, trying 2 lines", 1);
     // does the string break into two pieces based on a space character?
     uint8_t spaceLocation;
     String messageTextPartOne, messageTextPartTwo;
     uint16_t largeFontPhraseTwoWidth, largeFontPhraseTwoHeight;
 
     spaceLocation = messageText.indexOf(' ');
-    if (spaceLocation)
-    {
-      // has a space character, will it fit on two lines?
+    if (spaceLocation) {
+      // has a space character, measure two lines
       messageTextPartOne = messageText.substring(0,spaceLocation);
       messageTextPartTwo = messageText.substring(spaceLocation+1);
       display.getTextBounds(messageTextPartOne.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
       display.getTextBounds(messageTextPartTwo.c_str(), 0, 0, &x1, &y1, &largeFontPhraseTwoWidth, &largeFontPhraseTwoHeight);
-      if ((largeFontPhraseOneWidth <= (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) && (largeFontPhraseTwoWidth <= (display.width()-(display.width()/2-(largeFontPhraseTwoWidth/2)))))
-      {
+      debugMessage(String("Message part one with large font is ") + largeFontPhraseOneWidth + " pixels wide",2);
+      debugMessage(String("Message part two with large font is ") + largeFontPhraseTwoWidth + " pixels wide",2);
+    }
+    else {
+      debugMessage("there is no space in message to break message into 2 lines",2);
+    }
+    if (spaceLocation && (largeFontPhraseOneWidth <= (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) && (largeFontPhraseTwoWidth <= (display.width()-(display.width()/2-(largeFontPhraseTwoWidth/2))))) {
         // fits on two lines, display
-        display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,(display.height()/2+largeFontPhraseOneHeight/2)+6);
+        display.setCursor(((display.width()/2)-(largeFontPhraseOneWidth/2)),(display.height()/2+largeFontPhraseOneHeight/2)-25);
         display.print(messageTextPartOne);
-        display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,(display.height()/2+largeFontPhraseOneHeight/2)-18);
+        display.setCursor(((display.width()/2)-(largeFontPhraseTwoWidth/2)),(display.height()/2+largeFontPhraseTwoHeight/2)+25);
         display.print(messageTextPartTwo);
+        success = true;
+    }
+    else {
+      // does message fit on one line with small text?
+      debugMessage("couldn't break text into 2 lines or one line is too long, trying small text",1);
+      uint16_t smallFontWidth, smallFontHeight;
+
+      display.setFont(&FreeSans18pt7b);
+      display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &smallFontWidth, &smallFontHeight);
+      if (smallFontWidth <= (display.width()-(display.width()/2-(smallFontWidth/2)))) {
+        // fits with small size
+        display.setCursor(display.width()/2-smallFontWidth/2,display.height()/2+smallFontHeight/2);
+        display.print(messageText);
+        success = true;
       }
-    }
-    debugMessage(String("Message part one with large fonts is ") + largeFontPhraseOneWidth + " pixels wide vs. available " + (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2))) + " pixels",1);
-    debugMessage(String("Message part two with large fonts is ") + largeFontPhraseTwoWidth + " pixels wide vs. available " + (display.width()-(display.width()/2-(largeFontPhraseTwoWidth/2))) + " pixels",1);
-    // at large font size, string doesn't fit even if it can be broken into two lines
-    // does the string fit with small size text?
-    display.setFont(&FreeSans18pt7b);
-    display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &smallFontWidth, &smallFontHeight);
-    if (smallFontWidth <= (display.width()-(display.width()/2-(smallFontWidth/2))))
-    {
-      // fits with small size
-      display.setCursor(display.width()/2-smallFontWidth/2,display.height()/2+smallFontHeight/2);
-      display.print(messageText);
-    }
-    else
-    {
-      debugMessage(String("ERROR: screenAlert messageText '") + messageText + "' with small font is " + abs(smallFontWidth - (display.width()-(display.width()/2-(smallFontWidth/2)))) + " pixels too long", 1);
-      // doesn't fit at any size/line split configuration, display as truncated, large text
-      display.setFont(&FreeSans12pt7b);
-      display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
-      display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,display.height()/2+largeFontPhraseOneHeight/2);
-      display.print(messageText);
-      status = false;
+      else {
+        // doesn't fit at any size/line split configuration, display as truncated, large text
+        debugMessage(String("text with small font is ") + abs(smallFontWidth - (display.width()-(display.width()/2-(smallFontWidth/2)))) + " pixels too long, displaying truncated", 1);
+        display.setFont(&FreeSans12pt7b);
+        display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
+        display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,display.height()/2+largeFontPhraseOneHeight/2);
+        display.print(messageText);
+      }
     }
   }
   debugMessage("screenAlert end",1);
-  return status;
+  return success;
 }
 
 // Draw a simple graph of recent CO2 values. Time-ordered data to be plottted is stored in an array with the
@@ -1141,107 +1146,125 @@ void saveConfigCallback()
 bool openWiFiManager()
 // Connect to WiFi network using WiFiManager
 {
-  bool connected;
+  bool connected = false;
   String parameterText;
 
   debugMessage("openWiFiManager begin",2);
-  screenAlert("Configure via WiFi portal");
 
   WiFiManager wfm;
 
-  wfm.setSaveConfigCallback(saveConfigCallback);
-  wfm.setHostname(endpointPath.deviceID.c_str());
-  #ifndef DEBUG
-    wfm.setDebugOutput(false);
-  #endif
-  wfm.setConnectTimeout(180);
+  // try and use stored credentials
+  WiFi.begin();
 
-  // parameterText = hardwareDeviceType + " setup";
-  // wfm.setTitle(parameterText);
-  // hint text (optional)
-  //WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
-  
-  //order determines on-screen order
-  // wfm.addParameter(&hint_text);
+  uint32_t start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < timeNetworkConnectTimeoutMS) {
+    delay(500);
+  }
 
-  // collect common parameters in AP portal mode
-  WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude","",9);
-  WiFiManagerParameter deviceLongitude("deviceLongitude", "device longitude","",9);
-  // String altitude = to_string(defaultAltitude);
-  WiFiManagerParameter deviceAltitude("deviceAltitude", "Meters above sea level",defaultAltitude.c_str(),5);
-
-  wfm.addParameter(&deviceLatitude);
-  wfm.addParameter(&deviceLongitude);
-  wfm.addParameter(&deviceAltitude);
-
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-    // collect network endpoint path in AP portal mode
-    WiFiManagerParameter deviceSite("deviceSite", "device site", defaultSite.c_str(), 20);
-    WiFiManagerParameter deviceLocation("deviceLocation", "indoor or outdoor", defaultLocation.c_str(), 20);
-    WiFiManagerParameter deviceRoom("deviceRoom", "what room is the device in", defaultRoom.c_str(), 20);
-    WiFiManagerParameter deviceID("deviceID", "unique name for device", defaultDeviceID.c_str(), 30);
-
-    wfm.addParameter(&deviceSite);
-    wfm.addParameter(&deviceLocation);
-    wfm.addParameter(&deviceRoom);
-    wfm.addParameter(&deviceID);
-  #endif
-
-  #ifdef MQTT
-     // collect MQTT parameters in AP portal mode
-    WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",defaultMQTTBroker.c_str(),30);;
-    WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", defaultMQTTPort.c_str(), 5);
-    WiFiManagerParameter mqttUser("mqttUser", "MQTT username", defaultMQTTUser.c_str(), 20);
-    WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", defaultMQTTPassword.c_str(), 20);
-
-    wfm.addParameter(&mqttBroker);
-    wfm.addParameter(&mqttPort);
-    wfm.addParameter(&mqttUser);
-    wfm.addParameter(&mqttPassword);
-  #endif
-
-  #ifdef INFLUX
-    WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",defaultMQTTBroker.c_str(),30);;
-    WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", defaultMQTTPort.c_str(), 5);
-
-    wfm.addParameter(&mqttBroker);
-    wfm.addParameter(&mqttPort);
-  #endif
-
-  parameterText = hardwareDeviceType + " setup";
-  connected = wfm.autoConnect(parameterText.c_str()); // anonymous ap
-  // connected = wfm.autoConnect(hardwareDeviceType + " AP","password"); // password protected AP
-
-  if(!connected) {
-    debugMessage("WiFi connection failure; local sensor data ONLY", 1);
-    // ESP.restart(); // if MQTT support is critical, make failure a stop gate
+  if (WiFi.status() == WL_CONNECTED) {
+    connected = true;
+    debugMessage(String("openWiFiManager end; connected via stored credentials to " + WiFi.SSID() + ", ") + abs(WiFi.RSSI()) + " dBm RSSI", 1);
   } 
   else {
-    if (saveWFMConfig) {
-      debugMessage("retreiving new parameters from AP portal",2);
-      hardwareData.altitude = (uint16_t)strtoul(deviceAltitude.getValue(), nullptr, 10);
-      hardwareData.latitude = atof(deviceLatitude.getValue());
-      hardwareData.longitude =  atof(deviceLongitude.getValue());
+    // no stored credentials or failed connect, use WiFiManager
+    debugMessage("No stored credentials or failed connect, switching to WiFi Manager",1);
+    parameterText = hardwareDeviceType + " setup";
 
-      #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-        endpointPath.site = deviceSite.getValue();
-        endpointPath.location = deviceLocation.getValue();
-        endpointPath.room = deviceRoom.getValue();
-        endpointPath.deviceID = deviceID.getValue();
-      #endif
-      #ifdef MQTT
-        mqttBrokerConfig.host     = mqttBroker.getValue();
-        mqttBrokerConfig.port     = (uint16_t)strtoul(mqttPort.getValue(), nullptr, 10);
-        mqttBrokerConfig.user     = mqttUser.getValue();
-        mqttBrokerConfig.password = mqttPassword.getValue();
-      #endif
-      #ifdef INFLUX
+    screenAlert(String("Configure via WiFi AP: ") + parameterText);
 
-      #endif
-      saveNVConfig();
-      saveWFMConfig = false;
+    wfm.setSaveConfigCallback(saveConfigCallback);
+    wfm.setHostname(endpointPath.deviceID.c_str());
+    #ifndef DEBUG
+      wfm.setDebugOutput(false);
+    #endif
+    wfm.setConnectTimeout(180);
+
+    wfm.setTitle("Ola friend!");
+    // hint text (optional)
+    //WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
+    
+    //order determines on-screen order
+    // wfm.addParameter(&hint_text);
+
+    // collect common parameters in AP portal mode
+    WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude","",9);
+    WiFiManagerParameter deviceLongitude("deviceLongitude", "device longitude","",9);
+    // String altitude = to_string(defaultAltitude);
+    WiFiManagerParameter deviceAltitude("deviceAltitude", "Meters above sea level",defaultAltitude.c_str(),5);
+
+    wfm.addParameter(&deviceLatitude);
+    wfm.addParameter(&deviceLongitude);
+    wfm.addParameter(&deviceAltitude);
+
+    #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+      // collect network endpoint path in AP portal mode
+      WiFiManagerParameter deviceSite("deviceSite", "device site", defaultSite.c_str(), 20);
+      WiFiManagerParameter deviceLocation("deviceLocation", "indoor or outdoor", defaultLocation.c_str(), 20);
+      WiFiManagerParameter deviceRoom("deviceRoom", "what room is the device in", defaultRoom.c_str(), 20);
+      WiFiManagerParameter deviceID("deviceID", "unique name for device", defaultDeviceID.c_str(), 30);
+
+      wfm.addParameter(&deviceSite);
+      wfm.addParameter(&deviceLocation);
+      wfm.addParameter(&deviceRoom);
+      wfm.addParameter(&deviceID);
+    #endif
+
+    #ifdef MQTT
+       // collect MQTT parameters in AP portal mode
+      WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",defaultMQTTBroker.c_str(),30);;
+      WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", defaultMQTTPort.c_str(), 5);
+      WiFiManagerParameter mqttUser("mqttUser", "MQTT username", defaultMQTTUser.c_str(), 20);
+      WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", defaultMQTTPassword.c_str(), 20);
+
+      wfm.addParameter(&mqttBroker);
+      wfm.addParameter(&mqttPort);
+      wfm.addParameter(&mqttUser);
+      wfm.addParameter(&mqttPassword);
+    #endif
+
+    #ifdef INFLUX
+      WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",defaultMQTTBroker.c_str(),30);;
+      WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", defaultMQTTPort.c_str(), 5);
+
+      wfm.addParameter(&mqttBroker);
+      wfm.addParameter(&mqttPort);
+    #endif
+
+    connected = wfm.autoConnect(parameterText.c_str()); // anonymous ap
+    // connected = wfm.autoConnect(hardwareDeviceType + " AP","password"); // password protected AP
+
+    if(!connected) {
+      debugMessage("WiFi connection failure; local sensor data ONLY", 1);
+      // ESP.restart(); // if MQTT support is critical, make failure a stop gate
+    } 
+    else {
+      if (saveWFMConfig) {
+        debugMessage("retreiving new parameters from AP portal",2);
+        hardwareData.altitude = (uint16_t)strtoul(deviceAltitude.getValue(), nullptr, 10);
+        hardwareData.latitude = atof(deviceLatitude.getValue());
+        hardwareData.longitude =  atof(deviceLongitude.getValue());
+
+        #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+          endpointPath.site = deviceSite.getValue();
+          endpointPath.location = deviceLocation.getValue();
+          endpointPath.room = deviceRoom.getValue();
+          endpointPath.deviceID = deviceID.getValue();
+        #endif
+        #ifdef MQTT
+          mqttBrokerConfig.host     = mqttBroker.getValue();
+          mqttBrokerConfig.port     = (uint16_t)strtoul(mqttPort.getValue(), nullptr, 10);
+          mqttBrokerConfig.user     = mqttUser.getValue();
+          mqttBrokerConfig.password = mqttPassword.getValue();
+        #endif
+        #ifdef INFLUX
+
+        #endif
+        saveNVConfig();
+        saveWFMConfig = false;
+      }
+      connected = true;
+      debugMessage(String("openWiFiManager end; connected to " + WiFi.SSID() + ", ") + abs(WiFi.RSSI()) + " dBm RSSI", 1);
     }
-    debugMessage(String("OpenWiFiManager end; connected to " + WiFi.SSID() + ", ") + abs(WiFi.RSSI()) + " dBm RSSI", 1);
   }
   return (connected);
 }
@@ -1672,16 +1695,15 @@ bool sensorRead()
   {
     #ifdef HARDWARE_SIMULATE
       return true;
-  #else
+    #else
       char errorMessage[256];
       uint16_t error;
 
-      // Wire.begin();
       // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
       Wire.begin(CYD_SDA, CYD_SCL);
       co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
 
-      // stop potentially previously started measurement.
+      // stop potentially previously started measurement
       error = co2Sensor.stopPeriodicMeasurement();
       if (error) {
         errorToString(error, errorMessage, 256);
@@ -1689,15 +1711,7 @@ bool sensorRead()
         return false;
       }
 
-      // Check onboard configuration settings while not in active measurement mode
-      // IMPROVEMENT: These don't handle error conditions, which should be rare as caught above
-      float offset;
-      error = co2Sensor.getTemperatureOffset(offset);
-      if (error == 0){
-          error = co2Sensor.setTemperatureOffset(sensorTempCOffset);
-          if (error == 0)
-            debugMessage(String("Initial SCD4X temperature offset ") + offset + " ,set to " + sensorTempCOffset,2);
-      }
+      // modify configuration settings while not in active measurement mode
       error = co2Sensor.setSensorAltitude(hardwareData.altitude);  // optimizes CO2 reading
       if (!error)
         debugMessage(String("SCD4X altitude set to ") + hardwareData.altitude + " meters",2);

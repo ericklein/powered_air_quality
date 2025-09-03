@@ -68,5 +68,4 @@
     }
     return success;
   }
-  
 #endif
