@@ -1080,6 +1080,7 @@ void endPointWrite(uint8_t numSamples)
           // publish device data
           const char* topic;
 
+          // publish hardware data
           topic = generateMQTTTopic(VALUE_KEY_RSSI);
           mqttPublish(topic, String(abs(WiFi.RSSI())));
 
@@ -1141,8 +1142,10 @@ bool openWiFiManager()
 // Connect to WiFi network using WiFiManager
 {
   bool connected;
+  String parameterText;
 
   debugMessage("openWiFiManager begin",2);
+  screenAlert("Configure via WiFi portal");
 
   WiFiManager wfm;
 
@@ -1153,8 +1156,8 @@ bool openWiFiManager()
   #endif
   wfm.setConnectTimeout(180);
 
-  String titleText = hardwareDeviceType + " setup";
-  wfm.setTitle(titleText);
+  // parameterText = hardwareDeviceType + " setup";
+  // wfm.setTitle(parameterText);
   // hint text (optional)
   //WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
   
@@ -1205,11 +1208,12 @@ bool openWiFiManager()
     wfm.addParameter(&mqttPort);
   #endif
 
-  connected = wfm.autoConnect("benchLight AP"); // anonymous ap
-  // connected = wfm.autoConnect("benchLight AP","password"); // password protected AP
+  parameterText = hardwareDeviceType + " setup";
+  connected = wfm.autoConnect(parameterText.c_str()); // anonymous ap
+  // connected = wfm.autoConnect(hardwareDeviceType + " AP","password"); // password protected AP
 
   if(!connected) {
-    debugMessage("WiFi connection failure; local light control ONLY", 1);
+    debugMessage("WiFi connection failure; local sensor data ONLY", 1);
     // ESP.restart(); // if MQTT support is critical, make failure a stop gate
   } 
   else {

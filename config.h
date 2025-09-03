@@ -7,7 +7,7 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 2
+#define DEBUG 2
 
 // Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -145,7 +145,6 @@ const uint8_t hardwareRebootInterval = 10;
 
 // button
 const uint8_t hardwareWipeButton = 0; // boot button on most ESP32 boards
-// const uint8_t hardwareWipeButton = 38; // second button on Adafruit Feather ESP32V2 board
 const uint16_t timeResetButtonHoldMS = 10000; // Long-press duration to wipe config
 
 // CYD display pinout
