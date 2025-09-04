@@ -34,23 +34,25 @@
   }
 
   bool mqttConnect() {
-    if (mqttBrokerConfig.host.isEmpty() || mqttBrokerConfig.port == 0)
-      return false;
+    bool connected = false;
 
-    mqtt.setServer(mqttBrokerConfig.host.c_str(), mqttBrokerConfig.port);
-    // Serial.printf("Connecting to MQTT %s:%u ...\n", mqttBrokerConfig.host.c_str(), mqttBrokerConfig.port);
-
-    bool connected;
-    if (mqttBrokerConfig.user.length() > 0) {
-      connected = mqtt.connect(endpointPath.deviceID.c_str(), mqttBrokerConfig.user.c_str(), mqttBrokerConfig.password.c_str());
-    } else {
-      connected = mqtt.connect(endpointPath.deviceID.c_str());
+    if (mqttBrokerConfig.host.isEmpty() || mqttBrokerConfig.port == 0) {
+      debugMessage("No MQTT host configured",1);
     }
-
-    if (connected) {
-      debugMessage(String("Connected to MQTT broker ") + mqttBrokerConfig.host,1);
-    } else {
+    else {
+      mqtt.setServer(mqttBrokerConfig.host.c_str(), mqttBrokerConfig.port);
+      if (mqttBrokerConfig.user.length() > 0) {
+        connected = mqtt.connect(endpointPath.deviceID.c_str(), mqttBrokerConfig.user.c_str(), mqttBrokerConfig.password.c_str());
+      }
+      else {
+        connected = mqtt.connect(endpointPath.deviceID.c_str());
+      }
+      if (connected) {
+        debugMessage(String("Connected to MQTT broker ") + mqttBrokerConfig.host,1);
+      } 
+      else {
       debugMessage(String("MQTT connection to ") + mqttBrokerConfig.host + " failed, rc=" + mqtt.state(),1);
+      }
     }
     return connected;
   }
@@ -65,6 +67,9 @@
       }
       else
         debugMessage(String("MQTT publish to topic ") + topic + " failed",1);
+    }
+    else {
+      debugMessage("MQTT not connected during publish",1);
     }
     return success;
   }

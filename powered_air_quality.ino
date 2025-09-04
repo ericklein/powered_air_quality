@@ -150,6 +150,9 @@ void setup() {
   if (!openWiFiManager()) {
     hardwareData.rssi = 0;  // 0 = no WiFi
   }
+  #ifdef MQTT
+    mqttConnect();
+  #endif
 }
 
 void loop() {
@@ -158,6 +161,7 @@ void loop() {
   static uint32_t timeLastInputMS         = millis();  // timestamp for last user input (screensaver)
   static uint32_t timeNextNetworkRetryMS  = 0;
   static uint32_t timeLastOWMUpdateMS     = -(OWMIntervalMS); // forces immediate sample in loop()
+  static uint32_t timeLastMQTTPingMS      = 0;
 
   // Set first screen to display.  If that first screen is the screen saver then we need to
   // have the saved screen be something else so it'll get switched to on the first touch
@@ -239,6 +243,19 @@ void loop() {
       timeNextNetworkRetryMS = millis() + timeNetworkRetryIntervalMS;
     }
   }
+
+  #ifdef MQTT
+    // is it time for MQTT keep alive or reconnect?
+    if (mqtt.connected()) {
+      if (millis() - timeLastMQTTPingMS > timeMQTTKeepAliveIntervalMS) {
+        mqtt.loop();
+        timeLastMQTTPingMS = millis();
+      }
+    } 
+    else {
+      mqttConnect();
+    }
+  #endif
 
   // is it time to update OWM data?
   if ((millis() - timeLastOWMUpdateMS) >= OWMIntervalMS) {

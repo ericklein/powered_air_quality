@@ -14,7 +14,7 @@
 // #define HARDWARE_SIMULATE
 
 // Configuration Step 4: Set network data endpoints
-// #define MQTT     // log sensor data to MQTT broker
+#define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
 // #define INFLUX // Log data to InfluxDB server
 // #define THINGSPEAK  // Log data to ThingSpeak
@@ -38,6 +38,7 @@ const uint8_t networkConnectAttemptLimit = 3;
 const uint8_t networkConnectAttemptInterval = 10;
 const uint32_t timeNetworkConnectTimeoutMS = 10000;
 const uint32_t timeNetworkRetryIntervalMS = 30000;
+const uint32_t timeMQTTKeepAliveIntervalMS = 10000; // ping MQTT broker to keep alive
 
 // Open Weather Map (OWM)
 const String OWMServer = "http://api.openweathermap.org/data/2.5/";
