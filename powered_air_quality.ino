@@ -65,7 +65,7 @@ XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
 #endif
 
 #ifdef INFLUX
-  extern bool post_influx(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2, uint8_t rssi);
+  extern bool post_influx(float temperatureF, float humidity, uint16_t co2, float pm25, float vocIndex, float noxIndex, uint8_t rssi);
 #endif
 
 #ifdef MQTT
@@ -85,6 +85,7 @@ XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
 
 // data structures defined in powered_air_quality.h
 MqttConfig mqttBrokerConfig;
+influxConfig influxdbConfig;
 networkEndpointConfig endpointPath;
 envData sensorData;
 hdweData hardwareData;
@@ -244,8 +245,8 @@ void loop() {
     }
   }
 
+  // is it time for MQTT keep alive or reconnect?
   #ifdef MQTT
-    // is it time for MQTT keep alive or reconnect?
     if (mqtt.connected()) {
       if (millis() - timeLastMQTTPingMS > timeMQTTKeepAliveIntervalMS) {
         mqtt.loop();
@@ -1094,7 +1095,7 @@ void endPointWrite(uint8_t numSamples)
 
         #ifdef INFLUX
           // IMPROVEMENT: Modify to include NOX readings
-          if (!post_influx(avgPM25, avgTemperatureF, avgVOC, avgHumidity, avgCO2 , hardwareData.rssi))
+          if (!post_influx(avgTemperatureF, avgHumidity, avgCO2 , avgPM25, avgVOC, avgNOX, hardwareData.rssi))
             Serial.println("ERROR: Did not write to influxDB");
         #endif
 
@@ -1240,11 +1241,19 @@ bool openWiFiManager()
     #endif
 
     #ifdef INFLUX
-      WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",defaultMQTTBroker.c_str(),30);;
-      WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", defaultMQTTPort.c_str(), 5);
+      WiFiManagerParameter influxBroker("influxBroker","influxdb server address",defaultInfluxAddress.c_str(),30);;
+      WiFiManagerParameter influxPort("influxPort", "influxdb server port", defaultInfluxPort.c_str(), 5);
+      WiFiManagerParameter influxOrg("influxOrg", "influx organization name", defaultInfluxOrg.c_str(),20);
+      WiFiManagerParameter influxBucket("influxBucket", "influx bucket name", defaultInfluxBucket.c_str(),20);
+      WiFiManagerParameter influxEnvMeasurement("influxEnvMeasurement", "influx environment measurement", defaultInfluxEnvMeasurement.c_str(),20);
+      WiFiManagerParameter influxDevMeasurement("influxDevMeasurement", "influx device measurement", defaultInfluxDevMeasurement.c_str(),20);
 
-      wfm.addParameter(&mqttBroker);
-      wfm.addParameter(&mqttPort);
+      wfm.addParameter(&influxBroker);
+      wfm.addParameter(&influxPort);
+      wfm.addParameter(&influxOrg);
+      wfm.addParameter(&influxBucket);
+      wfm.addParameter(&influxEnvMeasurement);
+      wfm.addParameter(&influxDevMeasurement);
     #endif
 
     connected = wfm.autoConnect(parameterText.c_str()); // anonymous ap
@@ -1267,15 +1276,23 @@ bool openWiFiManager()
           endpointPath.room = deviceRoom.getValue();
           endpointPath.deviceID = deviceID.getValue();
         #endif
+
         #ifdef MQTT
           mqttBrokerConfig.host     = mqttBroker.getValue();
           mqttBrokerConfig.port     = (uint16_t)strtoul(mqttPort.getValue(), nullptr, 10);
           mqttBrokerConfig.user     = mqttUser.getValue();
           mqttBrokerConfig.password = mqttPassword.getValue();
         #endif
-        #ifdef INFLUX
 
+        #ifdef INFLUX
+          influxdbConfig.host       = influxBroker.getValue();
+          influxdbConfig.port       = (uint16_t)strtoul(influxPort.getValue(), nullptr, 10);
+          influxdbConfig.org        = influxOrg.getValue();
+          influxdbConfig.bucket     = influxBucket.getValue();
+          influxdbConfig.envMeasurement = influxEnvMeasurement.getValue();
+          influxdbConfig.devMeasurement = influxDevMeasurement.getValue();
         #endif
+
         saveNVConfig();
         saveWFMConfig = false;
       }
@@ -1353,18 +1370,29 @@ void loadNVConfig() {
   #endif
 
   #ifdef MQTT
-      mqttBrokerConfig.host     = nvConfig.getString("host", defaultMQTTBroker);
+    mqttBrokerConfig.host     = nvConfig.getString("mqttHost", defaultMQTTBroker);
     debugMessage(String("MQTT broker is ") + mqttBrokerConfig.host,2);
-    mqttBrokerConfig.port     = nvConfig.getUShort("port", uint16_t(defaultMQTTPort.toInt()));
+    mqttBrokerConfig.port     = nvConfig.getUShort("mqttPort", uint16_t(defaultMQTTPort.toInt()));
     debugMessage(String("MQTT broker port is ") + mqttBrokerConfig.port,2);
-    mqttBrokerConfig.user     = nvConfig.getString("user", defaultMQTTUser);
+    mqttBrokerConfig.user     = nvConfig.getString("mqttUser", defaultMQTTUser);
     debugMessage(String("MQTT username is ") + mqttBrokerConfig.user,2);
-    mqttBrokerConfig.password = nvConfig.getString("password", defaultMQTTPassword);
+    mqttBrokerConfig.password = nvConfig.getString("mqttPassword", defaultMQTTPassword);
     debugMessage(String("MQTT user password is ") + mqttBrokerConfig.password,2);
   #endif
 
   #ifdef INFLUX
-
+    influxdbConfig.host     = nvConfig.getString("influxHost", defaultInfluxAddress);
+    debugMessage(String("influxdb server address is ") + influxdbConfig.host,2);
+    influxdbConfig.port     = nvConfig.getUShort("influxPort", uint16_t(defaultInfluxPort.toInt()));
+    debugMessage(String("influxdb server port is ") + influxdbConfig.port,2);
+    influxdbConfig.org     = nvConfig.getString("influxOrg", defaultInfluxOrg);
+    debugMessage(String("influxdb org is ") + influxdbConfig.org,2);
+    influxdbConfig.bucket = nvConfig.getString("influxBucket", defaultInfluxBucket);
+    debugMessage(String("influxdb bucket is ") + influxdbConfig.bucket,2);
+    influxdbConfig.envMeasurement = nvConfig.getString("influxEnvMeasure", defaultInfluxEnvMeasurement);
+    debugMessage(String("influxdb environment measurement is ") + influxdbConfig.envMeasurement,2);
+    influxdbConfig.devMeasurement = nvConfig.getString("influxDevMeasure", defaultInfluxDevMeasurement);
+    debugMessage(String("influxdb device measurement is ") + influxdbConfig.devMeasurement,2);
   #endif
 
   nvConfig.end();
@@ -1389,14 +1417,19 @@ void saveNVConfig()
   #endif
 
   #ifdef MQTT
-    nvConfig.putString("host",  mqttBrokerConfig.host);
-    nvConfig.putUShort("port",  mqttBrokerConfig.port);
-    nvConfig.putString("user",  mqttBrokerConfig.user);
-    nvConfig.putString("password",  mqttBrokerConfig.password);
+    nvConfig.putString("mqttHost",  mqttBrokerConfig.host);
+    nvConfig.putUShort("mqttPort",  mqttBrokerConfig.port);
+    nvConfig.putString("mqttUser",  mqttBrokerConfig.user);
+    nvConfig.putString("mqttPassword",  mqttBrokerConfig.password);
   #endif
 
   #ifdef INFLUX
-
+    nvConfig.putString("influxHost",  influxdbConfig.host);
+    nvConfig.putUShort("influxPort",  influxdbConfig.port);
+    nvConfig.putString("influxOrg",   influxdbConfig.org);
+    nvConfig.putString("influxBucket",influxdbConfig.bucket);
+    nvConfig.putString("influxEnvMeasure",influxdbConfig.envMeasurement);
+    nvConfig.putString("influxDevMeasure", influxdbConfig.devMeasurement);
   #endif
 
   nvConfig.end();

@@ -7,12 +7,10 @@
 
 #include "Arduino.h"
 
-// hardware and internet configuration parameters
-#include "config.h"
-// Overall data and metadata naming scheme
-#include "data.h"
-// private credentials for network, MQTT, weather provider
-#include "secrets.h"
+#include "powered_air_quality.h"
+#include "config.h"   // hardware and internet configuration parameters
+#include "secrets.h"  // private credentials for network, MQTT, weather provider
+#include "data.h"     // Overall data and metadata naming scheme
 
 // Only compile if InfluxDB enabled
 #ifdef INFLUX
@@ -25,31 +23,32 @@
   // reflects a number of presumptions about the data schema and InfluxDB configuration:
 
   // InfluxDB client instance
-  InfluxDBClient dbclient(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
+  String influxURL = influxdbConfig.host + ":" + String(influxdbConfig.port);
+  InfluxDBClient dbclient(influxURL, influxdbConfig.org, influxdbConfig.bucket, influxKey);
 
   // Post data to Influx DB using the connection established during setup
-  boolean post_influx(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2, uint8_t rssi)
+  boolean post_influx(float temperatureF, float humidity, uint16_t co2, float pm25, float vocIndex, float noxIndex, uint8_t rssi)
   {
     bool result = false;
 
     // InfluxDB Data point, binds to InfluxDB 'measurement' to use for data. See config.h for value used
-    Point dbenvdata(influxEnvMeasurement);
-    Point dbdevdata(influxDevMeasurement);
+    Point dbenvdata(influxdbConfig.envMeasurement);
+    Point dbdevdata(influxdbConfig.devMeasurement);
     
     // Add constant Influx data point tags - only do once, will be added to all individual data points
     // Modify if required to reflect your InfluxDB data model (and set values in config.h)
     // First for environmental data
-    dbenvdata.addTag(TAG_KEY_DEVICE, DEVICE);
-    dbenvdata.addTag(TAG_KEY_SITE, DEVICE_SITE);
-    dbenvdata.addTag(TAG_KEY_LOCATION, DEVICE_LOCATION);
-    dbenvdata.addTag(TAG_KEY_ROOM, DEVICE_ROOM);
-    dbenvdata.addTag(TAG_KEY_DEVICE_ID, DEVICE_ID);
+    dbenvdata.addTag(TAG_KEY_DEVICE, hardwareDeviceType);
+    dbenvdata.addTag(TAG_KEY_SITE, endpointPath.site);
+    dbenvdata.addTag(TAG_KEY_LOCATION, endpointPath.location);
+    dbenvdata.addTag(TAG_KEY_ROOM, endpointPath.room);
+    dbenvdata.addTag(TAG_KEY_DEVICE_ID, endpointPath.deviceID);
     // And again for device data
-    dbdevdata.addTag(TAG_KEY_DEVICE, DEVICE);
-    dbdevdata.addTag(TAG_KEY_SITE, DEVICE_SITE);
-    dbdevdata.addTag(TAG_KEY_LOCATION, DEVICE_LOCATION);
-    dbdevdata.addTag(TAG_KEY_ROOM, DEVICE_ROOM);
-    dbdevdata.addTag(TAG_KEY_DEVICE_ID, DEVICE_ID);
+    dbdevdata.addTag(TAG_KEY_DEVICE, hardwareDeviceType);
+    dbdevdata.addTag(TAG_KEY_SITE, endpointPath.site);
+    dbdevdata.addTag(TAG_KEY_LOCATION, endpointPath.location);
+    dbdevdata.addTag(TAG_KEY_ROOM, endpointPath.room);
+    dbdevdata.addTag(TAG_KEY_DEVICE_ID, endpointPath.deviceID);
 
     // Attempts influxDB connection, and if unsuccessful, re-attempts after networkConnectAttemptInterval second delay for networkConnectAttempLimit times
     for (int tries = 1; tries <= networkConnectAttemptLimit; tries++) {
@@ -71,14 +70,15 @@
       dbenvdata.addField(VALUE_KEY_HUMIDITY, humidity);
       dbenvdata.addField(VALUE_KEY_VOC, vocIndex);
       dbenvdata.addField(VALUE_KEY_CO2, co2);
+      dbdevdata.addField(VALUE_KEY_NOX, noxIndex);
       // Write point via connection to InfluxDB host
       if (!dbclient.writePoint(dbenvdata)) {
-        debugMessage(String("InfluxDB write failed: ") + dbclient.getLastErrorMessage(),1);
+        debugMessage(String("InfluxDB environment data write failed: ") + dbclient.getLastErrorMessage(),1);
         result = false;
       }
       else
       {
-        debugMessage(String("InfluxDB write success: ") + dbclient.pointToLineProtocol(dbenvdata),1);
+        debugMessage(String("InfluxDB environment data write success: ") + dbclient.pointToLineProtocol(dbenvdata),1);
       }
 
       // Now store device information 
@@ -88,12 +88,12 @@
       // Write point via connection to InfluxDB host
       if (!dbclient.writePoint(dbdevdata))
       {
-        debugMessage(String("InfluxDB write failed: ") + dbclient.getLastErrorMessage(),1);
+        debugMessage(String("InfluxDB device data write failed: ") + dbclient.getLastErrorMessage(),1);
         result = false;
       }
       else
       {
-        debugMessage(String("InfluxDB write success: ") + dbclient.pointToLineProtocol(dbdevdata),1);
+        debugMessage(String("InfluxDB device data write success: ") + dbclient.pointToLineProtocol(dbdevdata),1);
       }
     dbclient.flushBuffer();  // Clear pending writes
     }

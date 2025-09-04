@@ -8,7 +8,6 @@
 #include "powered_air_quality.h"
 #include "config.h"   // hardware and internet configuration parameters
 #include "secrets.h"  // private credentials for network, MQTT, weather provider
-#include "data.h"     // Overall data and metadata naming scheme
 
 // only compile if MQTT enabled
 #ifdef MQTT
@@ -63,9 +62,11 @@
     if (mqtt.connected()) {
       if (mqtt.publish(topic, payload.c_str())) {
         success = true;
+        // IMPROVEMENT: topic is not being printed?
         debugMessage(String("MQTT publish topic is ") + topic + ", message is " + payload,2);
       }
       else
+        // IMPROVEMENT: topic is not being printed
         debugMessage(String("MQTT publish to topic ") + topic + " failed",1);
     }
     else {

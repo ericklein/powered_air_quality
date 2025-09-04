@@ -72,13 +72,23 @@
   };
   extern OpenWeatherMapAirQuality owmAirQuality;
 
-struct MqttConfig{
+  struct MqttConfig {
+      String host;
+      uint16_t port;
+      String user;
+      String password;
+    };
+  extern MqttConfig mqttBrokerConfig;
+
+  struct influxConfig {
     String host;
     uint16_t port;
-    String user;
-    String password;
-  } ;
-  extern MqttConfig mqttBrokerConfig;
+    String org;
+    String bucket;
+    String envMeasurement;
+    String devMeasurement;
+    };
+  extern influxConfig influxdbConfig;
 
   struct networkEndpointConfig {
     String site;
