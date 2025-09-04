@@ -17,19 +17,16 @@
   #include <InfluxDbClient.h>
 
   // Shared helper function
-  extern void debugMessage(String messageText, int messageLevel);
-
-  // InfluxDB 2.x setup.  See config.h and secrets.h for site-specific settings. Code
-  // reflects a number of presumptions about the data schema and InfluxDB configuration:
-
-  // InfluxDB client instance
-  String influxURL = influxdbConfig.host + ":" + String(influxdbConfig.port);
-  InfluxDBClient dbclient(influxURL, influxdbConfig.org, influxdbConfig.bucket, influxKey);
+  extern void debugMessage(String messageText, uint8_t messageLevel);
 
   // Post data to Influx DB using the connection established during setup
   boolean post_influx(float temperatureF, float humidity, uint16_t co2, float pm25, float vocIndex, float noxIndex, uint8_t rssi)
   {
-    bool result = false;
+    bool success = false;
+
+    // InfluxDB client instance
+    String influxURL = "http://" + influxdbConfig.host + ":" + influxdbConfig.port;
+    InfluxDBClient dbclient(influxURL, influxdbConfig.org, influxdbConfig.bucket, influxKey);
 
     // InfluxDB Data point, binds to InfluxDB 'measurement' to use for data. See config.h for value used
     Point dbenvdata(influxdbConfig.envMeasurement);
@@ -50,19 +47,15 @@
     dbdevdata.addTag(TAG_KEY_ROOM, endpointPath.room);
     dbdevdata.addTag(TAG_KEY_DEVICE_ID, endpointPath.deviceID);
 
-    // Attempts influxDB connection, and if unsuccessful, re-attempts after networkConnectAttemptInterval second delay for networkConnectAttempLimit times
-    for (int tries = 1; tries <= networkConnectAttemptLimit; tries++) {
-      if (dbclient.validateConnection()) {
-        debugMessage(String("Connected to InfluxDB: ") + dbclient.getServerUrl(),1);
-        result = true;
-        break;
-      }
-      debugMessage(String("influxDB connection attempt ") + tries + " of " + networkConnectAttemptLimit + " failed with error msg: " + dbclient.getLastErrorMessage(),1);
-      delay(networkConnectAttemptInterval*1000);
+    uint32_t timeInfluxConnectStart = millis();
+    while ((!dbclient.validateConnection()) && ((millis() - timeInfluxConnectStart) < timeNetworkConnectTimeoutMS)) {
+      delay(100);
     }
-    if (result)
-    {
+
+    if (dbclient.validateConnection()) {
       // Connected, so store sensor values into timeseries data points
+      debugMessage(String("Connected to InfluxDB: ") + dbclient.getServerUrl(),2);
+
       dbenvdata.clearFields();
       // Report sensor readings
       dbenvdata.addField(VALUE_KEY_PM25, pm25);
@@ -74,29 +67,28 @@
       // Write point via connection to InfluxDB host
       if (!dbclient.writePoint(dbenvdata)) {
         debugMessage(String("InfluxDB environment data write failed: ") + dbclient.getLastErrorMessage(),1);
-        result = false;
       }
-      else
-      {
+      else {
         debugMessage(String("InfluxDB environment data write success: ") + dbclient.pointToLineProtocol(dbenvdata),1);
+        success = true;
       }
-
       // Now store device information 
       dbdevdata.clearFields();
       // Report device readings
       dbdevdata.addField(VALUE_KEY_RSSI, rssi);
       // Write point via connection to InfluxDB host
-      if (!dbclient.writePoint(dbdevdata))
-      {
+      if (!dbclient.writePoint(dbdevdata)) {
         debugMessage(String("InfluxDB device data write failed: ") + dbclient.getLastErrorMessage(),1);
-        result = false;
       }
-      else
-      {
+      else {
         debugMessage(String("InfluxDB device data write success: ") + dbclient.pointToLineProtocol(dbdevdata),1);
+        success = true;
       }
-    dbclient.flushBuffer();  // Clear pending writes
+      dbclient.flushBuffer();  // Clear pending writes
     }
-    return(result);
+    else {
+      debugMessage("Could not connect to influxdb server",1);
+    }
+    return (success);
   }
 #endif

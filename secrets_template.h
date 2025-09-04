@@ -13,11 +13,10 @@
 // Configuration Step 3: If storing data to a network endpoint, set default endpoint path.
 // This will only be used if the user doesn't enter then in the configuration AP portal.
 //#if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-	// const String defaultSite = "value";            // physical address of the device, e.g. "1234 Main"
-	// const String defaultLocation = "value";        // general location of device at physical address, e.g. "indoor"
-	// const String defaultRoom = "value";            // specific location of device within location, e.g. "kitchen"
-	// const String defaultDeviceType = "PAQ"; // name of all device like this, don't need to change per device
-	// const String defaultDeviceID = defaultDeviceType + "-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+	// const String defaultSite = "key_value";            // physical address of the device, e.g. "1234 Main"
+	// const String defaultLocation = "key_value";        // general location of device at physical address, e.g. "indoor"
+	// const String defaultRoom = "key_value";            // specific location of device within location, e.g. "kitchen"
+	// const String defaultDeviceID = hardwareDeviceType + "-" + String((uint32_t)ESP.getEfuseMac(), HEX);
 // #endif 
 
 // Configuration Step #4: If needed, set default MQTT broker information. This will only
@@ -29,25 +28,16 @@
 	// const String defaultMQTTPassword = "password";  // if needed by MQTT broker
 // #endif
 
-// Configuration Step 5: If using influxdb, set login and storage parameters
+// Configuration Step 5: If needed, set default Influxdb connection parameters
+// be used if the user doesn't enter then in the configuration AP portal.
 // #ifdef INFLUX
-	// For an InfluxDB v1.X server:
-	// #define INFLUX_V1			"key_value"
-	// #define INFLUXDB_URL			"key_value"
-	// #define INFLUXDB_DB_NAME		"key_value"
-	// #define INFLUXDB_USER		"key_value"
-	// #define INFLUXDB_PASSWORD	"key_value"
-	//
-	// For an InfluxDB v2.X server:
-	// #define INFLUX_V2			"key_value"
-	// #define INFLUXDB_URL			"IP address with port number"
-	// #define INFLUXDB_TOKEN		"key_value"
-	// #define INFLUXDB_ORG			"key_value"
-	// #define INFLUXDB_BUCKET		"key_value"
-
-  // Specify Measurement to use with InfluxDB for sensor and device info
-  // const String influxEnvMeasurement = "key_value";  // Used for environmental sensor data
-  // const String influxDevMeasurement =  "key_value";   // Used for logging AQI device data (e.g. battery)
+// 	const String defaultInfluxAddress = "192.168.1.1"; // influxdb IP address
+// 	const String defaultInfluxPort = "8086";	// influxdb port associated with IP address
+// 	const String defaultInfluxOrg = "key_value";		// influxdb organization name
+// 	const String defaultInfluxBucket = "key_value"; // influxdb bucket name
+// 	// Specify Measurement to use with InfluxDB for sensor and device info
+//   const String defaultInfluxEnvMeasurement = "key_value";  // Used for environmental sensor data
+//   const String defaultInfluxDevMeasurement =  "key_value";   // Used for logging AQI device data (e.g. battery)
 // #endif
 
 // Configuration Step 7: If using ThingSpeak set channel parameters

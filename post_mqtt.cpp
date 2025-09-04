@@ -15,7 +15,7 @@
   extern PubSubClient mqtt;
 
   // Shared helper function
-  extern void debugMessage(String messageText, int messageLevel);
+  extern void debugMessage(String messageText, uint8_t messageLevel);
 
   #ifdef HASSIO_MQTT
     extern void hassio_mqtt_setup();

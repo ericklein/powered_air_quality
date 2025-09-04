@@ -1105,7 +1105,7 @@ void endPointWrite(uint8_t numSamples)
 
           // publish hardware data
           topic = generateMQTTTopic(VALUE_KEY_RSSI);
-          mqttPublish(topic, String(abs(WiFi.RSSI())));
+          mqttPublish(topic, String(hardwareData.rssi));
 
           // publish sensor data
           topic = generateMQTTTopic(VALUE_KEY_TEMPERATURE);
@@ -1181,7 +1181,8 @@ bool openWiFiManager()
 
   if (WiFi.status() == WL_CONNECTED) {
     connected = true;
-    debugMessage(String("openWiFiManager end; connected via stored credentials to " + WiFi.SSID() + ", ") + abs(WiFi.RSSI()) + " dBm RSSI", 1);
+    hardwareData.rssi = abs(WiFi.RSSI());
+    debugMessage(String("openWiFiManager end; connected via stored credentials to " + WiFi.SSID() + ", ") + hardwareData.rssi + " dBm RSSI", 1);
   } 
   else {
     // no stored credentials or failed connect, use WiFiManager
@@ -1297,7 +1298,8 @@ bool openWiFiManager()
         saveWFMConfig = false;
       }
       connected = true;
-      debugMessage(String("openWiFiManager end; connected to " + WiFi.SSID() + ", ") + abs(WiFi.RSSI()) + " dBm RSSI", 1);
+      hardwareData.rssi = abs(WiFi.RSSI());
+      debugMessage(String("openWiFiManager end; connected to " + WiFi.SSID() + ", ") + hardwareData.rssi + " dBm RSSI", 1);
     }
   }
   return (connected);
@@ -1794,8 +1796,6 @@ bool sensorRead()
       uint16_t error;
       uint8_t errorCount = 0;
 
-      debugMessage("CO2 read initiated",1);
-
       // Loop attempting to read Measurement
       debugMessage("CO2 sensor read initiated",1);
       while(!success) {
@@ -1905,7 +1905,7 @@ float fmap(float x, float xmin, float xmax, float ymin, float ymax)
   return( ymin + ((x - xmin)*(ymax-ymin)/(xmax - xmin)));
 }
 
-void debugMessage(String messageText, int messageLevel)
+void debugMessage(String messageText, uint8_t messageLevel)
 // wraps Serial.println as #define conditional
 {
   #ifdef DEBUG

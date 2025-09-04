@@ -7,7 +7,7 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-#define DEBUG 2
+// #define DEBUG 1
 
 // Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -16,7 +16,7 @@
 // Configuration Step 4: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-#define INFLUX // Log data to InfluxDB server
+// #define INFLUX // Log data to InfluxDB server
 // #define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration Step 5: Which sensor configuration do we have?  Later generation devices
@@ -32,10 +32,6 @@
 // Configuration variables that are less likely to require changes
 
 // Internet and network endpoints
-// max connection attempts to network endpoints
-const uint8_t networkConnectAttemptLimit = 3;
-// seconds between network endpoint connect attempts
-const uint8_t networkConnectAttemptInterval = 10;
 const uint32_t timeNetworkConnectTimeoutMS = 10000;
 const uint32_t timeNetworkRetryIntervalMS = 30000;
 const uint32_t timeMQTTKeepAliveIntervalMS = 10000; // ping MQTT broker to keep alive

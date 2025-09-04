@@ -18,7 +18,7 @@
   #include "ThingSpeak.h"
 
   // Shared helper function(s)
-  extern void debugMessage(String messageText, int messageLevel);
+  extern void debugMessage(String messageText, uint8_t messageLevel);
 
   bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float nox, float aqi)
   {  
