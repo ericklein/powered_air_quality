@@ -137,7 +137,8 @@ void setup() {
   // *** Initialize sensors and other connected/onboard devices ***
   if( !sensorInit()) {
     debugMessage("Sensor initialization failure",1);
-    screenAlert("No Sensors");
+    screenAlert("No Sensor detected, rebooting");
+    delay(5000);
     powerDisable(hardwareRebootInterval);
   }
 
@@ -1189,7 +1190,7 @@ bool openWiFiManager()
     debugMessage("No stored credentials or failed connect, switching to WiFi Manager",1);
     parameterText = hardwareDeviceType + " setup";
 
-    screenAlert(String("Configure via WiFi AP: ") + parameterText);
+    screenAlert(String("Connect to WiFi AP '") + parameterText + "'");
 
     wfm.setSaveConfigCallback(saveConfigCallback);
     wfm.setHostname(endpointPath.deviceID.c_str());
