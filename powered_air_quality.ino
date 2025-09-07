@@ -137,7 +137,7 @@ void setup() {
   // *** Initialize sensors and other connected/onboard devices ***
   if( !sensorInit()) {
     debugMessage("Sensor initialization failure",1);
-    screenAlert("No Sensor detected, rebooting");
+    screenAlert("No sensor detected, rebooting");
     delay(5000);
     powerDisable(hardwareRebootInterval);
   }
@@ -1066,7 +1066,7 @@ String OWMtoMeteoconIcon(String icon)
 
 void endPointWrite(uint8_t numSamples)
 {
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+  #if !defined (HARDWARE_SIMULATE) && (defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK))
       // do we have samples to report?
     if (numSamples) {
       if (WiFi.status() == WL_CONNECTED) {
@@ -1190,7 +1190,7 @@ bool openWiFiManager()
     debugMessage("No stored credentials or failed connect, switching to WiFi Manager",1);
     parameterText = hardwareDeviceType + " setup";
 
-    screenAlert(String("Connect to WiFi AP '") + parameterText + "'");
+    screenAlert(String("goto WiFi AP '") + parameterText + "'");
 
     wfm.setSaveConfigCallback(saveConfigCallback);
     wfm.setHostname(endpointPath.deviceID.c_str());

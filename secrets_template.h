@@ -37,7 +37,8 @@
 // 	const String defaultInfluxBucket = "key_value"; // influxdb bucket name
 // 	// Specify Measurement to use with InfluxDB for sensor and device info
 //   const String defaultInfluxEnvMeasurement = "key_value";  // Used for environmental sensor data
-//   const String defaultInfluxDevMeasurement =  "key_value";   // Used for logging AQI device data (e.g. battery)
+// const String defaultInfluxDevMeasurement =  "key_value";   // Used for logging AQI device data (e.g. battery)
+// const String influxKey = "key_value";
 // #endif
 
 // Configuration Step 7: If using ThingSpeak set channel parameters
