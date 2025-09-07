@@ -63,7 +63,7 @@
       dbenvdata.addField(VALUE_KEY_HUMIDITY, humidity);
       dbenvdata.addField(VALUE_KEY_VOC, vocIndex);
       dbenvdata.addField(VALUE_KEY_CO2, co2);
-      dbdevdata.addField(VALUE_KEY_NOX, noxIndex);
+      dbenvdata.addField(VALUE_KEY_NOX, noxIndex);
       // Write point via connection to InfluxDB host
       if (!dbclient.writePoint(dbenvdata)) {
         debugMessage(String("InfluxDB environment data write failed: ") + dbclient.getLastErrorMessage(),1);

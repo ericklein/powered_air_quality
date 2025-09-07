@@ -16,7 +16,7 @@
 	// const String defaultSite = "key_value";            // physical address of the device, e.g. "1234 Main"
 	// const String defaultLocation = "key_value";        // general location of device at physical address, e.g. "indoor"
 	// const String defaultRoom = "key_value";            // specific location of device within location, e.g. "kitchen"
-	// const String defaultDeviceID = hardwareDeviceType + "-" + String((uint32_t)ESP.getEfuseMac(), HEX);
+	// const String defaultDeviceID = hardwareDeviceType + "-" + String((uint32_t)((ESP.getEfuseMac() >> 32 ) % 0xFFFFFFFF), HEX);
 // #endif 
 
 // Configuration Step #4: If needed, set default MQTT broker information. This will only
