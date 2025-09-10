@@ -134,6 +134,9 @@ void setup() {
   // initialize button
   pinMode(hardwareWipeButton, INPUT_PULLUP);
 
+  // load before sensorInit() to get altitude data
+  loadNVConfig();
+
   // *** Initialize sensors and other connected/onboard devices ***
   if( !sensorInit()) {
     debugMessage("Sensor initialization failure",1);
@@ -146,8 +149,6 @@ void setup() {
   for(uint8_t loop=0;loop<GRAPH_POINTS;loop++) {
     co2data[loop] = -1;
   }
-
-  loadNVConfig();
 
   if (!openWiFiManager()) {
     hardwareData.rssi = 0;  // 0 = no WiFi
@@ -197,8 +198,8 @@ void loop() {
       screenUpdate(screenCurrent);
     }
     else {
-      // TODO: what else to do here...
-      debugMessage("Sensor read failed!",1);
+      // TODO: what else to do here?; detailed error message comes from sensorRead()
+      // debugMessage("Sensor read failed!",1);
     }
     // Save last sample time
     timeLastSampleMS = millis();
@@ -1356,8 +1357,11 @@ void loadNVConfig() {
   nvConfig.begin("config", true); // read-only
 
   hardwareData.altitude = nvConfig.getUShort("altitude", uint16_t(defaultAltitude.toInt()));
+  debugMessage(String("Device altitude is ") + hardwareData.altitude + " meters",2);
   hardwareData.latitude = nvConfig.getFloat("latitude");
+  debugMessage(String("Device latitude is ") + hardwareData.latitude,2);
   hardwareData.longitude = nvConfig.getFloat("longitude");
+  debugMessage(String("Device longitude is ") + hardwareData.longitude,2);
 
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
     endpointPath.site = nvConfig.getString("site", defaultSite);
@@ -1801,6 +1805,7 @@ bool sensorRead()
         delay(100);
         errorCount++;
         if (errorCount > co2SensorReadFailureLimit) {
+          debugMessage(String("SCD40 failed to read after ") + errorCount + " attempts",1);
           break;
         }
         // Is data ready to be read?
@@ -1824,7 +1829,7 @@ bool sensorRead()
         }
         else if (co2 < sensorCO2Min || co2 > sensorCO2Max)
         {
-          debugMessage(String("SCD40 CO2 reading: ") + sensorData.ambientCO2 + " is out of expected range",1);
+          debugMessage(String("SCD40 CO2 reading: ") + co2 + " is out of expected range",1);
           //(sensorData.ambientCO2 < sensorCO2Min) ? sensorData.ambientCO2 = sensorCO2Min : sensorData.ambientCO2 = sensorCO2Max;
           // Implicitly continues back to the top of the loop
         }
