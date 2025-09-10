@@ -240,7 +240,7 @@ void loop() {
 
   // is it time to check the WiFi connection before network endpoint write or OWM update?
   if (WiFi.status() != WL_CONNECTED) {
-    if ((millis() - timeNextNetworkRetryMS) >= 0) {
+    if ((long)(millis() - timeNextNetworkRetryMS) >= 0) {
       WiFi.reconnect();
       timeNextNetworkRetryMS = millis() + timeNetworkRetryIntervalMS;
     }
@@ -279,6 +279,7 @@ void loop() {
   if ((millis() - timeLastReportMS) >= reportIntervalMS) {
     endPointWrite(numSamples);
     numSamples = 0;
+    timeLastReportMS = millis();
   }
 }
 
@@ -1084,7 +1085,7 @@ void endPointWrite(uint8_t numSamples)
 
         debugMessage(String("** PM2.5: ") + avgPM25 + String(", CO2: ") + avgCO2 + " ppm" + 
           String(", VOC: ") + avgVOC+ String(", NOX: ") + avgNOX + String(", ") + 
-          avgTemperatureF + "F, " + avgHumidity + String("%, ") + String(", AQI(US): ") + pm25toAQI_US(avgPM25),1);
+          avgTemperatureF + "F, " + avgHumidity + String("%, ") + String("AQI(US): ") + pm25toAQI_US(avgPM25),1);
 
         #ifdef THINGSPEAK
         // IMPROVEMENT : Post the AQI sensor data to ThingSpeak. Make sure to use the PM25 to AQI conversion formula for the
@@ -1141,9 +1142,6 @@ void endPointWrite(uint8_t numSamples)
         totalVOC.clear();
         totalPM25.clear();
         totalNOX.clear();
-
-        // save last report time
-        timeLastReportMS = millis();
       }
       else {
         debugMessage("No network for endpoint reporting",1);

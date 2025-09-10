@@ -7,7 +7,7 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 2
+#define DEBUG 2
 
 // Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -16,7 +16,7 @@
 // Configuration Step 4: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-// #define INFLUX // Log data to InfluxDB server
+#define INFLUX // Log data to InfluxDB server
 // #define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration Step 5: Which sensor configuration do we have?  Later generation devices
@@ -27,7 +27,7 @@
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
 // #define SENSOR_SEN66
-// #define SENSOR_SEN54SCD40
+#define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 
