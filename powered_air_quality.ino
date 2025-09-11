@@ -140,9 +140,11 @@ void setup() {
   // *** Initialize sensors and other connected/onboard devices ***
   if( !sensorInit()) {
     debugMessage("Sensor initialization failure",1);
-    screenAlert("No sensor detected, rebooting");
+    screenAlert("Sensor failure, rebooting");
     delay(5000);
-    powerDisable(hardwareRebootInterval);
+    // This error often occurs right after a firmware flash and reset.
+    // Hardware deep sleep typically resolves it, so quickly cycle the hardware
+    powerDisable(hardwareErrorSleepTimeμS);
   }
 
   // initialize retained CO2 data values array for graphing
@@ -1493,24 +1495,17 @@ bool sensorInit()
   #endif
 
   #ifdef SENSOR_SEN54SCD40
-    bool status = true;
+    bool success = true;
     // Initialize PM25 sensor (SEN54)
     if (!sensorPMInit()) {
-      debugMessage("SEN5X initialization failure", 1);
-      screenAlert("No SEN5X");
-      status = false;
+      success = false;
     }
 
     // Initialize CO2 Sensor (SCD4X)
     if (!sensorCO2Init()) {
-      debugMessage("SCD4X initialization failure",1);
-      screenAlert("No SCD4X");
-      // This error often occurs right after a firmware flash and reset.
-      // Hardware deep sleep typically resolves it, so quickly cycle the hardware
-      powerDisable(hardwareRebootInterval);
-      status = false;  // Not executed given power reset
+      success = false;
     }
-    return(status);
+    return(success);
   #endif // SENSOR_SEN54SCD40
 
   debugMessage("Initialization failed: no sensor(s) defined!",1);
@@ -1789,8 +1784,6 @@ bool sensorRead()
     #ifdef HARDWARE_SIMULATE
       success = true;
       sensorCO2Simulate();
-      debugMessage(String("SIMULATED SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
-      return (success);
     #else
       char errorMessage[256];
       uint16_t co2 = 0;
@@ -1920,7 +1913,7 @@ void debugMessage(String messageText, uint8_t messageLevel)
   #endif
 }
 
-void powerDisable(uint8_t deepSleepTime)
+void powerDisable(uint32_t deepSleepTime)
 // turns off component hardware then puts ESP32 into deep sleep mode for specified seconds
 {
   debugMessage("powerDisable start",1);
@@ -1944,7 +1937,7 @@ void powerDisable(uint8_t deepSleepTime)
 
   networkDisconnect();
 
-  esp_sleep_enable_timer_wakeup(deepSleepTime*1000000); // ESP microsecond modifier
-  debugMessage(String("powerDisable complete: ESP32 deep sleep for ") + (deepSleepTime) + " seconds",1);
+  esp_sleep_enable_timer_wakeup(deepSleepTime);
+  debugMessage(String("powerDisable complete: ESP32 deep sleep for ") + (deepSleepTime/1000000) + " seconds",1);
   esp_deep_sleep_start();
 }

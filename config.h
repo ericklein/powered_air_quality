@@ -136,8 +136,7 @@ const uint16_t vocFair = 150;
 const uint16_t vocPoor = 250;
 const uint16_t vocBad = 400;
 
-// Sleep time in seconds if hardware error occurs
-const uint8_t hardwareRebootInterval = 10;
+const uint32_t hardwareErrorSleepTimeμS = 10000000;  // sleep time if hardware error occurs
 
 // button
 const uint8_t hardwareWipeButton = 0; // boot button on most ESP32 boards
