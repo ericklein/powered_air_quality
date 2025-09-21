@@ -485,7 +485,15 @@ void screenAggregateData()
   display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
   display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,ILI9341_BLUE);
   display.setTextColor(ILI9341_WHITE);
-  display.setCursor(0,yHeaderRow); display.print("REPORT:");
+
+  // display.setCursor(0,yHeaderRow); display.print("REPORT:");
+  // Display a unique unit ID based on the high-order 16 bits of the
+  // ESP32 MAC address (as the header for the data name column)
+  display.setCursor(0,yHeaderRow);
+  uint16_t shortid = (uint16_t) ((ESP.getEfuseMac() >> 32) & 0xFFFF ) ;
+  if( shortid < 0x1000) display.print("AQ-0" + String(shortid,HEX));
+  else                  display.print("AQ-" + String(shortid,HEX));
+  // Display column headers for our data table
   display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
   display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
 
