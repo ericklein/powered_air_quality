@@ -41,6 +41,6 @@
 // const String influxKey = "key_value";
 // #endif
 
-// Configuration Step 7: If using ThingSpeak set channel parameters
+// Configuration Step 6: If using ThingSpeak set channel parameters
 // #define THINGS_CHANID 1234567                      // Seven digit ThingSpeak channel ID (number)
 // #define THINGS_APIKEY "TS-Channel-Write-API-Key"   // ThingSpeak channel Write API Key (string)
