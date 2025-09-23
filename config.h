@@ -27,21 +27,19 @@
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
 // #define SENSOR_SEN66
-#define SENSOR_SEN54SCD40
+// #define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 
 // Internet and network endpoints
-// max connection attempts to network endpoints
-const uint8_t networkConnectAttemptLimit = 3;
-// seconds between network endpoint connect attempts
-const uint8_t networkConnectAttemptInterval = 10;
 const uint32_t timeNetworkConnectTimeoutMS = 10000;
+const uint32_t timeNetworkRetryIntervalMS = 30000;
+const uint32_t timeMQTTKeepAliveIntervalMS = 10000; // ping MQTT broker to keep alive
 
 // Open Weather Map (OWM)
-#define OWM_SERVER      "http://api.openweathermap.org/data/2.5/"
-#define OWM_WEATHER_PATH  "weather?"
-#define OWM_AQM_PATH    "air_pollution?"
+const String OWMServer = "http://api.openweathermap.org/data/2.5/";
+const String OWMWeatherPath =  "weather?";
+const String OWMAQMPath = "air_pollution?";
 // aqi labels from https://openweathermap.org/api/air-pollution
 const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 const uint32_t OWMIntervalMS = 1800000;
@@ -93,6 +91,9 @@ const uint16_t warningColor[4] = {
 
 // Hardware
 
+// hardware
+const String hardwareDeviceType = "AirQuality";
+
 // Simulation boundary values
 #ifdef HARDWARE_SIMULATE
   const uint16_t sensorTempMinF =       1400; // divided by 100.0 to give floats
@@ -123,7 +124,6 @@ const uint16_t co2Bad = 2000;
 
 const uint16_t sensorCO2Min =      400;   // in ppm
 const uint16_t sensorCO2Max =      2000;  // in ppm
-const uint8_t sensorTempCOffset = 0;     // in Celsius
 const uint8_t co2SensorReadFailureLimit = 20;
 
 // Particulates (pm1, pm2.5, pm4, pm10) value thresholds for labeling
@@ -136,8 +136,11 @@ const uint16_t vocFair = 150;
 const uint16_t vocPoor = 250;
 const uint16_t vocBad = 400;
 
-// Sleep time in seconds if hardware error occurs
-const uint8_t hardwareRebootInterval = 10;
+const uint32_t hardwareErrorSleepTimeμS = 10000000;  // sleep time if hardware error occurs
+
+// button
+const uint8_t hardwareWipeButton = 0; // boot button on most ESP32 boards
+const uint16_t timeResetButtonHoldMS = 10000; // Long-press duration to wipe config
 
 // CYD display pinout
 #define TFT_BACKLIGHT 21
