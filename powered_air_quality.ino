@@ -280,7 +280,7 @@ void loop() {
 
   // is it time to write to the network endpoints?
   if ((millis() - timeLastReportMS) >= reportIntervalMS) {
-    endPointWrite(numSamples);
+    processSamples(numSamples);
     numSamples = 0;
     timeLastReportMS = millis();
   }
@@ -1076,16 +1076,18 @@ String OWMtoMeteoconIcon(String icon)
   return ")";
 }
 
-void endPointWrite(uint8_t numSamples)
+void processSamples(uint8_t numSamples)
 {
-  #if !defined (HARDWARE_SIMULATE) && (defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK))
-      // do we have samples to report?
-    if (numSamples) {
-      if (WiFi.status() == WL_CONNECTED) {
-        // Get averaged sample values from the Measure utliity class objects
+  // do we have samples to process?
+  if (numSamples) {
+    // avgCO2 used by screenGraph and endPoint reporting
+    uint16_t avgCO2 = totalCO2.getAverage();
+    // can we report to network endPoints?
+    if (WiFi.status() == WL_CONNECTED) {
+      #if !defined HARDWARE_SIMULATE
+        // Get averaged sample values from Measure class objects for endPoint reporting
         float avgTemperatureF = totalTemperatureF.getAverage();
         float avgHumidity = totalHumidity.getAverage();
-        uint16_t avgCO2 = totalCO2.getAverage();
         float avgVOC = totalVOC.getAverage();
         float avgPM25 = totalPM25.getAverage();
         float maxPM25 = totalPM25.getMax();
@@ -1142,26 +1144,25 @@ void endPointWrite(uint8_t numSamples)
             hassio_mqtt_publish(avgPM25, avgTemperatureF, avgVOC, avgHumidity);
           #endif
         #endif
-
-        // Retain CO2 data for graphing (see below)
-        retainCO2(avgCO2);
-
-        // Reset sample counters
-        totalTemperatureF.clear();
-        totalHumidity.clear();
-        totalCO2.clear();
-        totalVOC.clear();
-        totalPM25.clear();
-        totalNOX.clear();
-      }
-      else {
-        debugMessage("No network for endpoint reporting",1);
-      }
-    }      
-    else {
-      debugMessage("No samples for endpoint reporting",1);
+      #endif
     }
-  #endif
+    else {
+      debugMessage("No network, endpoint reporting skipped",1);
+    }
+    // retain CO2 data for screenGraph
+    retainCO2(avgCO2);
+
+    // Reset sample counters
+    totalTemperatureF.clear();
+    totalHumidity.clear();
+    totalCO2.clear();
+    totalVOC.clear();
+    totalPM25.clear();
+    totalNOX.clear();
+  }      
+  else {
+    debugMessage("No samples to process this cycle",1);
+  }
 }
 
 // WiFiManager portal functions
