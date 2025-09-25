@@ -9,6 +9,8 @@
 #include "Arduino.h"
 #include <WiFi.h>
 
+// Overall header info for Powered Air Quality
+#include "powered_air_quality.h"
 // hardware and internet configuration parameters
 #include "config.h"
 // private credentials for network, MQTT, weather provider
@@ -19,6 +21,7 @@
 
   // Shared helper function(s)
   extern void debugMessage(String messageText, uint8_t messageLevel);
+  extern String getDeviceId(String prefix);
 
   bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float nox, float aqi)
   {  
@@ -38,12 +41,8 @@
     ThingSpeak.setField(6,nox);
     ThingSpeak.setField(7,aqi);
 
-    // Synthesize the unit ID from the ESP32 MAC address
-    uint16_t shortid = (uint16_t) ((ESP.getEfuseMac() >> 32) & 0xFFFF ) ;
-    String unitid;
-    if( shortid < 0x1000) unitid = String("AirQuality-0") + String(shortid,HEX);
-    else                  unitid = String("AirQuality-")  + String(shortid,HEX);
-    ThingSpeak.setField(8,unitid);
+    // Identify the publishing unit via its internal deviceID
+    ThingSpeak.setField(8,endpointPath.deviceID);
 
     // Batch write all the field updates to ThingSpeak and check HTTP return code
     httpcode = ThingSpeak.writeFields(THINGS_CHANID,THINGS_APIKEY);

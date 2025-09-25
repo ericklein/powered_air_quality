@@ -83,6 +83,12 @@ XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
 
 // global variables
 
+// Arrange for the default unique device identifier to be automatically generated at runtime based
+// on ESP32 MAC address and hardware device type as specified in config.h.  This is done using a
+// custom function contained here (see below).
+extern String getDeviceId(String prefix);
+const String defaultDeviceID = getDeviceId(hardwareDeviceType);
+
 // data structures defined in powered_air_quality.h
 MqttConfig mqttBrokerConfig;
 influxConfig influxdbConfig;
@@ -157,6 +163,16 @@ void setup() {
   }
   #ifdef MQTT
     mqttConnect();
+  #endif
+
+  // Explicit start-up delay because the SEN66 takes 5-6 seconds to return valid
+  // CO2 readinggs and 10-11 seconds to return valid NOx index values, and the SEN554
+  // takes up to 6 seconds to return valid NOx index values.  The user interface 
+  // should display "Initializing" during this delay
+  #ifdef SENSOR_SEN66
+    delay(12000);
+  #elif SENSOR_SEN54SCD40
+    delay(7000);
   #endif
 }
 
@@ -488,13 +504,11 @@ void screenAggregateData()
   display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,ILI9341_BLUE);
   display.setTextColor(ILI9341_WHITE);
 
-  // display.setCursor(0,yHeaderRow); display.print("REPORT:");
   // Display a unique unit ID based on the high-order 16 bits of the
   // ESP32 MAC address (as the header for the data name column)
   display.setCursor(0,yHeaderRow);
-  uint16_t shortid = (uint16_t) ((ESP.getEfuseMac() >> 32) & 0xFFFF ) ;
-  if( shortid < 0x1000) display.print("AQ-0" + String(shortid,HEX));
-  else                  display.print("AQ-" + String(shortid,HEX));
+  display.print(getDeviceId("AQ"));
+
   // Display column headers for our data table
   display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
   display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
@@ -1949,4 +1963,21 @@ void powerDisable(uint32_t deepSleepTime)
   esp_sleep_enable_timer_wakeup(deepSleepTime);
   debugMessage(String("powerDisable complete: ESP32 deep sleep for ") + (deepSleepTime/1000000) + " seconds",1);
   esp_deep_sleep_start();
+}
+
+/*
+ * Utility function to return a unique device identifier string, combining the prefix passed in as
+ * an argument and the high-order four hex digits of the ESP32 MAC address (which should be unique
+ * for ESP32 units). Typically used in combination with hardware device type info from secrets.h.
+*/
+String getDeviceId(String prefix)
+// Returns a unique device identifier based on ESP32 MAC address along with a specified prefix
+{
+  uint16_t shortid = (uint16_t) ((ESP.getEfuseMac() >> 32) & 0xFFFF ) ;
+  if( shortid < 0x1000) {
+    return(prefix + "-0" + String(shortid,HEX));
+  }
+  else {
+    return(prefix + "_" + String(shortid,HEX));
+  }
 }
