@@ -171,7 +171,8 @@ void setup() {
   // should display "Initializing" during this delay
   #ifdef SENSOR_SEN66
     delay(12000);
-  #elif SENSOR_SEN54SCD40
+  #endif
+  #ifdef SENSOR_SEN54SCD40
     delay(7000);
   #endif
 }
@@ -1978,6 +1979,6 @@ String getDeviceId(String prefix)
     return(prefix + "-0" + String(shortid,HEX));
   }
   else {
-    return(prefix + "_" + String(shortid,HEX));
+    return(prefix + "-" + String(shortid,HEX));
   }
 }
