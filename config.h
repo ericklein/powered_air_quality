@@ -7,11 +7,11 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 2
+#define DEBUG 2
 
 // Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
-// #define HARDWARE_SIMULATE
+#define HARDWARE_SIMULATE
 
 // Configuration Step 4: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
@@ -27,7 +27,7 @@
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
 // #define SENSOR_SEN66
-// #define SENSOR_SEN54SCD40
+#define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 
@@ -55,7 +55,7 @@ const uint32_t OWMIntervalMS = 1800000;
 const uint8_t reportFailureThreshold = 3; // number of times reporting has to fail before UI reflects issue
 
 // Display
-const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
+const uint8_t screenRotation = 3; // CYD horizontal orientation with usb ports on CYD left side
 // Manage the suported display screens
 #define SCREEN_SAVER      0
 #define SCREEN_INFO       1
@@ -96,35 +96,35 @@ const String hardwareDeviceType = "AirQuality";
 
 // Simulation boundary values
 #ifdef HARDWARE_SIMULATE
-  const uint16_t sensorTempMinF =       1400; // divided by 100.0 to give floats
-  const uint16_t sensorTempMaxF =       14000;
-  const uint16_t sensorHumidityMin =    0; // RH%, divided by 100.0 to give float
-  const uint16_t sensorHumidityMax =    10000;
+  const uint16_t sensorTempMinF =       14; // -10C per datasheet
+  const uint16_t sensorTempMaxF =       140; // 60C per datasheet
+  const uint16_t sensorHumidityMin =    0; // RH% per datasheet
+  const uint16_t sensorHumidityMax =    100;
 
   const uint8_t OWMAQIMin = 1;  // https://openweathermap.org/api/air-pollution
   const uint8_t OWMAQIMax = 5;
 
-  const uint16_t OWMPM25Min = 0;  // will be divided by 100.0 to give float
-  const uint32_t OWMPM25Max = 10000; // will be divided by 100.0 to give float
+  const uint16_t OWMPM25Min = 0;
+  const uint16_t OWMPM25Max = 100; 
 
   const uint8_t networkRSSIMin = 30;
   const uint8_t networkRSSIMax = 90;
 
   const uint16_t sensorPMMin = 0;
-  const uint16_t sensorPMMax = 100000; // divided by 100.0 to give float
+  const uint16_t sensorPMMax = 1000;
 
   const uint16_t sensorVOCMin = 0;
-  const uint16_t sensorVOCMax = 50000; // divided by 100.0 to give float
+  const uint16_t sensorVOCMax = 500;
 #endif
 
 // CO2 value thresholds for labeling
 const uint16_t co2Fair = 800;
 const uint16_t co2Poor = 1200;
-const uint16_t co2Bad = 2000;
+const uint16_t co2Bad = 1600;
 
-const uint16_t sensorCO2Min =      400;   // in ppm
-const uint16_t sensorCO2Max =      2000;  // in ppm
-const uint8_t co2SensorReadFailureLimit = 20;
+const uint16_t sensorCO2Min =      400;   // ppm, output min is 0 per datasheet
+const uint16_t sensorCO2Max =      2000;  // ppm, output max is 40000 per datasheet
+  const uint8_t co2SensorReadFailureLimit = 20;
 
 // Particulates (pm1, pm2.5, pm4, pm10) value thresholds for labeling
 const uint16_t pmFair = 25;
