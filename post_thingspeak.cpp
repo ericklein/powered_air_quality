@@ -1,24 +1,27 @@
 /*
   Project Name:   Powered Air Quality
-  Description:    write sensor data to thingspeak
+  Description:    Write sensor data to ThingSpeak (https://thingspeak.mathworks.com)
 
   Uses the ThingSpeak Arduino library from MathWorks
   https://github.com/mathworks/thingspeak-arduino
 */
 
 #include "Arduino.h"
+#include <WiFi.h>
 
+// Overall header info for Powered Air Quality
+#include "powered_air_quality.h"
 // hardware and internet configuration parameters
 #include "config.h"
 // private credentials for network, MQTT, weather provider
 #include "secrets.h"
 
-
 #ifdef THINGSPEAK
   #include "ThingSpeak.h"
 
   // Shared helper function(s)
-  extern void debugMessage(String messageText, int messageLevel);
+  extern void debugMessage(String messageText, uint8_t messageLevel);
+  extern String getDeviceId(String prefix);
 
   bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float nox, float aqi)
   {  
@@ -37,6 +40,9 @@
     ThingSpeak.setField(5,voc);
     ThingSpeak.setField(6,nox);
     ThingSpeak.setField(7,aqi);
+
+    // Identify the publishing unit via its internal deviceID
+    ThingSpeak.setField(8,endpointPath.deviceID);
 
     // Batch write all the field updates to ThingSpeak and check HTTP return code
     httpcode = ThingSpeak.writeFields(THINGS_CHANID,THINGS_APIKEY);
