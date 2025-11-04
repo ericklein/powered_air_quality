@@ -46,7 +46,7 @@ SPIClass vspi = SPIClass(VSPI);
 Adafruit_ILI9341 display = Adafruit_ILI9341(&hspi, TFT_DC, TFT_CS, TFT_RST);
 
 // touchscreen
-#include <XPT2046_Touchscreen.h>
+#include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
 XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
 
 // fonts and glyphs
@@ -54,8 +54,8 @@ XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSans24pt7b.h>
-#include "Fonts/meteocons16pt7b.h"
 #include "Fonts/meteocons12pt7b.h"
+#include "Fonts/meteocons16pt7b.h"
 #include "glyphs.h"
 
 // external function dependencies
@@ -120,7 +120,7 @@ void setup() {
     #endif
   #endif
 
-  // initialize screen first to display (initialization) messages
+  // initialize screen first to display messages
   pinMode(TFT_BACKLIGHT, OUTPUT);
   digitalWrite(TFT_BACKLIGHT, HIGH);
 
@@ -130,9 +130,11 @@ void setup() {
   display.fillScreen(ILI9341_BLACK);
   screenAlert("Initializing");
 
-  // Setup the VSPI to use CYD touchscreen pins
+  // initialize touchscreen
+  // setup the VSPI to use CYD touchscreen pins
   vspi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
   touchscreen.begin(vspi);
+  touchscreen.setRotation(screenRotation);
 
   // truly random numbers for every boot cycle
   randomSeed(analogRead(0));
@@ -165,15 +167,11 @@ void setup() {
     mqttConnect();
   #endif
 
-  // Explicit start-up delay because the SEN66 takes 5-6 seconds to return valid
-  // CO2 readinggs and 10-11 seconds to return valid NOx index values, and the SEN554
-  // takes up to 6 seconds to return valid NOx index values.  The user interface 
-  // should display "Initializing" during this delay
   #ifdef SENSOR_SEN66
-    delay(12000);
+    delay(12000); // 5-6 seconds for valid CO2 and 10-11 for valid NOx index value
   #endif
   #ifdef SENSOR_SEN54SCD40
-    delay(7000);
+    delay(7000); // 5-6 seconds for valid CO2
   #endif
 }
 
@@ -183,15 +181,10 @@ void loop() {
   static uint32_t timeLastInputMS         = millis();  // timestamp for last user input (screensaver)
   static uint32_t timeNextNetworkRetryMS  = 0;
   static uint32_t timeLastOWMUpdateMS     = -(OWMIntervalMS); // forces immediate sample in loop()
-  static uint32_t timeLastMQTTPingMS      = 0;
-
-  // Set first screen to display.  If that first screen is the screen saver then we need to
-  // have the saved screen be something else so it'll get switched to on the first touch
-  static uint8_t screenSaved   = SCREEN_INFO; // Saved when screen saver engages so it can be restored
-  static uint8_t screenCurrent = SCREEN_SAVER; // Initial screen to display (on startup)
+  static enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
 
   // is there a long press on the reset button to wipe all configuration data?
-  checkResetLongPress();  // Always watching for long-press to wipe
+  checkResetLongPress();
 
   // is it time to read the sensor?
   if ((millis() - timeLastSampleMS) >= sensorSampleIntervalMS) {
@@ -226,35 +219,38 @@ void loop() {
 
   // is there user input to process?
   if (touchscreen.touched()) {
-    // If screen saver was active, switch to the previous active screen
-    if( screenCurrent == SCREEN_SAVER) {
-        screenCurrent = screenSaved;
-        debugMessage(String("touchscreen pressed, screen saver off => ") + screenCurrent,1);
-        screenUpdate(screenCurrent);
-    }
-    // Otherwise step to the next screen (and wrap around if necessary)
-    else {
-      ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
-      // Allow stepping through screens to include the screen saver screen, in which case
-      // it is up not because the screen saver timer went off but because it was the next
-      // screen in sequence.  In that case, act like the "saved" screen is the INFO screen
-      // so it'll be switched to next in the overall sequence.
-      if(screenCurrent == SCREEN_SAVER) {
-        screenSaved = SCREEN_INFO;  // Technically, (SCREEN_SAVER+1) to preserve the sequence
+    // If screen saver active, switch to master screen
+    switch (screenCurrent) {
+      case sSaver :
+        // always go to the main screen when returning from screenSaver;
+        screenCurrent = sMain;
+        break;
+      case sMain : {
+        // get raw touchscreen x,y and then calibrate 12bit value to screen size
+        TS_Point p = touchscreen.getPoint();
+        uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * 320L / (touchscreenMaxX - touchscreenMinX));
+        uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * 240L / (touchscreenMaxY - touchscreenMinY));
+        debugMessage(String("touch point: x=") + calibratedX + ", y=" + calibratedY,2);
+        // transition to appropriate component screen
+        if ((calibratedX < display.width()/2) && (calibratedY < display.height()/2)) {
+          // Upper left quandrant
+          screenCurrent = sVOC;
+        }
+        break;
       }
-      debugMessage(String("touchscreen pressed, switch to screen ") + screenCurrent,1);
-      screenUpdate(screenCurrent);
+      default:
+        // switch back to main from component screen
+        screenCurrent = sMain;
+        break;
     }
-    // Save time touch input occurred
+    screenUpdate(screenCurrent);
     timeLastInputMS = millis();
   }
 
   // is it time to enable the screensaver AND we're not in screen saver mode already?
-  if ((screenCurrent != SCREEN_SAVER) && ((millis() - timeLastInputMS) > screenSaverIntervalMS)) {
-    // Activate screen saver, retaining current screen for easy return
-    screenSaved = screenCurrent;
-    screenCurrent = SCREEN_SAVER;
-    debugMessage(String("Screen saver engaged, will restore to ") + screenSaved,1);
+  if ((screenCurrent != sSaver) && ((millis() - timeLastInputMS) > screenSaverIntervalMS)) {
+    screenCurrent = sSaver;
+    debugMessage(String("Screen saver engaged"),1);
     screenUpdate(screenCurrent);
   }
 
@@ -268,6 +264,7 @@ void loop() {
 
   // is it time for MQTT keep alive or reconnect?
   #ifdef MQTT
+    static uint32_t timeLastMQTTPingMS = 0;
     if (mqtt.connected()) {
       if (millis() - timeLastMQTTPingMS > timeMQTTKeepAliveIntervalMS) {
         mqtt.loop();
@@ -306,27 +303,18 @@ void loop() {
 void screenUpdate(uint8_t screenCurrent) 
 {
   switch(screenCurrent) {
-    case SCREEN_SAVER:
+    case sSaver:
       screenSaver();
       break;
-    case SCREEN_INFO:
-      screenCurrentInfo();
-      break;
-    case SCREEN_VOC:
+    case sVOC:
       screenVOC();
       break;
-    case SCREEN_COLOR:
-      screenColor();
-      break;
-    case SCREEN_AGGREGATE:
-      screenAggregateData();
-      break;
-    case SCREEN_GRAPH:
-      screenGraph();
+    case sMain:
+      screenMain();
       break;
     default:
       // This shouldn't happen, but if it does...
-      screenCurrentInfo();
+      screenMain();
       debugMessage("bad screen ID",1);
       break;
   }
@@ -352,7 +340,6 @@ void screenCurrentInfo()
   const uint16_t circleRadius = 65;
   // inside the pm25 rings
   const uint16_t xIndoorCircleText = (xIndoorPMCircle - 18);
-  const uint16_t yAQIValue = 160;
   const uint16_t xWeatherIcon = xOutdoorPMCircle - 18;
   const uint16_t yWeatherIcon = yPMCircles - 20;
 
@@ -752,14 +739,14 @@ void retainCO2(uint16_t co2)
   co2data[GRAPH_POINTS-1] = co2;
 }
 
-void screenColor()
+void screenMain()
 // Represent CO2, VOC, PM25, temperature, and humidity values as a single color objects
 {
   // screen assists
   const uint8_t halfBorderWidth = 2;
   const uint8_t cornerRoundRadius = 4;
 
-  debugMessage("screenColor start",1);
+  debugMessage("screenMain start",1);
 
   display.setFont(&FreeSans18pt7b);
   display.setTextColor(ILI9341_BLACK);
@@ -795,7 +782,7 @@ void screenColor()
     display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
   display.drawBitmap(((display.width()*7)/8),((display.height()*5)/8), bitmapHumidityIconSmall, 20, 28, ILI9341_BLACK);
 
-  debugMessage("screenColor end",1);
+  debugMessage("screenMain end",1);
 }
 
 void screenSaver()
@@ -1135,8 +1122,6 @@ void processSamples(uint8_t numSamples)
         float avgHumidity = totalHumidity.getAverage();
         float avgVOC = totalVOC.getAverage();
         float avgPM25 = totalPM25.getAverage();
-        float maxPM25 = totalPM25.getMax();
-        float minPM25 = totalPM25.getMin();
         float avgNOX = totalNOX.getAverage();
 
         debugMessage(String("** ----- Reporting averages (") + (reportIntervalMS/60000) + " minutes) ----- ",1);

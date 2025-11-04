@@ -7,7 +7,7 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 2
+#define DEBUG 2
 
 // Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -27,7 +27,7 @@
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
 // #define SENSOR_SEN66
-// #define SENSOR_SEN54SCD40
+#define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 
@@ -56,14 +56,7 @@ const uint8_t reportFailureThreshold = 3; // number of times reporting has to fa
 
 // Display
 const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
-// Manage the suported display screens
-#define SCREEN_SAVER      0
-#define SCREEN_INFO       1
-#define SCREEN_VOC        2 
-#define SCREEN_COLOR      3
-#define SCREEN_GRAPH      4
-#define SCREEN_AGGREGATE  5
-const uint8_t screenCount = 6;
+enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX};
 
 // screen layout assists in pixels
 const uint8_t xMargins = 5;
@@ -75,9 +68,7 @@ const uint8_t wifiBarSpacing = 5;
 // How many CO2 points to retain for the graphing screen
 #define GRAPH_POINTS 10
 
-// Screen saver timeout.  Will automatically switch to screen saver if
-// no user input (via touchscreen) in this many seconds
-const uint32_t screenSaverIntervalMS = 300000;
+const uint32_t screenSaverIntervalMS = 300000; // switch to screen saver if no input after this period
 
 // warnings
 const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
@@ -157,6 +148,11 @@ const uint16_t timeResetButtonHoldMS = 10000; // Long-press duration to wipe con
 #define XPT2046_MISO 39
 #define XPT2046_CLK 25
 #define XPT2046_CS 33
+// used to calibrate touchscreen
+const uint16_t touchscreenMinX = 450;
+const uint16_t touchscreenMaxX = 3700;
+const uint16_t touchscreenMinY = 450;
+const uint16_t touchscreenMaxY = 3700;
 
 // CYD i2c pin configuration, used in Wire.begin()
 #define CYD_SDA 22
