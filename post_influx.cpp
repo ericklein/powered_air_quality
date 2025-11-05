@@ -7,10 +7,10 @@
 
 #include "Arduino.h"
 
-#include "powered_air_quality.h"
-#include "config.h"   // hardware and internet configuration parameters
-#include "secrets.h"  // private credentials for network, MQTT, weather provider
-#include "data.h"     // Overall data and metadata naming scheme
+#include "config.h"               // hardware and internet configuration parameters
+#include "powered_air_quality.h"  // overall header info for Powered Air Quality
+#include "secrets.h"              // private credentials for network, MQTT, weather provider
+#include "data.h"                 // Overall data and metadata naming scheme
 
 // Only compile if InfluxDB enabled
 #ifdef INFLUX

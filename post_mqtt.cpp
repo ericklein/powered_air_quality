@@ -5,9 +5,9 @@
 
 #include "Arduino.h"
 
-#include "powered_air_quality.h"
-#include "config.h"   // hardware and internet configuration parameters
-#include "secrets.h"  // private credentials for network, MQTT, weather provider
+#include "config.h"               // hardware and internet configuration parameters
+#include "powered_air_quality.h"  // overall header info for Powered Air Quality
+#include "secrets.h"              // private credentials for network, MQTT, weather provider
 
 // only compile if MQTT enabled
 #ifdef MQTT

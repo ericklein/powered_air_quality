@@ -65,8 +65,8 @@ const uint8_t wifiBarWidth = 3;
 const uint8_t wifiBarHeightIncrement = 3;
 const uint8_t wifiBarSpacing = 5;
 
-// How many CO2 points to retain for the graphing screen
-#define GRAPH_POINTS 10
+// How many data samples are retained for graphing
+const uint8_t graphPoints = 10;
 
 const uint32_t screenSaverIntervalMS = 300000; // switch to screen saver if no input after this period
 

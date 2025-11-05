@@ -9,12 +9,9 @@
 #include "Arduino.h"
 #include <WiFi.h>
 
-// Overall header info for Powered Air Quality
-#include "powered_air_quality.h"
-// hardware and internet configuration parameters
-#include "config.h"
-// private credentials for network, MQTT, weather provider
-#include "secrets.h"
+#include "config.h"               // hardware and internet configuration parameters
+#include "powered_air_quality.h"  // overall header info for Powered Air Quality
+#include "secrets.h"              // private credentials for network, MQTT, weather provider
 
 #ifdef THINGSPEAK
   #include "ThingSpeak.h"

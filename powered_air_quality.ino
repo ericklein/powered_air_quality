@@ -5,14 +5,14 @@
   See README.md for target information
 */
 
-#include "powered_air_quality.h"
 #include "config.h"           // hardware and internet configuration parameters
+#include "powered_air_quality.h"
 #include "secrets.h"          // private credentials for network, MQTT
 #include "measure.h"          // Utility class for easy handling of aggregate sensor data
 #include "data.h"
 #include <HTTPClient.h>
 #include <Preferences.h>      // read-write to ESP32 persistent storage
-#include <ArduinoJson.h>      // Needed by OWM retrieval routines
+#include <ArduinoJson.h>      // https://arduinojson.org/ , used for OWM retrieval
 #include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager
 
 WiFiClient client;   // WiFi Managers loads WiFi.h, which is used by OWM and MQTT
@@ -101,8 +101,6 @@ OpenWeatherMapAirQuality owmAirQuality;
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.
 Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25, totalNOX;
 
-int16_t co2data[GRAPH_POINTS];
-
 uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
 uint32_t timeResetPressStartMS = 0; // IMPROVEMENT: Move this as static to CheckResetLongPress()
 bool saveWFMConfig = false;
@@ -156,8 +154,8 @@ void setup() {
   }
 
   // initialize retained CO2 data values array for graphing
-  for(uint8_t loop=0;loop<GRAPH_POINTS;loop++) {
-    co2data[loop] = -1;
+  for(uint8_t loop=0;loop<graphPoints;loop++) {
+    sensorData.ambientCO2[loop] = -1;
   }
 
   if (!openWiFiManager()) {
@@ -194,7 +192,7 @@ void loop() {
       numSamples++;
       totalTemperatureF.include(sensorData.ambientTemperatureF);
       totalHumidity.include(sensorData.ambientHumidity);
-      totalCO2.include(sensorData.ambientCO2);
+      totalCO2.include(sensorData.ambientCO2[graphPoints-1]);
       totalVOC.include(sensorData.vocIndex);
       totalPM25.include(sensorData.pm25);
       totalNOX.include(sensorData.noxIndex);  // TODO: Skip invalid values immediately after initialization
@@ -226,11 +224,11 @@ void loop() {
         screenCurrent = sMain;
         break;
       case sMain : {
-        // get raw touchscreen x,y and then calibrate 12bit value to screen size
+        // get raw 12bit touchscreen x,y and then calibrate to screen size
         TS_Point p = touchscreen.getPoint();
-        uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * 320L / (touchscreenMaxX - touchscreenMinX));
-        uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * 240L / (touchscreenMaxY - touchscreenMinY));
-        debugMessage(String("touch point: x=") + calibratedX + ", y=" + calibratedY,2);
+        uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
+        uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
+        debugMessage(String("input: touchpoint x=") + calibratedX + ", y=" + calibratedY,2);
         // transition to appropriate component screen
         if ((calibratedX < display.width()/2) && (calibratedY < display.height()/2)) {
           // Upper left quandrant
@@ -386,9 +384,9 @@ void screenCurrentInfo()
   // Indoor CO2 level inside the circle
   // CO2 value line
   display.setFont(&FreeSans12pt7b);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2)]);  // Use highlight color look-up table
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
   display.setCursor(xIndoorCircleText,yPMCircles);
-  display.print(sensorData.ambientCO2);
+  display.print(sensorData.ambientCO2[graphPoints-1]);
 
   // CO2 label line
   display.setFont(&FreeSans12pt7b);
@@ -658,11 +656,11 @@ void screenGraph()
   // Scan the retained CO2 data for max & min to scale the plot
   minvalue = 5000;
   maxvalue = 0;
-  for(i=0;i<GRAPH_POINTS;i++) {
-    if(co2data[i] == -1) continue;   // Skip "empty" slots
+  for(i=0;i<graphPoints;i++) {
+    if(sensorData.ambientCO2[i] == -1) continue;   // Skip "empty" slots
     nodata = false;  // At least one data point
-    if(co2data[i] < minvalue) minvalue = co2data[i];
-    if(co2data[i] > maxvalue) maxvalue = co2data[i];
+    if(sensorData.ambientCO2[i] < minvalue) minvalue = sensorData.ambientCO2[i];
+    if(sensorData.ambientCO2[i] > maxvalue) maxvalue = sensorData.ambientCO2[i];
   }
   // Deal with no data condition (e.g., just booted)
   if(nodata) {
@@ -706,12 +704,12 @@ void screenGraph()
   // Plot however many data points we have both with filled circles at each
   // point and lines connecting the points.  Color the filled circles with the
   // appropriate CO2 warning level color.
-  deltax = (gx1 - gx0 - 10)/ (GRAPH_POINTS-1);  // 10 pixel padding for Y axis
+  deltax = (gx1 - gx0 - 10)/ (graphPoints-1);  // 10 pixel padding for Y axis
   xp = gx0;
   yp = gy1;
-  for(i=0;i<GRAPH_POINTS;i++) {
-    if(co2data[i] == -1) continue;
-    c = co2data[i];
+  for(i=0;i<graphPoints;i++) {
+    if(sensorData.ambientCO2[i] == -1) continue;
+    c = sensorData.ambientCO2[i];
     x = gx0 + 10 + (i*deltax);  // Include 10 pixel padding for Y axis
     y = gy1 - (((c - minvalue)/(maxvalue-minvalue)) * (gy1-gy0));
     display.fillCircle(x,y,4,warningColor[co2Range(c)]);
@@ -733,10 +731,10 @@ void screenGraph()
 // Accumulate a CO2 value into the data array used by the screen graphing function above
 void retainCO2(uint16_t co2)
 {
-  for(uint8_t loop=1;loop<GRAPH_POINTS;loop++) {
-    co2data[loop-1] = co2data[loop];
+  for(uint8_t loop=1;loop<graphPoints;loop++) {
+    sensorData.ambientCO2[loop-1] = sensorData.ambientCO2[loop];
   }
-  co2data[GRAPH_POINTS-1] = co2;
+  sensorData.ambientCO2[graphPoints-1] = co2;
 }
 
 void screenMain()
@@ -752,7 +750,7 @@ void screenMain()
   display.setTextColor(ILI9341_BLACK);
   display.fillScreen(ILI9341_BLACK);
   // CO2
-  display.fillRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[co2Range(sensorData.ambientCO2)]);
+  display.fillRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
   display.setCursor((display.width()/8),(display.height()/4));
   display.print("CO2");
   // PM25
@@ -797,8 +795,8 @@ void screenSaver()
   int16_t x = random(xMargins,display.width()-xMargins-100);  // 90 pixels leaves room for 4 digit CO2 value
   int16_t y = random(44,display.height()-yMargins); // 35 pixels leaves vertical room for text display
   display.setCursor(x,y);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2)]);  // Use highlight color LUT
-  display.println(sensorData.ambientCO2);
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color LUT
+  display.println(sensorData.ambientCO2[graphPoints-1]);
   debugMessage("screenSaver end",1);
 }
 
@@ -878,6 +876,50 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
   #endif
 }
 
+// void screenHelperSparkLine(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight) {
+//   // TEST ONLY: load test CO2 values
+//   // testSparkLineValues(sensorSampleSize);
+
+//   uint16_t co2Min = co2Samples[0];
+//   uint16_t co2Max = co2Samples[0];
+//   // # of pixels between each samples x and y coordinates
+//   uint8_t xPixelStep, yPixelStep;
+
+//   uint16_t sparkLineX[sensorSampleSize], sparkLineY[sensorSampleSize];
+
+//   // horizontal distance (pixels) between each displayed co2 value
+//   xPixelStep = (xWidth / (sensorSampleSize - 1));
+
+//   // determine min/max of CO2 samples
+//   // could use recursive function but sensorSampleSize should always be relatively small
+//   for (uint8_t loop = 0; loop < sensorSampleSize; loop++) {
+//     if (co2Samples[loop] > co2Max) co2Max = co2Samples[loop];
+//     if (co2Samples[loop] < co2Min) co2Min = co2Samples[loop];
+//   }
+//   debugMessage(String("Max CO2 in stored sample range is ") + co2Max + ", min is " + co2Min, 2);
+
+//   // vertical distance (pixels) between each displayed co2 value
+//   yPixelStep = round(((co2Max - co2Min) / yHeight) + .5);
+
+//   debugMessage(String("xPixelStep is ") + xPixelStep + ", yPixelStep is " + yPixelStep, 2);
+
+//   // TEST ONLY : sparkline border box
+//   // display.drawRect(initialX,initialY, xWidth,yHeight, GxEPD_BLACK);
+
+//   // determine sparkline x,y values
+//   for (uint8_t loop = 0; loop < sensorSampleSize; loop++) {
+//     sparkLineX[loop] = (initialX + (loop * xPixelStep));
+//     sparkLineY[loop] = ((initialY + yHeight) - (uint8_t)((co2Samples[loop] - co2Min) / yPixelStep));
+//     // draw/extend sparkline after first value is generated
+//     if (loop != 0)
+//       display.drawLine(sparkLineX[loop - 1], sparkLineY[loop - 1], sparkLineX[loop], sparkLineY[loop], GxEPD_BLACK);
+//   }
+//   for (uint8_t loop = 0; loop < sensorSampleSize; loop++) {
+//     debugMessage(String("X,Y coordinates for CO2 sample ") + loop + " is " + sparkLineX[loop] + "," + sparkLineY[loop], 2);
+//   }
+//   debugMessage("screenHelperSparkLine() complete", 1);
+// }
+
 // Hardware simulation routines
 #ifdef HARDWARE_SIMULATE
   void OWMCurrentWeatherSimulate()
@@ -926,14 +968,60 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
     debugMessage(String("SIMULATED SEN5x PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex,1);
   }
 
-  void sensorCO2Simulate()
-  // Simulate ranged data from the SCD40
-  // IMPROVEMENT: implement stable, rapid rise and fall 
+  void sensorSCD4xSimulate(uint8_t mode = 0, uint8_t cycles = 0)
+  // Description: Simulates temp, humidity, and CO2 values from Sensirion SCD4X sensor
+  // Parameters:
+  //  mode
+  //    default = random values, ignores cycles parameter
+  //    1 = random values, slightly +/- per cycle
+  //  cycles = If used, determines how many times the current mode executes before resetting
+  // Output : NA
+  // Improvement : implement edge value mode, rapid CO2 rise mode 
   {
-    sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
-    sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
-    sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
-    debugMessage(String("SIMULATED SEN5x PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex,1);
+    static uint8_t currentMode = 1;
+    static uint8_t cycleCount = 0;
+    static float simulatedTempF;
+    static float simulatedHumidity;
+    static uint16_t simulatedCO2;
+
+    if (mode != currentMode) {
+      cycleCount = 0;
+      currentMode = mode;
+    }
+    switch (currentMode) {
+    case 1: // 1 = random values, slightly +/- per cycle
+      if (cycleCount == cycles) {
+        cycleCount = 0;
+      }
+      if (!cycleCount) {
+        // create new base values
+        simulatedTempF = randomFloatRange(sensorTempMinF,sensorTempMaxF);
+        simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+        simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
+        cycleCount++;
+      }
+      else
+      {
+        // slightly +/- CO2 value
+        int8_t sign = random(0, 2) == 0 ? -1 : 1;
+        simulatedCO2 = simulatedCO2 + (sign * random(0, sensorCO2VariabilityRange));
+        // slightly +/- temp value
+        // slightly +/- humidity value
+        cycleCount++;
+      }
+      break;
+    default: // random values, ignores cycles value
+      simulatedTempF = randomFloatRange(sensorTempMinF,sensorTempMaxF);
+      simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+      simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
+      break;
+    }
+    sensorData.ambientTemperatureF = simulatedTempF;
+    sensorData.ambientHumidity = simulatedHumidity;
+    retainCO2(simulatedCO2);
+
+    debugMessage(String("Simulated temp: ") + sensorData.ambientTemperatureF + "F, humidity: " + sensorData.ambientHumidity
+      + "%, CO2: " + sensorData.ambientCO2[co2GraphPoints-1] + "ppm",1);
   }
 #endif
 
@@ -1179,8 +1267,6 @@ void processSamples(uint8_t numSamples)
     else {
       debugMessage("No network, endpoint reporting skipped",1);
     }
-    // retain CO2 data for screenGraph
-    retainCO2(avgCO2);
 
     // Reset sample counters
     totalTemperatureF.clear();
@@ -1631,13 +1717,14 @@ bool sensorRead()
       static char errorMessage[64];
       static int16_t error;
       float ambientTemperatureC;
+      uint16_t co2 = 0;
 
       // TODO: Add support for checking isDataReady flag on SEN66
 
       error = paqSensor.readMeasuredValues(
         sensorData.pm1, sensorData.pm25, sensorData.pm4,
         sensorData.pm10, sensorData.ambientHumidity, ambientTemperatureC , sensorData.vocIndex,
-        sensorData.noxIndex, sensorData.ambientCO2);
+        sensorData.noxIndex, co2);
 
     if (error != 0) {
         debugMessage("Error trying to execute readMeasuredValues(): ",1);
@@ -1647,8 +1734,10 @@ bool sensorRead()
     }
     // Convert temperature Celsius from sensor into Farenheit
     sensorData.ambientTemperatureF = (1.8*ambientTemperatureC) + 32.0;
+
+    retainCO2(co2);
     
-    debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + String(", CO2: ") + sensorData.ambientCO2 +
+    debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + String(", CO2: ") + sensorData.ambientCO2[graphPoints-1] +
       String(", VOC: ") + sensorData.vocIndex + String(", NOX: ") + sensorData.noxIndex + String(", ") + 
       sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + String("%, "),1);
     return true;
@@ -1658,6 +1747,9 @@ bool sensorRead()
     // Simulates sensor reading from SEN66 sensor
     void sensorSEN6xSimulate()
     {
+
+      uint16_t simulatedCO2 = 0;
+
       sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
       sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
       sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
@@ -1666,7 +1758,9 @@ bool sensorRead()
       sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
       sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
       sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
-      sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
+      simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
+
+      retainCO2(simulatedCO2);
 
       debugMessage(String("SIMULATED SEN66 PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex +
         sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex + ",NOX index: " + sensorData.noxIndex,1);
@@ -1822,7 +1916,7 @@ bool sensorRead()
 
     #ifdef HARDWARE_SIMULATE
       success = true;
-      sensorCO2Simulate();
+      sensorSCD4xSimulate();
     #else
       char errorMessage[256];
       uint16_t co2 = 0;
@@ -1870,8 +1964,8 @@ bool sensorRead()
           // Valid measurement available, update globals
           sensorData.ambientTemperatureF = (temperatureC*1.8)+32.0;
           sensorData.ambientHumidity = humidity;
-          sensorData.ambientCO2 = co2;
-          debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+          retainCO2(co2);
+          debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2[graphPoints-1] + " ppm",1);
           // Update global sensor readings
           success = true;
           break;
