@@ -80,8 +80,6 @@ const uint16_t warningColor[4] = {
     0xF800  // Red = "Bad"
   };
 
-// Hardware
-
 // hardware
 const String hardwareDeviceType = "AirQuality";
 
