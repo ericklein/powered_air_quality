@@ -8,7 +8,7 @@
     // All data measured via SEN66
     float ambientTemperatureF;    // range -10C to 60C
     float ambientHumidity;        // RH [%], range 0 to 100
-    int16_t  ambientCO2[graphPoints];  // ppm, ppm, range 400 to 2000, -1 = no data
+    int16_t  ambientCO2[graphPoints];  // ppm, ppm, range 400 to 2000, -1 = no data, FIFO queue
     float pm25;                   // PM2.5 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
     float pm1;                    // PM1.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
     float pm10;                   // PM10.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)

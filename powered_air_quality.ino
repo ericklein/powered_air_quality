@@ -243,9 +243,20 @@ void loop() {
           if ((calibratedX < display.width()/2) && (calibratedY > display.height()/2)) {
             // lower left quandrant
             screenCurrent = sVOC;
-        }
+          }
+          else
+            if ((calibratedX > display.width()/2) && (calibratedY < display.height()/2)) {
+              // upper right quandrant
+              screenCurrent = sPM25;
+            }
+            else
+            // lower right quandrant
+            screenCurrent = sNOX;
         break;
       }
+      // case sCO2:
+      //   screenCurrent = ;
+      //   break;
       default:
         // switch back to main from component screen
         screenCurrent = sMain;
@@ -323,10 +334,15 @@ void screenUpdate(uint8_t screenCurrent)
     case sMain:
       screenMain();
       break;
+    case sPM25:
+      screenGraph(0,0,display.width(),display.height(),"Recent CO2 values");
+      break;
+    case sNOX:
+      screenCO2Graph();
+      break;
     default:
-      // This shouldn't happen, but if it does...
+      // if on a component screen, go back to main
       screenMain();
-      debugMessage("bad screen ID",1);
       break;
   }
 }
@@ -639,7 +655,102 @@ bool screenAlert(String messageText)
   return success;
 }
 
-void screenGraph()
+void screenGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, String description)
+// Description : Draw a graph of recent (CO2) values from right (most recent) to left. -1 values not graphed.
+// Parameters: none
+// Output : none
+// Improvement : This function assumes the use of the default Adafruit GFX font and its rendering direction (down, right)  
+{
+  uint8_t loop; // upper bound is graphPoints definition
+  int16_t x1, y1; // used by getTextBounds()
+  uint16_t text1Width, text1Height; // used by getTextBounds()
+  uint16_t deltaX, x, y, xp, yp;  // graphing positions
+  float minValue, maxValue;
+  bool firstpoint = true, nodata = true;
+
+  // screen layout assists in pixels
+  uint8_t labelSpacer = 2;
+  uint16_t graphLineX; // dynamically defined below
+  uint16_t graphLineY;
+
+  debugMessage("screenGraph start",1);
+
+  display.fillRect(initialX,initialY,xWidth,yHeight,ILI9341_BLACK);
+  display.setFont();
+  display.setTextColor(ILI9341_LIGHTGREY);
+
+  // Scan the retained CO2 data for max & min to scale the plot
+  minValue = sensorCO2Max;
+  maxValue = sensorCO2Min;
+  for(loop=0;loop<graphPoints;loop++) {
+    if(sensorData.ambientCO2[loop] == -1) continue;   // Skip "empty" slots
+    nodata = false;  // At least one data point
+    if(sensorData.ambientCO2[loop] < minValue) minValue = sensorData.ambientCO2[loop];
+    if(sensorData.ambientCO2[loop] > maxValue) maxValue = sensorData.ambientCO2[loop];
+  }
+  debugMessage(String("Max value in samples is ") + maxValue + ", min is " + minValue, 2);
+
+  // do we have data? (e.g., just booted)
+  if (nodata)
+    description = "Awaiting samples";
+  else {
+    // since we have data, pad min and max CO2 to add room and be multiples of 50 (for nicer axis labels)
+    minValue = (uint16_t(minValue)/50)*50;
+    maxValue = ((uint16_t(maxValue)/50)+1)*50;
+  }
+
+  // draw the X axis description, if provided, and set the position of the horizontal axis line
+  if (strlen(description.c_str())) {
+    display.getTextBounds(description,0,0,&x1,&y1,&text1Width,&text1Height);
+    graphLineY = initialY + yHeight - text1Height - labelSpacer;
+    display.setCursor((((initialX + xWidth)/2) - (text1Width/2)), (initialY + yHeight - text1Height));
+    display.print(description);
+  }
+
+  // calculate text width and height of longest Y axis label
+  display.getTextBounds(String(maxValue),0,0,&x1,&y1,&text1Width,&text1Height);
+  graphLineX = initialX + text1Width + labelSpacer;
+  
+  // draw top Y axis label
+  display.setCursor(initialX, initialY);
+  display.print(uint16_t(maxValue));
+  // draw bottom Y axis label
+  display.setCursor(initialX, graphLineY-text1Height); 
+  display.print(uint16_t(minValue));
+
+  // Draw vertical axis
+  display.drawFastVLine(graphLineX,initialY,(graphLineY-initialY), ILI9341_LIGHTGREY);
+  // Draw horitzonal axis
+  display.drawFastHLine(graphLineX,graphLineY,(xWidth-graphLineX),ILI9341_LIGHTGREY);
+
+  // Plot however many data points we have both with filled circles at each
+  // point and lines connecting the points.  Color the filled circles with the
+  // appropriate CO2 warning level color.
+  deltaX = ((xWidth-graphLineX) - 10) / (graphPoints-1);  // X distance between points, 10 pixel padding for Y axis
+  xp = graphLineX;
+  yp = graphLineY;
+  for(loop=0;loop<graphPoints;loop++) {
+    if(sensorData.ambientCO2[loop] == -1) continue;
+    x = graphLineX + 10 + (loop*deltaX);  // Include 10 pixel padding for Y axis
+    y = graphLineY - (((sensorData.ambientCO2[loop] - minValue)/(maxValue-minValue)) * (graphLineY-initialY));
+    debugMessage(String("Array ") + loop + " y value is " + y,2);
+    display.fillCircle(x,y,4,warningColor[co2Range(sensorData.ambientCO2[loop])]);
+    if(firstpoint) {
+      // If this is the first drawn point then don't try to draw a line
+      firstpoint = false;
+    }
+    else {
+      // Draw line from previous point (if one) to this point
+      display.drawLine(xp,yp,x,y,ILI9341_WHITE);
+    }
+    // Save x & y of this point to use as previous point for next one.
+    xp = x;
+    yp = y;
+  }
+  debugMessage("screenGraph end",1);
+}
+
+void screenCO2Graph()
 // Description
 //  Draw a graph of recent CO2 values. Time-ordered data to be plottted is stored in an array with the
 //  most recent point last.  Values of -1 are to be skipped in the plotting, allowing the line of points to
@@ -654,7 +765,7 @@ void screenGraph()
   uint16_t deltaX, x, y, xp, yp;  // graphing positions
   uint16_t graphX0, graphY0, graphX1, graphY1;  // graphing area bounding box
   String minlabel, maxlabel, xlabel;
-  float minvalue, maxvalue;
+  float minValue, maxValue;
   bool firstpoint = true, nodata = true;
 
   debugMessage("screenGraph start",1);
@@ -664,14 +775,16 @@ void screenGraph()
   display.setTextColor(ILI9341_WHITE);
 
   // Scan the retained CO2 data for max & min to scale the plot
-  minvalue = sensorCO2Max;
-  maxvalue = sensorCO2Min;
+  minValue = sensorCO2Max;
+  maxValue = sensorCO2Min;
   for(loop=0;loop<graphPoints;loop++) {
     if(sensorData.ambientCO2[loop] == -1) continue;   // Skip "empty" slots
     nodata = false;  // At least one data point
-    if(sensorData.ambientCO2[loop] < minvalue) minvalue = sensorData.ambientCO2[loop];
-    if(sensorData.ambientCO2[loop] > maxvalue) maxvalue = sensorData.ambientCO2[loop];
+    if(sensorData.ambientCO2[loop] < minValue) minValue = sensorData.ambientCO2[loop];
+    if(sensorData.ambientCO2[loop] > maxValue) maxValue = sensorData.ambientCO2[loop];
   }
+  debugMessage(String("Max value in samples is ") + maxValue + ", min is " + minValue, 2);
+
 
   // do we have data? (e.g., just booted)
   if(nodata) {
@@ -681,21 +794,21 @@ void screenGraph()
     xlabel = String("Recent CO2 values");  // Center overall graph label below the drawing area
 
     // since we have data, pad min and max CO2 to add room and be multiples of 50 (for nicer axis labels)
-    minvalue = (uint16_t(minvalue)/50)*50;
-    maxvalue = ((uint16_t(maxvalue)/50)+1)*50;
+    minValue = (uint16_t(minValue)/50)*50;
+    maxValue = ((uint16_t(maxValue)/50)+1)*50;
   }
-  debugMessage(String("Min / max: ") + minvalue + " / " + maxvalue,2);
+  debugMessage(String("Min / max: ") + minValue + " / " + maxValue,2);
 
   display.getTextBounds(xlabel.c_str(),0,0,&x1,&y1,&text1Width,&text1Height);
-  display.setCursor(((display.width()-text1Width)/2),(display.height()-(text1Height+yMargins)));
+  display.setCursor(((display.width()/2)-(text1Width/2)),(display.height()-(text1Height+yMargins)));
   display.print(xlabel);
 
   // Set drawing area bounding box value
   graphY1 = display.height() - text1Height - yMargins - 5;  // Room at the bottom for the graph label
 
   // calculate width and height of CO2 value labels
-  minlabel = String(uint16_t(minvalue));
-  maxlabel = String(uint16_t(maxvalue));
+  minlabel = String(uint16_t(minValue));
+  maxlabel = String(uint16_t(maxValue));
   display.getTextBounds(maxlabel.c_str(),0,0,&x1,&y1,&text1Width,&text1Height);
   display.getTextBounds(minlabel.c_str(),0,0,&x1,&y1,&text2Width,&text2Height);
 
@@ -725,7 +838,7 @@ void screenGraph()
   for(loop=0;loop<graphPoints;loop++) {
     if(sensorData.ambientCO2[loop] == -1) continue;
     x = graphX0 + 10 + (loop*deltaX);  // Include 10 pixel padding for Y axis
-    y = graphY1 - (((sensorData.ambientCO2[loop] - minvalue)/(maxvalue-minvalue)) * (graphY1-graphY0));
+    y = graphY1 - (((sensorData.ambientCO2[loop] - minValue)/(maxValue-minValue)) * (graphY1-graphY0));
     debugMessage(String("Array ") + loop + " y value is " + y,2);
     display.fillCircle(x,y,4,warningColor[co2Range(sensorData.ambientCO2[loop])]);
     if(firstpoint) {
@@ -742,50 +855,6 @@ void screenGraph()
   }
   debugMessage("screenGraph end",1);
 }
-
-// void screenHelperSparkLine(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight) {
-//   // TEST ONLY: load test CO2 values
-//   // testSparkLineValues(sensorSampleSize);
-
-//   uint16_t co2Min = co2Samples[0];
-//   uint16_t co2Max = co2Samples[0];
-//   // # of pixels between each samples x and y coordinates
-//   uint8_t xPixelStep, yPixelStep;
-
-//   uint16_t sparkLineX[sensorSampleSize], sparkLineY[sensorSampleSize];
-
-//   // horizontal distance (pixels) between each displayed co2 value
-//   xPixelStep = (xWidth / (sensorSampleSize - 1));
-
-//   // determine min/max of CO2 samples
-//   // could use recursive function but sensorSampleSize should always be relatively small
-//   for (uint8_t loop = 0; loop < sensorSampleSize; loop++) {
-//     if (co2Samples[loop] > co2Max) co2Max = co2Samples[loop];
-//     if (co2Samples[loop] < co2Min) co2Min = co2Samples[loop];
-//   }
-//   debugMessage(String("Max CO2 in stored sample range is ") + co2Max + ", min is " + co2Min, 2);
-
-//   // vertical distance (pixels) between each displayed co2 value
-//   yPixelStep = round(((co2Max - co2Min) / yHeight) + .5);
-
-//   debugMessage(String("xPixelStep is ") + xPixelStep + ", yPixelStep is " + yPixelStep, 2);
-
-//   // TEST ONLY : sparkline border box
-//   // display.drawRect(initialX,initialY, xWidth,yHeight, GxEPD_BLACK);
-
-//   // determine sparkline x,y values
-//   for (uint8_t loop = 0; loop < sensorSampleSize; loop++) {
-//     sparkLineX[loop] = (initialX + (loop * xPixelStep));
-//     sparkLineY[loop] = ((initialY + yHeight) - (uint8_t)((co2Samples[loop] - co2Min) / yPixelStep));
-//     // draw/extend sparkline after first value is generated
-//     if (loop != 0)
-//       display.drawLine(sparkLineX[loop - 1], sparkLineY[loop - 1], sparkLineX[loop], sparkLineY[loop], GxEPD_BLACK);
-//   }
-//   for (uint8_t loop = 0; loop < sensorSampleSize; loop++) {
-//     debugMessage(String("X,Y coordinates for CO2 sample ") + loop + " is " + sparkLineX[loop] + "," + sparkLineY[loop], 2);
-//   }
-//   debugMessage("screenHelperSparkLine() complete", 1);
-// }
 
 // Accumulate a CO2 value into the data array used by the screen graphing function above
 void retainCO2(uint16_t co2)
@@ -907,38 +976,43 @@ void screenCO2()
   // screen layout assists in pixels
   const uint8_t legendHeight = 20;
   const uint8_t legendWidth = 10;
-  const uint16_t xLegend = (display.width() - xMargins - legendWidth);
-  const uint16_t yLegend = ((display.height() / 2 ) - (legendHeight * 2));
+  const uint16_t borderWidth = 15;
+  const uint16_t borderHeight = 15;
+  const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
+  const uint16_t yLegend =  ((display.height()/4) + (2*legendHeight));
   const uint16_t circleRadius = 100;
   const uint16_t xCircle = (display.width() / 2);
   const uint16_t yCircle = (display.height() / 2);
-  const uint16_t xLabel = xCircle - 35;
-  const uint16_t yLabel = yCircle + 35;
+  const uint16_t xLabel = display.width()/2;
+  const uint16_t yLabel = yMargins + borderHeight + 30;
 
   debugMessage("screenCO2 start",1);
 
-  // clear screen
-  display.fillScreen(ILI9341_BLACK);
+  display.setFont(&FreeSans18pt7b);
+  display.setTextColor(ILI9341_WHITE);
 
-  // co2 level as color wheel
-  display.fillCircle(xCircle,yCircle,circleRadius,warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  display.fillCircle(xCircle,yCircle,circleRadius*0.8,ILI9341_BLACK);
+  // fill screen with CO2 value color
+  display.fillScreen(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+  display.fillRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),ILI9341_BLACK);
+
+  // value and label
+  display.setCursor(borderWidth + 20,yLabel);
+  display.print("CO2");
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
+  display.setCursor(xLabel, yLabel);
+  display.print(sensorData.ambientCO2[graphPoints-1]);
+
+  // // co2 level as color wheel
+  // display.fillCircle(xCircle,yCircle,circleRadius,warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+  // display.fillCircle(xCircle,yCircle,circleRadius*0.8,ILI9341_BLACK);
+
+  screenGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)),"Recent values");
+  debugMessage("screenCO2 end",1);
 
   // legend for CO2 color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
     display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
   }
-
-  // value and label inside color wheel
-  display.setFont(&FreeSans18pt7b);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
-  display.setCursor(xCircle-20,yCircle);
-  display.print(sensorData.ambientCO2[graphPoints-1]);
-  display.setTextColor(ILI9341_WHITE);
-  display.setCursor(xLabel,yLabel);
-  display.print("CO2");
-
-  debugMessage("screenCO2 end",1);
 }
 
 void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
@@ -977,50 +1051,6 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
         display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_GREEN);
   #endif
 }
-
-// void screenHelperSparkLine(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight) {
-//   // TEST ONLY: load test CO2 values
-//   // testSparkLineValues(sensorSampleSize);
-
-//   uint16_t co2Min = co2Samples[0];
-//   uint16_t co2Max = co2Samples[0];
-//   // # of pixels between each samples x and y coordinates
-//   uint8_t xPixelStep, yPixelStep;
-
-//   uint16_t sparkLineX[sensorSampleSize], sparkLineY[sensorSampleSize];
-
-//   // horizontal distance (pixels) between each displayed co2 value
-//   xPixelStep = (xWidth / (sensorSampleSize - 1));
-
-//   // determine min/max of CO2 samples
-//   // could use recursive function but sensorSampleSize should always be relatively small
-//   for (uint8_t loop = 0; loop < sensorSampleSize; loop++) {
-//     if (co2Samples[loop] > co2Max) co2Max = co2Samples[loop];
-//     if (co2Samples[loop] < co2Min) co2Min = co2Samples[loop];
-//   }
-//   debugMessage(String("Max CO2 in stored sample range is ") + co2Max + ", min is " + co2Min, 2);
-
-//   // vertical distance (pixels) between each displayed co2 value
-//   yPixelStep = round(((co2Max - co2Min) / yHeight) + .5);
-
-//   debugMessage(String("xPixelStep is ") + xPixelStep + ", yPixelStep is " + yPixelStep, 2);
-
-//   // TEST ONLY : sparkline border box
-//   // display.drawRect(initialX,initialY, xWidth,yHeight, GxEPD_BLACK);
-
-//   // determine sparkline x,y values
-//   for (uint8_t loop = 0; loop < sensorSampleSize; loop++) {
-//     sparkLineX[loop] = (initialX + (loop * xPixelStep));
-//     sparkLineY[loop] = ((initialY + yHeight) - (uint8_t)((co2Samples[loop] - co2Min) / yPixelStep));
-//     // draw/extend sparkline after first value is generated
-//     if (loop != 0)
-//       display.drawLine(sparkLineX[loop - 1], sparkLineY[loop - 1], sparkLineX[loop], sparkLineY[loop], GxEPD_BLACK);
-//   }
-//   for (uint8_t loop = 0; loop < sensorSampleSize; loop++) {
-//     debugMessage(String("X,Y coordinates for CO2 sample ") + loop + " is " + sparkLineX[loop] + "," + sparkLineY[loop], 2);
-//   }
-//   debugMessage("screenHelperSparkLine() complete", 1);
-// }
 
 // Hardware simulation routines
 #ifdef HARDWARE_SIMULATE
@@ -1302,7 +1332,6 @@ void processSamples(uint8_t numSamples)
 {
   // do we have samples to process?
   if (numSamples) {
-    // avgCO2 used by screenGraph and endPoint reporting
     uint16_t avgCO2 = totalCO2.getAverage();
     // can we report to network endPoints?
     if (WiFi.status() == WL_CONNECTED) {
@@ -1709,12 +1738,8 @@ void checkResetLongPress() {
   }
 }
 
-/**************************************************************************************
- *                 SENSOR SPECIFIC ROUTINES AND CONVENIENCE FUNCTIONS                 *
- *************************************************************************************/
-
-// Generalized entry point for sensor initialization
 bool sensorInit()
+// Generalized entry point for sensor initialization
 {
   // Conditionally compiled based on the sensor configuration as defined in config.h
   #ifdef SENSOR_SEN66
@@ -1739,8 +1764,8 @@ bool sensorInit()
   return false;
 }
 
-// Generalized entry point for reading sensor values
 bool sensorRead()
+// Generalized entry point for reading sensor values
 {
   #ifdef SENSOR_SEN66
     return(sensorSEN6xRead());
