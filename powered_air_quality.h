@@ -12,9 +12,8 @@
     float pm1;                        // PM1.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
     float pm10;                       // PM10.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
     float pm4;                        // PM4.0 [µg/m³], range 0 to 1000, NAN if unknown
-    float vocIndex;                   // Sensiron VOC Index, range 0 to 500 (SEN54, SEN66)
-    // float vocIndex[graphPoints];      // Sensiron VOC Index, range 0 to 500 (SEN54, SEN66)
-    float noxIndex;                   // Sensiron VOC Index, range 0 to 500, NAN for first ~11 seconds (SEN5,SEN66)
+    float vocIndex[graphPoints];      // Sensiron VOC Index, range 0 to 500 (SEN54, SEN66)
+    float noxIndex;                   // Sensiron NOx Index, range 0 to 500, NAN for first ~11 seconds with SEN66, always NAN for SEN54
   };
   extern envData sensorData;
 

@@ -198,7 +198,7 @@ void loop() {
       totalTemperatureF.include(sensorData.ambientTemperatureF);
       totalHumidity.include(sensorData.ambientHumidity);
       totalCO2.include(sensorData.ambientCO2[graphPoints-1]);
-      totalVOCIndex.include(sensorData.vocIndex);
+      totalVOCIndex.include(sensorData.vocIndex[graphPoints-1]);
       totalPM25.include(sensorData.pm25);
       totalNOxIndex.include(sensorData.noxIndex);
 
@@ -501,12 +501,12 @@ void screenAggregateData()
   const uint16_t xMaxColumn   = 255;
   const uint16_t yHeaderRow   =  10;
   const uint16_t yPM25Row     =  40;
-  const uint16_t yCO2Row      =  100;
+  const uint16_t yAQIRow      =  70;
+  const uint16_t yCO2Row      = 100;
   const uint16_t yVOCRow      = 130;
   const uint16_t yNOXRow      = 170;
   const uint16_t yTempFRow    = 200;
   const uint16_t yHumidityRow = 220;
-  const uint16_t yAQIRow      = 70;
 
   debugMessage("screenAggregateData() start",2);
 
@@ -679,6 +679,18 @@ void retainCO2(uint16_t co2)
   sensorData.ambientCO2[graphPoints-1] = co2;
 }
 
+void retainVOC(float voc)
+// Description: add new element, FIFO, to VOC array
+// Parameters:  new VOC index value from sensor
+// Returns: NA (void)
+// Improvement: not merged with retainCO2 because reads are in independent functions
+{
+  for(uint8_t loop=1;loop<graphPoints;loop++) {
+    sensorData.vocIndex[loop-1] = sensorData.vocIndex[loop];
+  }
+  sensorData.vocIndex[graphPoints-1] = voc;
+}
+
 void screenMain()
 // Description: Represent CO2, VOC, PM25, and either T/H or NOx as touchscreen input quadrants color coded by current quality
 // Parameters:  NA
@@ -703,7 +715,7 @@ void screenMain()
   display.setCursor((display.width()*5/8),(display.height()/4));
   display.print("PM25");
   // VOC Index
-  display.fillRoundRect(0, ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[vocRange(sensorData.vocIndex)]);
+  display.fillRoundRect(0, ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
   display.setCursor((display.width()/8),((display.height()*3)/4));
   display.print("VOC");
   #ifdef SENSOR_SEN66
@@ -780,7 +792,7 @@ void screenVOC()
   display.setFont(&FreeSans18pt7b);
 
   // VOC color circle
-  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[vocRange(sensorData.vocIndex)]);
+  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
   display.fillCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,ILI9341_BLACK);
 
   // VOC color legend
@@ -789,9 +801,9 @@ void screenVOC()
   }
 
   // VOC value and label (displayed inside circle)
-  display.setTextColor(warningColor[vocRange(sensorData.vocIndex)]);  // Use highlight color look-up table
+  display.setTextColor(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);  // Use highlight color look-up table
   display.setCursor(xVOCCircle-20,yVOCCircle);
-  display.print(int(sensorData.vocIndex+.5));
+  display.print(int(sensorData.vocIndex[graphPoints-1]+.5));
   display.setTextColor(ILI9341_WHITE);
   display.setCursor(xVOCLabel,yVOCLabel);
   display.print("VOC");
@@ -834,72 +846,13 @@ void screenNOX()
   // VOC value and label (displayed inside circle)
   display.setTextColor(warningColor[vocRange(sensorData.noxIndex)]);  // Use highlight color look-up table
   display.setCursor(xVOCCircle-20,yVOCCircle);
-  display.print(int(sensorData.vocIndex+.5));
+  display.print(int(sensorData.noxIndex+.5));
   display.setTextColor(ILI9341_WHITE);
   display.setCursor(xVOCLabel,yVOCLabel);
   display.print("NOx");
 
   debugMessage("screenNOX() end",1);
 }
-
-// void screenComponent(const float *values, String description)
-// // Description: Display CO2 information (ppm, color grade, graph)
-// // Parameters:  NA
-// // Output: NA (void)
-// // Improvement: ?
-// {
-//   // screen layout assists in pixels
-//   const uint8_t legendHeight = 20;
-//   const uint8_t legendWidth = 10;
-//   const uint16_t borderWidth = 15;
-//   const uint16_t borderHeight = 15;
-//   const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
-//   const uint16_t yLegend =  ((display.height()/4) + (2*legendHeight));
-//   const uint16_t circleRadius = 100;
-//   const uint16_t xCircle = (display.width() / 2);
-//   const uint16_t yCircle = (display.height() / 2);
-//   const uint16_t xLabel = display.width()/2;
-//   const uint16_t yLabel = yMargins + borderHeight + 30;
-
-//   debugMessage("screenComponent() start",1);
-
-//   display.setFont(&FreeSans18pt7b);
-
-//   switch(screenCurrent) {
-//     case sVOC:
-//       uint16_t componentColor = warningColor[vocRange(sensorData.ambientCO2[graphPoints-1])];
-//       break;
-//     case sCO2:
-//       uint16_t componentColor = warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])];
-//       break;
-//     case sPM25:
-//       bang
-//       break;
-//     case sNOX:
-//       bang
-//       break;
-//   }
-
-//   // fill screen with color appropriate to component value
-//   display.fillScreen(componentColor);
-//   display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,ILI9341_BLACK);
-
-//   // value and label
-//   display.setTextColor(componentColor);  // Use highlight color look-up table
-//   display.setCursor(xLabel, yLabel);
-//   display.print(sensorData.ambientCO2[graphPoints-1]);
-//   display.setTextColor(ILI9341_WHITE);
-//   display.setCursor(borderWidth + 20,yLabel);
-//   display.print("CO2");
-
-//   screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)),"Recent values");
-//   debugMessage("screenCO2 end",1);
-
-//   // legend for CO2 color wheel
-//   for(uint8_t loop = 0; loop < 4; loop++){
-//     display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
-//   }
-// }
 
 void screenCO2()
 // Description: Display CO2 information (ppm, color grade, graph)
@@ -1124,9 +1077,8 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
     sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
     sensorData.pm4 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.vocIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
     // IMPROVEMENT: not supported on SEN54, so return NAN
-    //sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
+    //sensorData.vocIndex = NAN;
 
     debugMessage(String("Simulated SEN5X PM2.5: ") + sensorData.pm25 + "ppm, VOC Index: " + sensorData.vocIndex + ", NOx Index: " + sensorData.noxIndex, 1);
   }
@@ -1876,14 +1828,14 @@ bool sensorRead()
     #endif
       static char errorMessage[64];
       static int16_t error;
-      float ambientTemperatureC;
+      float ambientTemperatureC, voc;
       uint16_t co2 = 0;
 
       // TODO: Add support for checking isDataReady flag on SEN66
 
       error = paqSensor.readMeasuredValues(
         sensorData.pm1, sensorData.pm25, sensorData.pm4,
-        sensorData.pm10, sensorData.ambientHumidity, ambientTemperatureC , sensorData.vocIndex,
+        sensorData.pm10, sensorData.ambientHumidity, ambientTemperatureC , voc,
         sensorData.noxIndex, co2);
 
     if (error != 0) {
@@ -1896,9 +1848,10 @@ bool sensorRead()
     sensorData.ambientTemperatureF = (1.8*ambientTemperatureC) + 32.0;
 
     retainCO2(co2);
+    retainVOC(voc);
     
     debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + ", CO2: " + sensorData.ambientCO2[graphPoints-1] +
-      "ppm, VOC index: " + sensorData.vocIndex + ", NOx index: " + sensorData.noxIndex + ", temp:" + 
+      "ppm, VOC index: " + sensorData.vocIndex[graphPoints-1] + ", NOx index: " + sensorData.noxIndex + ", temp:" + 
       sensorData.ambientTemperatureF + "F, humidity:" + sensorData.ambientHumidity + "%",1);
     return true;
   }
@@ -1907,24 +1860,25 @@ bool sensorRead()
     // Simulates sensor reading from SEN66 sensor
     void sensorSEN6xSimulate()
     {
-
       uint16_t simulatedCO2 = 0;
+      float simulatedVOCIndex = 0.00f;
 
       sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
       sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
       sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
       sensorData.pm4 = random(sensorPMMin, sensorPMMax) / 100.0;
-      sensorData.vocIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
+      simulatedVOCIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
       sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
       sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
       sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
       simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
 
       retainCO2(simulatedCO2);
+      retainVOC(simulatedVOCIndex);
 
-      debugMessage(String("SIMULATED SEN66 PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex +
-        sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex + ",NOx index: " + sensorData.noxIndex,1);
-
+      debugMessage(String("Simulated SEN6x: PM2.5: ") + sensorData.pm25 + ", CO2: " + sensorData.ambientCO2[graphPoints-1] +
+      "ppm, VOC index: " + sensorData.vocIndex[graphPoints-1] + ", NOx index: " + sensorData.noxIndex + ", temp:" + 
+      sensorData.ambientTemperatureF + "F, humidity:" + sensorData.ambientHumidity + "%",1);
     }
   #endif // HARDWARE_SIMULATE
 #endif // SENSOR_SEN66
@@ -1999,21 +1953,23 @@ bool sensorRead()
       char errorMessage[256];
       // we'll use the SCD4X values for these
       // IMPROVEMENT: Compare to SCD4X values?
-      float sen5xTempF;
-      float sen5xHumidity;
+      float sen5xTempF, sen5xHumidity, sen5xvoc;
+
 
       debugMessage("SEN5X read initiated",1);
 
       error = pmSensor.readMeasuredValues(
         sensorData.pm1, sensorData.pm25, sensorData.pm4,
-        sensorData.pm10, sen5xHumidity, sen5xTempF, sensorData.vocIndex,
+        sensorData.pm10, sen5xHumidity, sen5xTempF, sen5xvoc,
         sensorData.noxIndex);
       if (error) {
         errorToString(error, errorMessage, 256);
         debugMessage(String(errorMessage) + " error during SEN5x read",1);
         return false;
       }
-      debugMessage(String("SEN5X PM2.5: ") + sensorData.pm25 + "ppm, VOC Index: " + sensorData.vocIndex + ", NOx Index: " + sensorData.noxIndex, 1);
+
+      retainVOC(sen5xvoc);
+      debugMessage(String("SEN5X PM2.5: ") + sensorData.pm25 + "ppm, VOC Index: " + sensorData.vocIndex[graphPoints-1] + ", NOx Index: " + sensorData.noxIndex, 1);
       return true;
     #endif
   }
@@ -2174,7 +2130,7 @@ uint8_t vocRange(float vocIndex)
 }
 
 uint8_t noxRange(float noxIndex)
-// converts vocIndex value to index value for labeling and color
+// converts noxIndex value to index value for labeling and color
 {
   uint8_t noxRange =
   (noxIndex <= noxFair) ? 0 :
