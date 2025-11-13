@@ -99,7 +99,7 @@ OpenWeatherMapCurrentData owmCurrentData;
 OpenWeatherMapAirQuality owmAirQuality; 
 
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.
-Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25, totalNOX;
+Measure totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
 
 uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
 uint32_t timeResetPressStartMS = 0; // IMPROVEMENT: Move this as static to CheckResetLongPress()
@@ -171,10 +171,10 @@ void setup() {
   #endif
 
   #ifdef SENSOR_SEN66
-    delay(12000); // 5-6 seconds for valid CO2 and 10-11 for valid NOx index value
+    delay(12000); // ~6 seconds for valid CO2 and ~11 seconds for valid NOx index values
   #endif
   #ifdef SENSOR_SEN54SCD40
-    delay(7000); // 5-6 seconds for valid CO2
+    delay(7000); // ~6 seconds for valid CO2 values
   #endif
 }
 
@@ -198,17 +198,17 @@ void loop() {
       totalTemperatureF.include(sensorData.ambientTemperatureF);
       totalHumidity.include(sensorData.ambientHumidity);
       totalCO2.include(sensorData.ambientCO2[graphPoints-1]);
-      totalVOC.include(sensorData.vocIndex);
+      totalVOCIndex.include(sensorData.vocIndex);
       totalPM25.include(sensorData.pm25);
-      totalNOX.include(sensorData.noxIndex);  // TODO: Skip invalid values immediately after initialization
+      totalNOxIndex.include(sensorData.noxIndex);
 
       debugMessage(String("Sample #") + numSamples + ", running totals: ",2);
       debugMessage(String("TemperatureF total: ") + totalTemperatureF.getTotal(),2);
       debugMessage(String("Humidity total: ") + totalHumidity.getTotal(),2);
       debugMessage(String("CO2 total: ") + totalCO2.getTotal(),2);    
-      debugMessage(String("VOC total: ") + totalVOC.getTotal(),2);
+      debugMessage(String("VOC index total: ") + totalVOCIndex.getTotal(),2);
       debugMessage(String("PM25 total: ") + totalPM25.getTotal(),2);
-      debugMessage(String("NOX total: ") + totalNOX.getTotal(),2);
+      debugMessage(String("NOx index total: ") + totalNOxIndex.getTotal(),2);
 
       screenUpdate(screenCurrent);
     }
@@ -250,13 +250,10 @@ void loop() {
               screenCurrent = sPM25;
             }
             else
-            // lower right quandrant
+            // lower right quandrant, either temp/humidity (SCD40/SEN55) or NOx Index (SEN66)
             screenCurrent = sNOX;
         break;
       }
-      // case sCO2:
-      //   screenCurrent = ;
-      //   break;
       default:
         // switch back to main from component screen
         screenCurrent = sMain;
@@ -325,20 +322,24 @@ void screenUpdate(uint8_t screenCurrent)
     case sSaver:
       screenSaver();
       break;
+    case sMain:
+      screenMain();
+      break;
     case sVOC:
       screenVOC();
       break;
     case sCO2:
       screenCO2();
       break;
-    case sMain:
-      screenMain();
-      break;
     case sPM25:
-      screenHelperGraph(0,0,display.width(),display.height(),"Recent CO2 values");
+      screenAggregateData();
       break;
     case sNOX:
-      screenCO2Graph();
+      #ifdef SENSOR_SEN66  
+        screenNOX();
+      #else
+        screenCurrentInfo();
+      #endif
       break;
     default:
       // if on a component screen, go back to main
@@ -500,12 +501,14 @@ void screenAggregateData()
   const uint16_t xMaxColumn   = 255;
   const uint16_t yHeaderRow   =  10;
   const uint16_t yPM25Row     =  40;
-  const uint16_t yCO2Row      =  70;
-  const uint16_t yVOCRow      = 100;
-  const uint16_t yNOXRow      = 130;
-  const uint16_t yTempFRow    = 160;
-  const uint16_t yHumidityRow = 190;
-  const uint16_t yAQIRow      = 220;
+  const uint16_t yCO2Row      =  100;
+  const uint16_t yVOCRow      = 130;
+  const uint16_t yNOXRow      = 170;
+  const uint16_t yTempFRow    = 200;
+  const uint16_t yHumidityRow = 220;
+  const uint16_t yAQIRow      = 70;
+
+  debugMessage("screenAggregateData() start",2);
 
   // clear screen and initialize properties
   display.fillScreen(ILI9341_BLACK);
@@ -513,7 +516,7 @@ void screenAggregateData()
   display.setTextSize(2);
   display.setTextColor(ILI9341_WHITE);
 
-  // Display column headings
+  // Display column heaings
   display.setTextColor(ILI9341_BLUE);
   display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
   display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,ILI9341_BLUE);
@@ -524,53 +527,62 @@ void screenAggregateData()
   display.setCursor(0,yHeaderRow);
   display.print(getDeviceId("AQ"));
 
-  // Display column headers for our data table
+  // Display column headers
   display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
   display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
 
   // Display row headings
   display.setCursor(xValueColumn, yPM25Row); display.print("PM25");
+  display.setCursor(xValueColumn, yAQIRow); display.print("AQI");
   display.setCursor(xValueColumn, yCO2Row); display.print("CO2");
   display.setCursor(xValueColumn, yVOCRow); display.print("VOC");
-  display.setCursor(xValueColumn, yNOXRow); display.print("NOX");
+  display.setCursor(xValueColumn, yNOXRow); display.print("NOx");
   display.setCursor(xValueColumn, yTempFRow); display.print(" F");
   display.setCursor(xValueColumn, yHumidityRow); display.print("%RH");
-  display.setCursor(xValueColumn, yAQIRow); display.print("AQI");
 
-  // Fill in the data row by row
+  // PM2.5
   display.setCursor(xMinColumn,yPM25Row); display.print(totalPM25.getMin(),1);
   display.setCursor(xAvgColumn,yPM25Row); display.print(totalPM25.getAverage(),1);
   display.setCursor(xMaxColumn,yPM25Row); display.print(totalPM25.getMax(),1);
 
-  // Color code the CO2 row
-  display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
-  display.setCursor(xMinColumn,yCO2Row); display.print(totalCO2.getMin(),0);
-  display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);  // Use highlight color look-up table
-  display.setCursor(xAvgColumn,yCO2Row); display.print(totalCO2.getAverage(),0);
-  display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);  // Use highlight color look-up table
-  display.setCursor(xMaxColumn,yCO2Row); display.print(totalCO2.getMax(),0);
-  display.setTextColor(ILI9341_WHITE);  // Restore text color
-
-  display.setCursor(xMinColumn,yVOCRow); display.print(totalVOC.getMin(),0);
-  display.setCursor(xAvgColumn,yVOCRow); display.print(totalVOC.getAverage(),0);
-  display.setCursor(xMaxColumn,yVOCRow); display.print(totalVOC.getMax(),0);
-
-  display.setCursor(xMinColumn,yNOXRow); display.print(totalNOX.getMin(),1);
-  display.setCursor(xAvgColumn,yNOXRow); display.print(totalNOX.getAverage(),1);
-  display.setCursor(xMaxColumn,yNOXRow); display.print(totalNOX.getMax(),1);
-
-  display.setCursor(xMinColumn,yTempFRow); display.print(totalTemperatureF.getMin(),1);
-  display.setCursor(xAvgColumn,yTempFRow); display.print(totalTemperatureF.getAverage(),1);
-  display.setCursor(xMaxColumn,yTempFRow); display.print(totalTemperatureF.getMax(),1);
-
-  display.setCursor(xMinColumn,yHumidityRow); display.print(totalHumidity.getMin(),0);
-  display.setCursor(xAvgColumn,yHumidityRow); display.print(totalHumidity.getAverage(),0);
-  display.setCursor(xMaxColumn,yHumidityRow); display.print(totalHumidity.getMax(),0);
-
+  // AQI
   display.setCursor(xMinColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMin()),1);
   display.setCursor(xAvgColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getAverage()),1);
   display.setCursor(xMaxColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMax()),1);
 
+  // CO2 color coded
+  display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
+  display.setCursor(xMinColumn,yCO2Row); display.print(totalCO2.getMin(),0);
+  display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);
+  display.setCursor(xAvgColumn,yCO2Row); display.print(totalCO2.getAverage(),0);
+  display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);
+  display.setCursor(xMaxColumn,yCO2Row); display.print(totalCO2.getMax(),0);
+  display.setTextColor(ILI9341_WHITE);  // Restore text color
+
+  //VOC index
+  display.setCursor(xMinColumn,yVOCRow); display.print(totalVOCIndex.getMin(),0);
+  display.setCursor(xAvgColumn,yVOCRow); display.print(totalVOCIndex.getAverage(),0);
+  display.setCursor(xMaxColumn,yVOCRow); display.print(totalVOCIndex.getMax(),0);
+
+  // NOx index
+  display.setCursor(xMinColumn,yNOXRow); display.print(totalNOxIndex.getMin(),1);
+  display.setCursor(xAvgColumn,yNOXRow); display.print(totalNOxIndex.getAverage(),1);
+  display.setCursor(xMaxColumn,yNOXRow); display.print(totalNOxIndex.getMax(),1);
+
+  // temperature
+  display.setCursor(xMinColumn,yTempFRow); display.print(totalTemperatureF.getMin(),1);
+  display.setCursor(xAvgColumn,yTempFRow); display.print(totalTemperatureF.getAverage(),1);
+  display.setCursor(xMaxColumn,yTempFRow); display.print(totalTemperatureF.getMax(),1);
+
+  // humidity
+  display.setCursor(xMinColumn,yHumidityRow); display.print(totalHumidity.getMin(),0);
+  display.setCursor(xAvgColumn,yHumidityRow); display.print(totalHumidity.getAverage(),0);
+  display.setCursor(xMaxColumn,yHumidityRow); display.print(totalHumidity.getMax(),0);
+
+  // return to default text size
+  display.setTextSize(1);
+
+  debugMessage("screenAggregateData() end",2);
 }
 
 bool screenAlert(String messageText)
@@ -653,6 +665,326 @@ bool screenAlert(String messageText)
   }
   debugMessage("screenAlert end",1);
   return success;
+}
+
+void retainCO2(uint16_t co2)
+// Description: add new element, FIFO, to CO2 array
+// Parameters:  new CO2 value from sensor
+// Returns: NA (void)
+// Improvement: ?
+{
+  for(uint8_t loop=1;loop<graphPoints;loop++) {
+    sensorData.ambientCO2[loop-1] = sensorData.ambientCO2[loop];
+  }
+  sensorData.ambientCO2[graphPoints-1] = co2;
+}
+
+void screenMain()
+// Description: Represent CO2, VOC, PM25, and either T/H or NOx as touchscreen input quadrants color coded by current quality
+// Parameters:  NA
+// Returns: NA (void)
+// Improvement: ?
+{
+  // screen assists
+  const uint8_t halfBorderWidth = 2;
+  const uint8_t cornerRoundRadius = 4;
+
+  debugMessage("screenMain start",1);
+
+  display.setFont(&FreeSans18pt7b);
+  display.setTextColor(ILI9341_BLACK);
+  display.fillScreen(ILI9341_BLACK);
+  // CO2
+  display.fillRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+  display.setCursor((display.width()/8),(display.height()/4));
+  display.print("CO2");
+  // PM2.5
+  display.fillRoundRect(((display.width()/2)+halfBorderWidth), 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[aqiRange(sensorData.pm25)]);
+  display.setCursor((display.width()*5/8),(display.height()/4));
+  display.print("PM25");
+  // VOC Index
+  display.fillRoundRect(0, ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[vocRange(sensorData.vocIndex)]);
+  display.setCursor((display.width()/8),((display.height()*3)/4));
+  display.print("VOC");
+  #ifdef SENSOR_SEN66
+    // NOx index
+    display.fillRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[aqiRange(sensorData.pm25)]);
+    display.setCursor((display.width()*5/8),(display.height()/4));
+    display.print("NOx");
+  #else
+    // Temperature
+    if ((sensorData.ambientTemperatureF<65) || (sensorData.ambientTemperatureF>85))
+      //display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),display.height(),ILI9341_RED);
+      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_RED);
+    else
+      // display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
+      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
+    display.setCursor(((display.width()*5)/8),((display.height()*3)/4));
+    display.setFont(&meteocons16pt7b);
+    display.print("+");
+    // Humdity
+    if ((sensorData.ambientHumidity<40) || (sensorData.ambientHumidity>60))
+      // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_RED);
+      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_RED);
+    else
+      // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
+      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
+    display.drawBitmap(((display.width()*7)/8),((display.height()*5)/8), bitmapHumidityIconSmall, 20, 28, ILI9341_BLACK);
+  #endif
+
+  debugMessage("screenMain end",1);
+}
+
+void screenSaver()
+// Description: Display current CO2 reading at a random location (e.g. "screen saver")
+// Parameters:  NA
+// Returns: NA (void)
+// Improvement: ?
+{
+  debugMessage("screenSaver() start",1);
+
+  display.fillScreen(ILI9341_BLACK);
+  display.setFont(&FreeSans24pt7b);
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color LUT
+
+  // Pick a random location that'll show up
+  int16_t x = random(xMargins,display.width()-xMargins-100);  // 90 pixels leaves room for 4 digit CO2 value
+  int16_t y = random(44,display.height()-yMargins); // 35 pixels leaves vertical room for text display
+  display.setCursor(x,y);
+  display.print(sensorData.ambientCO2[graphPoints-1]);
+
+  debugMessage("screenSaver() end",1);
+}
+
+void screenVOC()
+// Description: Display VOC index information (ppm, color grade, graph)
+// Parameters:  NA
+// Returns: NA (void)
+// Improvement: ?
+{
+  // screen layout assists in pixels
+  const uint8_t legendHeight = 20;
+  const uint8_t legendWidth = 10;
+  const uint16_t xLegend = (display.width() - xMargins - legendWidth);
+  const uint16_t yLegend = ((display.height() / 2 ) - (legendHeight * 2));
+  const uint16_t circleRadius = 100;
+  const uint16_t xVOCCircle = (display.width() / 2);
+  const uint16_t yVOCCircle = (display.height() / 2);
+  const uint16_t xVOCLabel = xVOCCircle - 35;
+  const uint16_t yVOCLabel = yVOCCircle + 35;
+
+  debugMessage("screenVOC start",1);
+
+  // clear screen
+  display.fillScreen(ILI9341_BLACK);
+  display.setFont(&FreeSans18pt7b);
+
+  // VOC color circle
+  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[vocRange(sensorData.vocIndex)]);
+  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,ILI9341_BLACK);
+
+  // VOC color legend
+  for(uint8_t loop = 0; loop < 4; loop++){
+    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
+  }
+
+  // VOC value and label (displayed inside circle)
+  display.setTextColor(warningColor[vocRange(sensorData.vocIndex)]);  // Use highlight color look-up table
+  display.setCursor(xVOCCircle-20,yVOCCircle);
+  display.print(int(sensorData.vocIndex+.5));
+  display.setTextColor(ILI9341_WHITE);
+  display.setCursor(xVOCLabel,yVOCLabel);
+  display.print("VOC");
+
+  debugMessage("screenVOC end",1);
+}
+
+void screenNOX()
+// Description: Display NOx index information (ppm, color grade, graph)
+// Parameters:  NA
+// Returns: NA (void)
+// Improvement: ?
+{
+  // screen layout assists in pixels
+  const uint8_t legendHeight = 20;
+  const uint8_t legendWidth = 10;
+  const uint16_t xLegend = (display.width() - xMargins - legendWidth);
+  const uint16_t yLegend = ((display.height() / 2 ) - (legendHeight * 2));
+  const uint16_t circleRadius = 100;
+  const uint16_t xVOCCircle = (display.width() / 2);
+  const uint16_t yVOCCircle = (display.height() / 2);
+  const uint16_t xVOCLabel = xVOCCircle - 35;
+  const uint16_t yVOCLabel = yVOCCircle + 35;
+
+  debugMessage("screenNOX() start",1);
+
+  // clear screen
+  display.fillScreen(ILI9341_BLACK);
+  display.setFont(&FreeSans18pt7b);
+
+  // VOC color circle
+  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[noxRange(sensorData.noxIndex)]);
+  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,ILI9341_BLACK);
+
+  // VOC color legend
+  for(uint8_t loop = 0; loop < 4; loop++){
+    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
+  }
+
+  // VOC value and label (displayed inside circle)
+  display.setTextColor(warningColor[vocRange(sensorData.noxIndex)]);  // Use highlight color look-up table
+  display.setCursor(xVOCCircle-20,yVOCCircle);
+  display.print(int(sensorData.vocIndex+.5));
+  display.setTextColor(ILI9341_WHITE);
+  display.setCursor(xVOCLabel,yVOCLabel);
+  display.print("NOx");
+
+  debugMessage("screenNOX() end",1);
+}
+
+// void screenComponent(const float *values, String description)
+// // Description: Display CO2 information (ppm, color grade, graph)
+// // Parameters:  NA
+// // Output: NA (void)
+// // Improvement: ?
+// {
+//   // screen layout assists in pixels
+//   const uint8_t legendHeight = 20;
+//   const uint8_t legendWidth = 10;
+//   const uint16_t borderWidth = 15;
+//   const uint16_t borderHeight = 15;
+//   const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
+//   const uint16_t yLegend =  ((display.height()/4) + (2*legendHeight));
+//   const uint16_t circleRadius = 100;
+//   const uint16_t xCircle = (display.width() / 2);
+//   const uint16_t yCircle = (display.height() / 2);
+//   const uint16_t xLabel = display.width()/2;
+//   const uint16_t yLabel = yMargins + borderHeight + 30;
+
+//   debugMessage("screenComponent() start",1);
+
+//   display.setFont(&FreeSans18pt7b);
+
+//   switch(screenCurrent) {
+//     case sVOC:
+//       uint16_t componentColor = warningColor[vocRange(sensorData.ambientCO2[graphPoints-1])];
+//       break;
+//     case sCO2:
+//       uint16_t componentColor = warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])];
+//       break;
+//     case sPM25:
+//       bang
+//       break;
+//     case sNOX:
+//       bang
+//       break;
+//   }
+
+//   // fill screen with color appropriate to component value
+//   display.fillScreen(componentColor);
+//   display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,ILI9341_BLACK);
+
+//   // value and label
+//   display.setTextColor(componentColor);  // Use highlight color look-up table
+//   display.setCursor(xLabel, yLabel);
+//   display.print(sensorData.ambientCO2[graphPoints-1]);
+//   display.setTextColor(ILI9341_WHITE);
+//   display.setCursor(borderWidth + 20,yLabel);
+//   display.print("CO2");
+
+//   screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)),"Recent values");
+//   debugMessage("screenCO2 end",1);
+
+//   // legend for CO2 color wheel
+//   for(uint8_t loop = 0; loop < 4; loop++){
+//     display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
+//   }
+// }
+
+void screenCO2()
+// Description: Display CO2 information (ppm, color grade, graph)
+// Parameters:  NA
+// Returns: NA (void)
+// Improvement: ?
+{
+  // screen layout assists in pixels
+  const uint8_t legendHeight = 20;
+  const uint8_t legendWidth = 10;
+  const uint16_t borderWidth = 15;
+  const uint16_t borderHeight = 15;
+  const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
+  const uint16_t yLegend =  ((display.height()/4) + (2*legendHeight));
+  const uint16_t circleRadius = 100;
+  const uint16_t xCircle = (display.width() / 2);
+  const uint16_t yCircle = (display.height() / 2);
+  const uint16_t xLabel = display.width()/2;
+  const uint16_t yLabel = yMargins + borderHeight + 30;
+
+  debugMessage("screenCO2() start",1);
+
+  display.setFont(&FreeSans18pt7b);
+  display.setTextColor(ILI9341_WHITE);
+
+  // fill screen with CO2 value color
+  display.fillScreen(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+  display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,ILI9341_BLACK);
+
+  // value and label
+  display.setCursor(borderWidth + 20,yLabel);
+  display.print("CO2");
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
+  display.setCursor(xLabel, yLabel);
+  display.print(sensorData.ambientCO2[graphPoints-1]);
+
+  // // co2 level as color wheel
+  // display.fillCircle(xCircle,yCircle,circleRadius,warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+  // display.fillCircle(xCircle,yCircle,circleRadius*0.8,ILI9341_BLACK);
+
+  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)),"Recent values");
+
+  // legend for CO2 color wheel
+  for(uint8_t loop = 0; loop < 4; loop++){
+    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
+  }
+
+  debugMessage("screenCO2() end",1);
+}
+
+void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
+// helper function for screenXXX() routines that draws WiFi signal strength
+{
+  if (hardwareData.rssi != 0) {
+    // Convert RSSI values to a 5 bar visual indicator
+    // >90 means no signal
+    uint8_t barCount = constrain((6 - ((hardwareData.rssi / 10) - 3)), 0, 5);
+    if (barCount > 0) {
+      // <50 rssi value = 5 bars, each +10 rssi value range = one less bar
+      // draw bars to represent WiFi strength
+      for (uint8_t loop = 1; loop <= barCount; loop++) {
+        display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, ILI9341_WHITE);
+      }
+      debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
+    } else {
+      // you could do a visual representation of no WiFi strength here
+      debugMessage("RSSI too low, not displayed on screen", 1);
+    }
+  }
+}
+
+void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
+// Description: helper function for screenXXX() routines that displays an icon relaying success of network endpoint writes
+// Parameters: initial x and y coordinate to draw from
+// Output : NA
+// Improvement : NA
+// 
+{
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+    if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (reportIntervalMS * reportFailureThreshold)))
+        // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
+        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_RED);
+      else
+        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_GREEN);
+  #endif
 }
 
 void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, String description)
@@ -751,202 +1083,6 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   debugMessage("screenHelperGraph() end",1);
 }
 
-// Accumulate a CO2 value into the data array used by the screen graphing function above
-void retainCO2(uint16_t co2)
-{
-  for(uint8_t loop=1;loop<graphPoints;loop++) {
-    sensorData.ambientCO2[loop-1] = sensorData.ambientCO2[loop];
-  }
-  sensorData.ambientCO2[graphPoints-1] = co2;
-}
-
-void screenMain()
-// Represent CO2, VOC, PM25, temperature, and humidity values as a single color objects
-{
-  // screen assists
-  const uint8_t halfBorderWidth = 2;
-  const uint8_t cornerRoundRadius = 4;
-
-  debugMessage("screenMain start",1);
-
-  display.setFont(&FreeSans18pt7b);
-  display.setTextColor(ILI9341_BLACK);
-  display.fillScreen(ILI9341_BLACK);
-  // CO2
-  display.fillRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  display.setCursor((display.width()/8),(display.height()/4));
-  display.print("CO2");
-  // PM25
-  display.fillRoundRect(((display.width()/2)+halfBorderWidth), 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[aqiRange(sensorData.pm25)]);
-  display.setCursor((display.width()*5/8),(display.height()/4));
-  display.print("PM25");
-  // VOC
-  display.fillRoundRect(0, ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[vocRange(sensorData.vocIndex)]);
-  display.setCursor((display.width()/8),((display.height()*3)/4));
-  display.print("VOC");
-  // Temperature
-  if ((sensorData.ambientTemperatureF<65) || (sensorData.ambientTemperatureF>85))
-    //display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),display.height(),ILI9341_RED);
-    display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_RED);
-  else
-    // display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
-    display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
-  display.setCursor(((display.width()*5)/8),((display.height()*3)/4));
-  display.setFont(&meteocons16pt7b);
-  display.print("+");
-  // Humdity
-  if ((sensorData.ambientHumidity<40) || (sensorData.ambientHumidity>60))
-    // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_RED);
-    display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_RED);
-  else
-    // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
-    display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
-  display.drawBitmap(((display.width()*7)/8),((display.height()*5)/8), bitmapHumidityIconSmall, 20, 28, ILI9341_BLACK);
-
-  debugMessage("screenMain end",1);
-}
-
-void screenSaver()
-// Display current CO2 reading at a random location (e.g. "screen saver")
-{
-  debugMessage("screenSaver start",1);
-  display.fillScreen(ILI9341_BLACK);
-  display.setTextSize(1);  // Needed so custom fonts scale properly
-  display.setFont(&FreeSans24pt7b);
-
-  // Pick a random location that'll show up
-  int16_t x = random(xMargins,display.width()-xMargins-100);  // 90 pixels leaves room for 4 digit CO2 value
-  int16_t y = random(44,display.height()-yMargins); // 35 pixels leaves vertical room for text display
-  display.setCursor(x,y);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color LUT
-  display.println(sensorData.ambientCO2[graphPoints-1]);
-  debugMessage("screenSaver end",1);
-}
-
-void screenVOC()
-{
-  // screen layout assists in pixels
-  const uint8_t legendHeight = 20;
-  const uint8_t legendWidth = 10;
-  const uint16_t xLegend = (display.width() - xMargins - legendWidth);
-  const uint16_t yLegend = ((display.height() / 2 ) - (legendHeight * 2));
-  const uint16_t circleRadius = 100;
-  const uint16_t xVOCCircle = (display.width() / 2);
-  const uint16_t yVOCCircle = (display.height() / 2);
-  const uint16_t xVOCLabel = xVOCCircle - 35;
-  const uint16_t yVOCLabel = yVOCCircle + 35;
-
-  debugMessage("screenVOC start",1);
-
-  // clear screen
-  display.fillScreen(ILI9341_BLACK);
-
-  // VOC color circle
-  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[vocRange(sensorData.vocIndex)]);
-  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,ILI9341_BLACK);
-
-  // VOC color legend
-  for(uint8_t loop = 0; loop < 4; loop++){
-    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
-  }
-
-  // VOC value and label (displayed inside circle)
-  display.setFont(&FreeSans18pt7b);
-  display.setTextColor(warningColor[vocRange(sensorData.vocIndex)]);  // Use highlight color look-up table
-  display.setCursor(xVOCCircle-20,yVOCCircle);
-  display.print(int(sensorData.vocIndex+.5));
-  display.setTextColor(ILI9341_WHITE);
-  display.setCursor(xVOCLabel,yVOCLabel);
-  display.print("VOC");
-
-  debugMessage("screenVOC end",1);
-}
-
-void screenCO2()
-// Description: Display CO2 information (ppm, color grade, graph)
-// Parameters:  NA
-// Output: NA (void)
-// Improvement: ?
-{
-  // screen layout assists in pixels
-  const uint8_t legendHeight = 20;
-  const uint8_t legendWidth = 10;
-  const uint16_t borderWidth = 15;
-  const uint16_t borderHeight = 15;
-  const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
-  const uint16_t yLegend =  ((display.height()/4) + (2*legendHeight));
-  const uint16_t circleRadius = 100;
-  const uint16_t xCircle = (display.width() / 2);
-  const uint16_t yCircle = (display.height() / 2);
-  const uint16_t xLabel = display.width()/2;
-  const uint16_t yLabel = yMargins + borderHeight + 30;
-
-  debugMessage("screenCO2 start",1);
-
-  display.setFont(&FreeSans18pt7b);
-  display.setTextColor(ILI9341_WHITE);
-
-  // fill screen with CO2 value color
-  display.fillScreen(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,ILI9341_BLACK);
-
-  // value and label
-  display.setCursor(borderWidth + 20,yLabel);
-  display.print("CO2");
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
-  display.setCursor(xLabel, yLabel);
-  display.print(sensorData.ambientCO2[graphPoints-1]);
-
-  // // co2 level as color wheel
-  // display.fillCircle(xCircle,yCircle,circleRadius,warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  // display.fillCircle(xCircle,yCircle,circleRadius*0.8,ILI9341_BLACK);
-
-  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)),"Recent values");
-  debugMessage("screenCO2 end",1);
-
-  // legend for CO2 color wheel
-  for(uint8_t loop = 0; loop < 4; loop++){
-    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
-  }
-}
-
-void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
-// helper function for screenXXX() routines that draws WiFi signal strength
-{
-  if (hardwareData.rssi != 0) {
-    // Convert RSSI values to a 5 bar visual indicator
-    // >90 means no signal
-    uint8_t barCount = constrain((6 - ((hardwareData.rssi / 10) - 3)), 0, 5);
-    if (barCount > 0) {
-      // <50 rssi value = 5 bars, each +10 rssi value range = one less bar
-      // draw bars to represent WiFi strength
-      for (uint8_t loop = 1; loop <= barCount; loop++) {
-        display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, ILI9341_WHITE);
-      }
-      debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
-    } else {
-      // you could do a visual representation of no WiFi strength here
-      debugMessage("RSSI too low, not displayed on screen", 1);
-    }
-  }
-}
-
-void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
-// Description: helper function for screenXXX() routines that displays an icon relaying success of network endpoint writes
-// Parameters: initial x and y coordinate to draw from
-// Output : NA
-// Improvement : NA
-// 
-{
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-    if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (reportIntervalMS * reportFailureThreshold)))
-        // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
-        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_RED);
-      else
-        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_GREEN);
-  #endif
-}
-
 // Hardware simulation routines
 #ifdef HARDWARE_SIMULATE
   void OWMCurrentWeatherSimulate()
@@ -992,7 +1128,7 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
     // IMPROVEMENT: not supported on SEN54, so return NAN
     //sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
 
-    debugMessage(String("SIMULATED SEN5x PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex,1);
+    debugMessage(String("Simulated SEN5X PM2.5: ") + sensorData.pm25 + "ppm, VOC Index: " + sensorData.vocIndex + ", NOx Index: " + sensorData.noxIndex, 1);
   }
 
   void sensorSCD4xSimulate(uint8_t mode = 0, uint8_t cycles = 0)
@@ -1225,40 +1361,41 @@ String OWMtoMeteoconIcon(String icon)
 
 void processSamples(uint8_t numSamples)
 {
+  debugMessage(String("processSamples() start"),2);
+
   // do we have samples to process?
   if (numSamples) {
-    uint16_t avgCO2 = totalCO2.getAverage();
     // can we report to network endPoints?
     if (WiFi.status() == WL_CONNECTED) {
       #if !defined HARDWARE_SIMULATE
         // Get averaged sample values from Measure class objects for endPoint reporting
         float avgTemperatureF = totalTemperatureF.getAverage();
         float avgHumidity = totalHumidity.getAverage();
-        float avgVOC = totalVOC.getAverage();
+        uint16_t avgCO2 = totalCO2.getAverage();
+        float avgVOC = totalVOCIndex.getAverage();
         float avgPM25 = totalPM25.getAverage();
-        float avgNOX = totalNOX.getAverage();
+        float avgNOX = totalNOxIndex.getAverage();
 
-        debugMessage(String("** ----- Reporting averages (") + (reportIntervalMS/60000) + " minutes) ----- ",1);
-
-        debugMessage(String("** PM2.5: ") + avgPM25 + String(", CO2: ") + avgCO2 + " ppm" + 
-          String(", VOC: ") + avgVOC+ String(", NOX: ") + avgNOX + String(", ") + 
-          avgTemperatureF + "F, " + avgHumidity + String("%, ") + String("AQI(US): ") + pm25toAQI_US(avgPM25),1);
+        debugMessage(String("Averages for the last ") + (reportIntervalMS/60000) + " minutes for endpoint reporting",1);
+        debugMessage(String("PM2.5: ") + avgPM25 + "ppm, CO2: " + avgCO2 + "ppm, VOC index: " + avgVOC + ", NOx index: " + avgNOX + ", " + 
+          avgTemperatureF + "F, humidity: " + avgHumidity + "%", 1);
 
         #ifdef THINGSPEAK
-        // IMPROVEMENT : Post the AQI sensor data to ThingSpeak. Make sure to use the PM25 to AQI conversion formula for the
-        // desired country as there is no global standard.
+          debugMessage(String("AQI(US): ") + pm25toAQI_US(avgPM25),1);
           if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
             Serial.println("ERROR: Did not write to ThingSpeak");
           }
         #endif
 
         #ifdef INFLUX
-          // IMPROVEMENT: Modify to include NOX readings
+          debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
           if (!post_influx(avgTemperatureF, avgHumidity, avgCO2 , avgPM25, avgVOC, avgNOX, hardwareData.rssi))
             Serial.println("ERROR: Did not write to influxDB");
         #endif
 
         #ifdef MQTT
+          debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
+
           // publish device data
           const char* topic;
 
@@ -1298,13 +1435,14 @@ void processSamples(uint8_t numSamples)
     totalTemperatureF.clear();
     totalHumidity.clear();
     totalCO2.clear();
-    totalVOC.clear();
+    totalVOCIndex.clear();
     totalPM25.clear();
-    totalNOX.clear();
+    totalNOxIndex.clear();
   }      
   else {
     debugMessage("No samples to process this cycle",1);
   }
+  debugMessage(String("processSamples() end"),2);
 }
 
 // WiFiManager portal functions
@@ -1759,9 +1897,9 @@ bool sensorRead()
 
     retainCO2(co2);
     
-    debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + String(", CO2: ") + sensorData.ambientCO2[graphPoints-1] +
-      String(", VOC: ") + sensorData.vocIndex + String(", NOX: ") + sensorData.noxIndex + String(", ") + 
-      sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + String("%, "),1);
+    debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + ", CO2: " + sensorData.ambientCO2[graphPoints-1] +
+      "ppm, VOC index: " + sensorData.vocIndex + ", NOx index: " + sensorData.noxIndex + ", temp:" + 
+      sensorData.ambientTemperatureF + "F, humidity:" + sensorData.ambientHumidity + "%",1);
     return true;
   }
 
@@ -1785,7 +1923,7 @@ bool sensorRead()
       retainCO2(simulatedCO2);
 
       debugMessage(String("SIMULATED SEN66 PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex +
-        sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex + ",NOX index: " + sensorData.noxIndex,1);
+        sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex + ",NOx index: " + sensorData.noxIndex,1);
 
     }
   #endif // HARDWARE_SIMULATE
@@ -1875,7 +2013,7 @@ bool sensorRead()
         debugMessage(String(errorMessage) + " error during SEN5x read",1);
         return false;
       }
-      debugMessage(String("SEN5X PM2.5: ") + sensorData.pm25 + ", VOC: " + sensorData.vocIndex, 1);
+      debugMessage(String("SEN5X PM2.5: ") + sensorData.pm25 + "ppm, VOC Index: " + sensorData.vocIndex + ", NOx Index: " + sensorData.noxIndex, 1);
       return true;
     #endif
   }
@@ -2007,7 +2145,7 @@ uint8_t co2Range(uint16_t co2)
     (co2 <= co2Poor) ? 1 :
     (co2 <= co2Bad)  ? 2 : 3;
 
-  debugMessage(String("CO2 input of ") + co2 + " yields co2Range of " + co2Range, 2);
+  debugMessage(String("CO2 input of ") + co2 + " yields " + co2Range + "CO2 band", 2);
   return co2Range;
 }
 
@@ -2031,8 +2169,20 @@ uint8_t vocRange(float vocIndex)
   (vocIndex <= vocPoor) ? 1 :
   (vocIndex <= vocBad)  ? 2 : 3;
 
-  debugMessage(String("VOC index input of ") + vocIndex + " yields " + vocRange + " vocRange",2);
+  debugMessage(String("VOC index input of ") + vocIndex + " yields " + vocRange + " VOC band",2);
   return vocRange;
+}
+
+uint8_t noxRange(float noxIndex)
+// converts vocIndex value to index value for labeling and color
+{
+  uint8_t noxRange =
+  (noxIndex <= noxFair) ? 0 :
+  (noxIndex <= noxPoor) ? 1 :
+  (noxIndex <= noxBad)  ? 2 : 3;
+
+  debugMessage(String("NOx index input of ") + noxIndex + " yields " + noxRange + " NOx band",2);
+  return noxRange;
 }
 
 float pm25toAQI_US(float pm25)

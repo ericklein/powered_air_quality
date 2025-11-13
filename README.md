@@ -1,7 +1,15 @@
 # Powered Air Quality
 ![Hero Shot](readme/PAQ_components.jpg)
 ## Purpose
-Powered Air Quality, aka PAQ, samples and displays temperature, humidity, CO2 (carbon dioxide), and air particulate levels. If PAQ is connected to WiFi, it can log this information to a number of network endpoints, and it displays local outdoor weather and air quality information to compliment the indoor sensor information. PAQ requires an AC power source.
+Powered Air Quality, aka PAQ, samples, displays, and if connected to WiFi, logs the following air characteristics:
+- Temperature (fahrenheit)
+- Humidity
+- CO2 (carbon dioxide)
+- PM2.5 (air particulate)
+- VOC (volatile organic compounds) index
+- NOx (nitrogen oxide) index (requires SEN6x sensor)
+
+If PAQ is connected to WiFi, it can log this information to a number of network endpoints.
 
 PAQ was created to answer three primary questions:
 - Is the co2 level in the room good?
@@ -28,17 +36,20 @@ AI : ADD DOCUMENTATION
 - [CYD (Cheap Yellow Display)])(https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/tree/main). This is an inexpensive ESP32 prototype board with a built-in screen.
     - Code is portable to any ESP32 MCU
 ### Sensors
-- [SCD40 temp/humidity/CO2 sensor](https://www.adafruit.com/product/5187)
-    can use any SCD40 connected over i2c
-- Particulate sensor over i2c
-    - [Sensirion SEN54]([SEN54](readme/Sensirion_Datasheet_Environmental_Node_SEN5x.pdf))
-    - [Plantower PMSA003I](https://www.adafruit.com/product/4632)
-        - this sensor does not provide as much particulate information as the SEN54. Code support is still included but is commented out in the current release.
+Two sensor payloads are supported by PAQ
+- Option 1
+    - [Sensirion SCD40](readme/Sensirion_CO2_Sensors_SCD4x_Datasheet.pdf), measuring temperature, humidity, and CO2
+    and
+    - [Sensirion SEN54](readme/Sensirion_Datasheet_Environmental_Node_SEN5x.pdf), measuring pm1, pm25, pm4, pm10, humidity, temperature, and VOC index 
+- Option 2
+    - [Sensirion SEN66](readme/Sensirion_Datasheet_SEN6x.pdf), measuring pm1, pm25, pm4, pm10, humidity, temperature, VOC index, and NOx index
+
+Support for the [Plantower PMSA003I](https://www.adafruit.com/product/4632), which has a subset of the SEN5x functionality, was deprecated by can be found in older code versions.
 ### Screen
 - [CYD (Cheap Yellow Display)])(https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/tree/main). This is an inexpensive ESP32 prototype board with a built-in screen.
-    - any screen with ILI9341 driver
+    - any CYD screen using a ILI9341 driver is supported, ST7789 based screens are not supported
 ### Buttons/Switches
-- None at this time.
+- Touchscreen support is used for user input.
 ## Pinouts
 ### SCD40
 - Connected through Stemma QT cable to SEN5X adapter board

@@ -46,8 +46,8 @@ const uint32_t OWMIntervalMS = 1800000;
 
 // sampling and reporting intervals
 #ifdef DEBUG
-  const uint32_t sensorSampleIntervalMS = 30000;   // time between samples
-  const uint32_t reportIntervalMS = 90000;     // time between reports
+  const uint32_t sensorSampleIntervalMS = 30000;  // time between samples
+  const uint32_t reportIntervalMS = 90000;        // time between reports
 #else
   const uint32_t sensorSampleIntervalMS = 60000;
   const uint32_t reportIntervalMS = 900000;
@@ -115,15 +115,20 @@ const uint16_t sensorCO2Min =      400;   // in ppm
 const uint16_t sensorCO2Max =      2000;  // in ppm
 const uint8_t co2SensorReadFailureLimit = 20;
 
-// Particulates (pm1, pm2.5, pm4, pm10) value thresholds for labeling
+// Particulates (pm1, pm2.5, pm4, pm10) value thresholds
 const uint16_t pmFair = 25;
 const uint16_t pmPoor = 50;
 const uint16_t pm2Bad = 150;
 
-// VOC (volatile organic compounds) value thresholds for labeling
+// VOC (volatile organic compounds) index value thresholds
 const uint16_t vocFair = 150;
 const uint16_t vocPoor = 250;
 const uint16_t vocBad = 400;
+
+// NOx (nitrogen oxide) index value thresholds, Sensiron Info_Note_NOx_Index.pdf
+const uint16_t noxFair = 49;
+const uint16_t noxPoor = 150;
+const uint16_t noxBad = 300;
 
 const uint32_t hardwareErrorSleepTimeμS = 10000000;  // sleep time if hardware error occurs
 
