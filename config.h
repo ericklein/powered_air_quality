@@ -99,31 +99,31 @@ const String hardwareDeviceType = "AirQuality";
   const uint8_t networkRSSIMin = 30;
   const uint8_t networkRSSIMax = 90;
 
-  const uint16_t sensorPMMin = 0;
-  const uint16_t sensorPMMax = 100000; // divided by 100.0 to give float
+  const uint16_t sensorCO2Min =   400;   // in ppm
+  const uint16_t sensorCO2Max =   2000;
 
-  const uint16_t sensorVOCMin = 0;
-  const uint16_t sensorVOCMax = 50000; // divided by 100.0 to give float
+  const uint16_t sensorPMMin = 0;
+  const uint16_t sensorPMMax = 1000;
+
+  const uint8_t   sensorVOCMin =  0;
+  const uint16_t  sensorVOCMax =  500;
 #endif
 
-// CO2 value thresholds for labeling
-const uint16_t co2Fair = 800;
-const uint16_t co2Poor = 1200;
-const uint16_t co2Bad = 2000;
-
-const uint16_t sensorCO2Min =      400;   // in ppm
-const uint16_t sensorCO2Max =      2000;  // in ppm
+// CO2 value thresholds
+const uint16_t sensorCO2Fair =  800;
+const uint16_t sensorCO2Poor =  1200;
+const uint16_t sensorCO2Bad =   1600;
 const uint8_t co2SensorReadFailureLimit = 20;
 
 // Particulates (pm1, pm2.5, pm4, pm10) value thresholds
-const uint16_t pmFair = 25;
-const uint16_t pmPoor = 50;
-const uint16_t pm2Bad = 150;
+const uint16_t sensorPMFair = 25;
+const uint16_t sensorPMPoor = 50;
+const uint16_t sensorPMBad = 150;
 
 // VOC (volatile organic compounds) index value thresholds
-const uint16_t vocFair = 150;
-const uint16_t vocPoor = 250;
-const uint16_t vocBad = 400;
+const uint16_t  sensorVOCFair = 150;
+const uint16_t  sensorVOCPoor = 250;
+const uint16_t  sensorVOCBad =  400;
 
 // NOx (nitrogen oxide) index value thresholds, Sensiron Info_Note_NOx_Index.pdf
 const uint16_t noxFair = 49;

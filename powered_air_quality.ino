@@ -104,6 +104,7 @@ Measure totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, to
 uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
 uint32_t timeResetPressStartMS = 0; // IMPROVEMENT: Move this as static to CheckResetLongPress()
 bool saveWFMConfig = false;
+enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
 
 void setup() {
   // config Serial first for debugMessage()
@@ -153,9 +154,10 @@ void setup() {
     powerDisable(hardwareErrorSleepTimeμS);
   }
 
-  // initialize CO2 values for live capture
+  // initialize sensor value arrays
   for(uint8_t loop=0;loop<graphPoints;loop++) {
     sensorData.ambientCO2[loop] = -1;
+    sensorData.vocIndex[loop] = -1;
   }
 
   #ifdef HARDWARE_SIMULATE
@@ -184,7 +186,6 @@ void loop() {
   static uint32_t timeLastInputMS         = millis();  // timestamp for last user input (screensaver)
   static uint32_t timeNextNetworkRetryMS  = 0;
   static uint32_t timeLastOWMUpdateMS     = -(OWMIntervalMS); // forces immediate sample in loop()
-  static enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
 
   // is there a long press on the reset button to wipe all configuration data?
   checkResetLongPress();
@@ -416,7 +417,7 @@ void screenCurrentInfo()
   display.setFont(&FreeSans12pt7b);
   display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
   display.setCursor(xIndoorCircleText,yPMCircles);
-  display.print(sensorData.ambientCO2[graphPoints-1]);
+  display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
 
   // CO2 label line
   display.setFont(&FreeSans12pt7b);
@@ -667,7 +668,7 @@ bool screenAlert(String messageText)
   return success;
 }
 
-void retainCO2(uint16_t co2)
+void retainCO2(float co2)
 // Description: add new element, FIFO, to CO2 array
 // Parameters:  new CO2 value from sensor
 // Returns: NA (void)
@@ -763,7 +764,7 @@ void screenSaver()
   int16_t x = random(xMargins,display.width()-xMargins-100);  // 90 pixels leaves room for 4 digit CO2 value
   int16_t y = random(44,display.height()-yMargins); // 35 pixels leaves vertical room for text display
   display.setCursor(x,y);
-  display.print(sensorData.ambientCO2[graphPoints-1]);
+  display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
 
   debugMessage("screenSaver() end",1);
 }
@@ -777,38 +778,37 @@ void screenVOC()
   // screen layout assists in pixels
   const uint8_t legendHeight = 20;
   const uint8_t legendWidth = 10;
-  const uint16_t xLegend = (display.width() - xMargins - legendWidth);
-  const uint16_t yLegend = ((display.height() / 2 ) - (legendHeight * 2));
-  const uint16_t circleRadius = 100;
-  const uint16_t xVOCCircle = (display.width() / 2);
-  const uint16_t yVOCCircle = (display.height() / 2);
-  const uint16_t xVOCLabel = xVOCCircle - 35;
-  const uint16_t yVOCLabel = yVOCCircle + 35;
+  const uint16_t borderWidth = 15;
+  const uint16_t borderHeight = 15;
+  const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
+  const uint16_t yLegend =  ((display.height()/4) + (2*legendHeight));
+  const uint16_t xLabel = display.width()/2;
+  const uint16_t yLabel = yMargins + borderHeight + 30;
 
-  debugMessage("screenVOC start",1);
+  debugMessage("screenVOC() start",1);
 
-  // clear screen
-  display.fillScreen(ILI9341_BLACK);
   display.setFont(&FreeSans18pt7b);
+  display.setTextColor(ILI9341_WHITE);
 
-  // VOC color circle
-  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
-  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,ILI9341_BLACK);
+  // fill screen with VOC value color
+  display.fillScreen(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
+  display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,ILI9341_BLACK);
 
-  // VOC color legend
+  // value and label
+  display.setCursor(borderWidth + 20,yLabel);
+  display.print("VOC");
+  display.setTextColor(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);  // Use highlight color look-up table
+  display.setCursor(xLabel, yLabel);
+  display.print(uint16_t(sensorData.vocIndex[graphPoints-1]));
+
+  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)), sensorData.vocIndex, "Recent values");
+
+  // legend for CO2 color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
     display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
   }
 
-  // VOC value and label (displayed inside circle)
-  display.setTextColor(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);  // Use highlight color look-up table
-  display.setCursor(xVOCCircle-20,yVOCCircle);
-  display.print(int(sensorData.vocIndex[graphPoints-1]+.5));
-  display.setTextColor(ILI9341_WHITE);
-  display.setCursor(xVOCLabel,yVOCLabel);
-  display.print("VOC");
-
-  debugMessage("screenVOC end",1);
+  debugMessage("screenVOC() end",1);
 }
 
 void screenNOX()
@@ -867,9 +867,6 @@ void screenCO2()
   const uint16_t borderHeight = 15;
   const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
   const uint16_t yLegend =  ((display.height()/4) + (2*legendHeight));
-  const uint16_t circleRadius = 100;
-  const uint16_t xCircle = (display.width() / 2);
-  const uint16_t yCircle = (display.height() / 2);
   const uint16_t xLabel = display.width()/2;
   const uint16_t yLabel = yMargins + borderHeight + 30;
 
@@ -887,13 +884,9 @@ void screenCO2()
   display.print("CO2");
   display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
   display.setCursor(xLabel, yLabel);
-  display.print(sensorData.ambientCO2[graphPoints-1]);
+  display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
 
-  // // co2 level as color wheel
-  // display.fillCircle(xCircle,yCircle,circleRadius,warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  // display.fillCircle(xCircle,yCircle,circleRadius*0.8,ILI9341_BLACK);
-
-  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)),"Recent values");
+  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)), sensorData.ambientCO2, "Recent values");
 
   // legend for CO2 color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
@@ -940,7 +933,7 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
   #endif
 }
 
-void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, String description)
+void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, const float *values, String xLabel)
 // Description : Draw a graph of recent (CO2) values from right (most recent) to left. -1 values not graphed.
 // Parameters: starting graph position (x,y), width and height of graph, x axis description
 // Return : none
@@ -965,20 +958,28 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   display.setFont();
   display.setTextColor(ILI9341_LIGHTGREY);
 
-  // Scan the retained CO2 data for max & min to scale the plot
-  minValue = sensorCO2Max;
-  maxValue = sensorCO2Min;
+  switch (screenCurrent) {
+    case sCO2:
+      minValue = sensorCO2Max;
+      maxValue = sensorCO2Min;
+      break;
+    case sVOC:
+      minValue = sensorVOCMin;
+      maxValue = sensorVOCMax;
+      break;  
+}
+  // scan the array for min/max
   for(loop=0;loop<graphPoints;loop++) {
-    if(sensorData.ambientCO2[loop] == -1) continue;   // Skip "empty" slots
+    if(values[loop] == -1) continue;   // Skip "empty" slots
     nodata = false;  // At least one data point
-    if(sensorData.ambientCO2[loop] < minValue) minValue = sensorData.ambientCO2[loop];
-    if(sensorData.ambientCO2[loop] > maxValue) maxValue = sensorData.ambientCO2[loop];
+    if(values[loop] < minValue) minValue = values[loop];
+    if(values[loop] > maxValue) maxValue = values[loop];
   }
-  debugMessage(String("Max value in samples is ") + maxValue + ", min is " + minValue, 2);
+  debugMessage(String("Min value in samples is ") + minValue + ", max is " + maxValue, 2);
 
   // do we have data? (e.g., just booted)
   if (nodata)
-    description = "Awaiting samples";
+    xLabel = "Awaiting samples";
   else {
     // since we have data, pad min and max CO2 to add room and be multiples of 50 (for nicer axis labels)
     minValue = (uint16_t(minValue)/50)*50;
@@ -986,11 +987,11 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   }
 
   // draw the X axis description, if provided, and set the position of the horizontal axis line
-  if (strlen(description.c_str())) {
-    display.getTextBounds(description,0,0,&x1,&y1,&text1Width,&text1Height);
+  if (strlen(xLabel.c_str())) {
+    display.getTextBounds(xLabel,0,0,&x1,&y1,&text1Width,&text1Height);
     graphLineY = initialY + yHeight - text1Height - labelSpacer;
     display.setCursor((((initialX + xWidth)/2) - (text1Width/2)), (initialY + yHeight - text1Height));
-    display.print(description);
+    display.print(xLabel);
   }
 
   // calculate text width and height of longest Y axis label
@@ -1016,11 +1017,15 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   xp = graphLineX;
   yp = graphLineY;
   for(loop=0;loop<graphPoints;loop++) {
-    if(sensorData.ambientCO2[loop] == -1) continue;
+    if(values[loop] == -1) continue;
     x = graphLineX + 10 + (loop*deltaX);  // Include 10 pixel padding for Y axis
-    y = graphLineY - (((sensorData.ambientCO2[loop] - minValue)/(maxValue-minValue)) * (graphLineY-initialY));
+    y = graphLineY - (((values[loop] - minValue)/(maxValue-minValue)) * (graphLineY-initialY));
     debugMessage(String("Array ") + loop + " y value is " + y,2);
-    display.fillCircle(x,y,4,warningColor[co2Range(sensorData.ambientCO2[loop])]);
+    if (screenCurrent == sCO2)
+      display.fillCircle(x,y,4,warningColor[co2Range(sensorData.ambientCO2[loop])]);
+    else
+      if (screenCurrent == sVOC)
+        display.fillCircle(x,y,4,warningColor[vocRange(sensorData.vocIndex[loop])]);
     if(firstpoint) {
       // If this is the first drawn point then don't try to draw a line
       firstpoint = false;
@@ -1073,10 +1078,10 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   {
     // Note: tempF and humidity come from SCD4X simulation
 
-    sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.pm4 = random(sensorPMMin, sensorPMMax) / 100.0;
+    sensorData.pm1 = random(sensorPMMin, sensorPMMax);
+    sensorData.pm10 = random(sensorPMMin, sensorPMMax);
+    sensorData.pm25 = random(sensorPMMin, sensorPMMax);
+    sensorData.pm4 = random(sensorPMMin, sensorPMMax);
     // IMPROVEMENT: not supported on SEN54, so return NAN
     //sensorData.vocIndex = NAN;
 
@@ -1136,7 +1141,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     retainCO2(simulatedCO2);
 
     debugMessage(String("Simulated temp: ") + sensorData.ambientTemperatureF + "F, humidity: " + sensorData.ambientHumidity
-      + "%, CO2: " + sensorData.ambientCO2[graphPoints-1] + "ppm",1);
+      + "%, CO2: " + uint16_t(sensorData.ambientCO2[graphPoints-1]) + "ppm",1);
   }
 #endif
 
@@ -1850,7 +1855,7 @@ bool sensorRead()
     retainCO2(co2);
     retainVOC(voc);
     
-    debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + ", CO2: " + sensorData.ambientCO2[graphPoints-1] +
+    debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + ", CO2: " + uint16_t(sensorData.ambientCO2[graphPoints-1]) +
       "ppm, VOC index: " + sensorData.vocIndex[graphPoints-1] + ", NOx index: " + sensorData.noxIndex + ", temp:" + 
       sensorData.ambientTemperatureF + "F, humidity:" + sensorData.ambientHumidity + "%",1);
     return true;
@@ -2081,7 +2086,7 @@ bool sensorRead()
           sensorData.ambientTemperatureF = (temperatureC*1.8)+32.0;
           sensorData.ambientHumidity = humidity;
           retainCO2(co2);
-          debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2[graphPoints-1] + " ppm",1);
+          debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + uint16_t(sensorData.ambientCO2[graphPoints-1]) + " ppm",1);
           // Update global sensor readings
           success = true;
           break;
@@ -2093,13 +2098,13 @@ bool sensorRead()
   }
 #endif // SENSOR_SEN54SCD40
 
-uint8_t co2Range(uint16_t co2) 
+uint8_t co2Range(float co2) 
 // converts co2 value to index value for labeling and color
 {
   uint8_t co2Range = 
-    (co2 <= co2Fair) ? 0 :
-    (co2 <= co2Poor) ? 1 :
-    (co2 <= co2Bad)  ? 2 : 3;
+    (co2 <= sensorCO2Fair) ? 0 :
+    (co2 <= sensorCO2Poor) ? 1 :
+    (co2 <= sensorCO2Bad)  ? 2 : 3;
 
   debugMessage(String("CO2 input of ") + co2 + " yields " + co2Range + "CO2 band", 2);
   return co2Range;
@@ -2109,9 +2114,9 @@ uint8_t aqiRange(float pm25)
 // converts pm25 value to index value for labeling and color
 {
   uint8_t aqi =
-  (pm25 <= pmFair) ? 0 :
-  (pm25 <= pmPoor) ? 1 :
-  (pm25 <= pm2Bad) ? 2 : 3;
+  (pm25 <= sensorPMFair) ? 0 :
+  (pm25 <= sensorPMPoor) ? 1 :
+  (pm25 <= sensorPMBad) ? 2 : 3;
 
   debugMessage(String("PM2.5 input of ") + pm25 + " yields " + aqi + " aqi",2);
   return aqi;
@@ -2121,9 +2126,9 @@ uint8_t vocRange(float vocIndex)
 // converts vocIndex value to index value for labeling and color
 {
   uint8_t vocRange =
-  (vocIndex <= vocFair) ? 0 :
-  (vocIndex <= vocPoor) ? 1 :
-  (vocIndex <= vocBad)  ? 2 : 3;
+  (vocIndex <= sensorVOCFair) ? 0 :
+  (vocIndex <= sensorVOCPoor) ? 1 :
+  (vocIndex <= sensorVOCBad)  ? 2 : 3;
 
   debugMessage(String("VOC index input of ") + vocIndex + " yields " + vocRange + " VOC band",2);
   return vocRange;

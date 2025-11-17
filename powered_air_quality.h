@@ -7,7 +7,7 @@
   struct envData {
     float ambientTemperatureF;        // range -10C to 60C
     float ambientHumidity;            // RH [%], range 0 to 100
-    int16_t  ambientCO2[graphPoints]; // ppm, range 400 to 2000, FIFO queue, -1 = no data, errant values ~ first 7 seconds (SCD4x, SEN6x)
+    float  ambientCO2[graphPoints];   // ppm, range 400 to 2000, FIFO queue, -1 = no data, errant values ~ first 7 seconds (SCD4x, SEN6x)
     float pm25;                       // PM2.5 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
     float pm1;                        // PM1.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
     float pm10;                       // PM10.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
