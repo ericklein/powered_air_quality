@@ -333,7 +333,7 @@ void screenUpdate(uint8_t screenCurrent)
       screenCO2();
       break;
     case sPM25:
-      screenAggregateData();
+      screenPM25();
       break;
     case sNOX:
       #ifdef SENSOR_SEN66  
@@ -409,7 +409,7 @@ void screenCurrentInfo()
   display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, ILI9341_WHITE);
 
   // Indoor PM2.5 ring
-  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[aqiRange(sensorData.pm25)]);
+  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
   display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
 
   // Indoor CO2 level inside the circle
@@ -435,7 +435,7 @@ void screenCurrentInfo()
   if (owmAirQuality.aqi != 10000) {
 
     // Outside PM2.5
-    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[aqiRange(owmAirQuality.pm25)]);
+    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
     display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
 
     // Outside air quality index (AQI)
@@ -443,10 +443,10 @@ void screenCurrentInfo()
     display.setTextColor(ILI9341_WHITE);
     // IMPROVEMENT: Dynamic x coordinate based on text length
     // display.setCursor((xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10);
-    display.getTextBounds(OWMAQILabels[(owmAirQuality.aqi)],(xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10, &x1, &y1, &w1, &h1);
+    display.getTextBounds(OWMPollutionLabel[(owmAirQuality.aqi)],(xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10, &x1, &y1, &w1, &h1);
     display.setCursor((xOutdoorPMCircle - (w1/2)),yPMCircles+10);
 
-    display.print(OWMAQILabels[(owmAirQuality.aqi)]);
+    display.print(OWMPollutionLabel[(owmAirQuality.aqi)]);
     display.setCursor(xOutdoorPMCircle-15,yPMCircles + 30);
     display.print("AQI");
   }
@@ -490,6 +490,91 @@ void screenCurrentInfo()
     }
   }
   debugMessage("screenCurrentInfo() end", 2);  // DJB-DEV: was 1
+}
+
+void screenPM25() 
+// Description: Displays indoor and outdoor PM25 information
+// Parameters:
+// Output: NA (void)
+// Improvement: 
+{
+  int16_t x1, y1; // For (x,y) calculations
+  uint16_t w1, h1;  // For text size calculations
+
+  // screen layout assists in pixels
+  const uint16_t yStatusRegion = display.height()/8;
+  const uint16_t xOutdoorMargin = ((display.width() / 2) + 10);
+  // temp & humidity
+  const uint16_t yPollution = 210;
+  // pm25 rings
+  const uint16_t xIndoorPMCircle = (display.width() / 4);
+  const uint16_t xOutdoorPMCircle = ((display.width() / 4) * 3);
+  const uint16_t yPMCircles = 110;
+  const uint16_t circleRadius = 65;
+  // inside the pm25 rings
+  const uint16_t xIndoorCircleText = (xIndoorPMCircle - 18);
+
+  debugMessage("screenPM25() start",2);
+
+  // clear screen
+  display.fillScreen(ILI9341_BLACK);
+
+  // status region
+  display.fillRect(0,0,display.width(),yStatusRegion,ILI9341_DARKGREY);
+  // split indoor v. outside
+  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), ILI9341_WHITE);
+  // screen helpers in status region
+  // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
+  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
+  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), yMargins);
+  // labels
+  display.setFont(&FreeSans12pt7b);
+  display.setTextColor(ILI9341_WHITE);
+  display.setCursor(xMargins, ((display.height()/8)-7));
+  display.print("Indoor");
+  display.setCursor(xOutdoorMargin, ((display.height()/8)-7));
+  display.print("Outdoor");
+
+  // Indoor PM2.5 ring
+  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
+  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
+
+  // Indoor pm25 value and label inside the circle
+  display.setFont(&FreeSans12pt7b);
+  display.setTextColor(warningColor[pm25Range(sensorData.pm25)]);  // Use highlight color look-up table
+  display.setCursor(xIndoorCircleText,yPMCircles);
+  display.print(sensorData.pm25);
+  // label
+  display.setTextColor(ILI9341_WHITE);
+  display.setCursor(xIndoorCircleText,yPMCircles+23);
+  display.setFont(&FreeSans9pt7b);
+  display.print("PM25");
+  
+  // Outside
+
+  // do we have OWM Air Quality data to display?
+  if (owmAirQuality.aqi != 10000) {
+    // Outside PM2.5
+    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
+    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
+
+    // outdoor pm25 value and label inside the circle
+    display.setFont(&FreeSans12pt7b);
+    display.setTextColor(warningColor[pm25Range(owmAirQuality.pm25)]);  // Use highlight color look-up table
+    display.setCursor((xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10);
+    display.print(owmAirQuality.pm25);
+    display.setTextColor(ILI9341_WHITE);
+    display.setFont(&FreeSans9pt7b);
+    display.setCursor(xOutdoorPMCircle-15,yPMCircles + 30);
+    display.print("PM25");
+  }
+
+  // outside AQI
+  display.setCursor(xOutdoorMargin, yPollution);
+  display.print(OWMPollutionLabel[(owmAirQuality.aqi)]);
+  display.setCursor(xOutdoorMargin, yPollution + 15);
+  display.print("air pollution");
+  debugMessage("screenPM25() end", 2);
 }
 
 void screenAggregateData()
@@ -712,7 +797,7 @@ void screenMain()
   display.setCursor((display.width()/8),(display.height()/4));
   display.print("CO2");
   // PM2.5
-  display.fillRoundRect(((display.width()/2)+halfBorderWidth), 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[aqiRange(sensorData.pm25)]);
+  display.fillRoundRect(((display.width()/2)+halfBorderWidth), 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[pm25Range(sensorData.pm25)]);
   display.setCursor((display.width()*5/8),(display.height()/4));
   display.print("PM25");
   // VOC Index
@@ -721,7 +806,7 @@ void screenMain()
   display.print("VOC");
   #ifdef SENSOR_SEN66
     // NOx index
-    display.fillRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[aqiRange(sensorData.pm25)]);
+    display.fillRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[pm25Range(sensorData.pm25)]);
     display.setCursor((display.width()*5/8),(display.height()/4));
     display.print("NOx");
   #else
@@ -2110,7 +2195,7 @@ uint8_t co2Range(float co2)
   return co2Range;
 }
 
-uint8_t aqiRange(float pm25)
+uint8_t pm25Range(float pm25)
 // converts pm25 value to index value for labeling and color
 {
   uint8_t aqi =
@@ -2208,11 +2293,7 @@ void powerDisable(uint32_t deepSleepTime)
   esp_deep_sleep_start();
 }
 
-/*
- * Utility function to return a unique device identifier string, combining the prefix passed in as
- * an argument and the high-order four hex digits of the ESP32 MAC address (which should be unique
- * for ESP32 units). Typically used in combination with hardware device type info from secrets.h.
-*/
+
 String getDeviceId(String prefix)
 // Returns a unique device identifier based on ESP32 MAC address along with a specified prefix
 {

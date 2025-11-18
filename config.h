@@ -40,8 +40,8 @@ const uint32_t timeMQTTKeepAliveIntervalMS = 10000; // ping MQTT broker to keep 
 const String OWMServer = "http://api.openweathermap.org/data/2.5/";
 const String OWMWeatherPath =  "weather?";
 const String OWMAQMPath = "air_pollution?";
-// aqi labels from https://openweathermap.org/api/air-pollution
-const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
+// OWM Air Pollution scale from https://openweathermap.org/api/air-pollution
+const String OWMPollutionLabel[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 const uint32_t OWMIntervalMS = 1800000;
 
 // sampling and reporting intervals
@@ -71,7 +71,7 @@ const uint8_t graphPoints = 10;
 const uint32_t screenSaverIntervalMS = 300000; // switch to screen saver if no input after this period
 
 // warnings
-const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
+// const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
 // Subjective color scheme using 16 bit ('565') RGB colors
 const uint16_t warningColor[4] = {
     0x07E0, // Green = "Good"
@@ -99,20 +99,16 @@ const String hardwareDeviceType = "AirQuality";
   const uint8_t networkRSSIMin = 30;
   const uint8_t networkRSSIMax = 90;
 
-  const uint16_t sensorCO2Min =   400;   // in ppm
-  const uint16_t sensorCO2Max =   2000;
-
   const uint16_t sensorPMMin = 0;
   const uint16_t sensorPMMax = 1000;
-
-  const uint8_t   sensorVOCMin =  0;
-  const uint16_t  sensorVOCMax =  500;
 #endif
 
 // CO2 value thresholds
+const uint16_t sensorCO2Min =   400;   // in ppm
 const uint16_t sensorCO2Fair =  800;
 const uint16_t sensorCO2Poor =  1200;
 const uint16_t sensorCO2Bad =   1600;
+const uint16_t sensorCO2Max =   2000;
 const uint8_t co2SensorReadFailureLimit = 20;
 
 // Particulates (pm1, pm2.5, pm4, pm10) value thresholds
@@ -121,9 +117,11 @@ const uint16_t sensorPMPoor = 50;
 const uint16_t sensorPMBad = 150;
 
 // VOC (volatile organic compounds) index value thresholds
+const uint8_t   sensorVOCMin =  0;
 const uint16_t  sensorVOCFair = 150;
 const uint16_t  sensorVOCPoor = 250;
 const uint16_t  sensorVOCBad =  400;
+const uint16_t  sensorVOCMax =  500;
 
 // NOx (nitrogen oxide) index value thresholds, Sensiron Info_Note_NOx_Index.pdf
 const uint16_t noxFair = 49;

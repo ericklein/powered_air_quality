@@ -55,19 +55,19 @@
   };
   extern OpenWeatherMapCurrentData owmCurrentData;
 
-  // OpenWeatherMap Air Quality data
+  // OpenWeatherMap Air Pollution; https://openweathermap.org/api/air-pollution
   struct OpenWeatherMapAirQuality {
-    // float lon;   // "lon": 8.54
-    // float lat;   // "lat": 47.37
-    uint16_t aqi;   // "aqi": 2
-    // float co;    // "co": 453.95, in μg/m3
-    // float no;    // "no": 0.47, in μg/m3
-    // float no2;   // "no2": 52.09, in μg/m3
-    // float o3;    // "o3": 17.17, in μg/m3
-    // float so2;   // "so2": 7.51, in μg/m3
-    float pm25;     // "pm2.5": 8.04, in μg/m3
-    // float pm10;  // "pm10": 9.96, in μg/m3
-    // float nh3;   // "nh3": 0.86, in μg/m3
+    // float lon;   // longitude
+    // float lat;   // latitude
+    uint16_t aqi;   // OWM AQI index, composite score of all components, not regionally adjusted
+    // float co;    // carbon monoxide in μg/m3
+    // float no;    // nitrogen oxide in μg/m3
+    // float no2;   // nitrogen dioxide in μg/m3
+    // float o3;    // ozone in μg/m3
+    // float so2;   // sulphur dioxide in μg/m3
+    float pm25;     // pm25 in μg/m3
+    // float pm10;  // pm10 in μg/m3
+    // float nh3;   // ammonia in μg/m3
   };
   extern OpenWeatherMapAirQuality owmAirQuality;
 
