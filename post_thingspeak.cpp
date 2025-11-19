@@ -18,7 +18,6 @@
 
   // Shared helper function(s)
   extern void debugMessage(String messageText, uint8_t messageLevel);
-  extern String getDeviceId(String prefix);
 
   bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float nox, float aqi)
   {  

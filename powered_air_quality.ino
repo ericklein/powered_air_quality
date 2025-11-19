@@ -498,9 +498,6 @@ void screenPM25()
 // Output: NA (void)
 // Improvement: 
 {
-  int16_t x1, y1; // For (x,y) calculations
-  uint16_t w1, h1;  // For text size calculations
-
   // screen layout assists in pixels
   const uint16_t yStatusRegion = display.height()/8;
   const uint16_t xOutdoorMargin = ((display.width() / 2) + 10);
@@ -513,6 +510,7 @@ void screenPM25()
   const uint16_t circleRadius = 65;
   // inside the pm25 rings
   const uint16_t xIndoorCircleText = (xIndoorPMCircle - 18);
+  const uint16_t xOutdoorCircleText = (xOutdoorPMCircle - 18);
 
   debugMessage("screenPM25() start",2);
 
@@ -551,7 +549,6 @@ void screenPM25()
   display.print("PM25");
   
   // Outside
-
   // do we have OWM Air Quality data to display?
   if (owmAirQuality.aqi != 10000) {
     // Outside PM2.5
@@ -561,11 +558,12 @@ void screenPM25()
     // outdoor pm25 value and label inside the circle
     display.setFont(&FreeSans12pt7b);
     display.setTextColor(warningColor[pm25Range(owmAirQuality.pm25)]);  // Use highlight color look-up table
-    display.setCursor((xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10);
+    display.setCursor(xOutdoorCircleText, yPMCircles);
     display.print(owmAirQuality.pm25);
+    //label
     display.setTextColor(ILI9341_WHITE);
+    display.setCursor(xOutdoorCircleText,yPMCircles + 23);
     display.setFont(&FreeSans9pt7b);
-    display.setCursor(xOutdoorPMCircle-15,yPMCircles + 30);
     display.print("PM25");
   }
 
@@ -2292,7 +2290,6 @@ void powerDisable(uint32_t deepSleepTime)
   debugMessage(String("powerDisable complete: ESP32 deep sleep for ") + (deepSleepTime/1000000) + " seconds",1);
   esp_deep_sleep_start();
 }
-
 
 String getDeviceId(String prefix)
 // Returns a unique device identifier based on ESP32 MAC address along with a specified prefix
