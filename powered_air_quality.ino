@@ -805,7 +805,7 @@ void screenMain()
   #ifdef SENSOR_SEN66
     // NOx index
     display.fillRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[pm25Range(sensorData.pm25)]);
-    display.setCursor((display.width()*5/8),(display.height()/4));
+    display.setCursor((display.width()*5/8),(display.height()*3/4));
     display.print("NOx");
   #else
     // Temperature
