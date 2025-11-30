@@ -5,16 +5,15 @@
 
   // environment sensor data
   struct envData {
-    // All data measured via SEN66
-    float ambientTemperatureF;    // range -10C to 60C
-    float ambientHumidity;        // RH [%], range 0 to 100
-    uint16_t  ambientCO2;         // ppm, range 400 to 2000
-    float pm25;                   // PM2.5 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
-    float pm1;                    // PM1.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
-    float pm10;                   // PM10.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
-    float pm4;                    // PM4.0 [µg/m³], range 0 to 1000, NAN if unknown
-    float vocIndex;               // Sensiron VOC Index, range 0 to 500, NAN in unknown
-    float noxIndex;               // NAN for first 10-11 seconds where supported (SEN55, SEN66)
+    float ambientTemperatureF;        // range -10C to 60C
+    float ambientHumidity;            // RH [%], range 0 to 100
+    float  ambientCO2[graphPoints];   // ppm, range 400 to 2000, FIFO queue, -1 = no data, errant values ~ first 7 seconds (SCD4x, SEN6x)
+    float pm25;                       // PM2.5 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
+    float pm1;                        // PM1.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
+    float pm10;                       // PM10.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
+    float pm4;                        // PM4.0 [µg/m³], range 0 to 1000, NAN if unknown
+    float vocIndex[graphPoints];      // Sensiron VOC Index, range 0 to 500 (SEN54, SEN66)
+    float noxIndex;                   // Sensiron NOx Index, range 0 to 500, NAN for first ~11 seconds with SEN66, always NAN for SEN54
   };
   extern envData sensorData;
 
@@ -56,19 +55,19 @@
   };
   extern OpenWeatherMapCurrentData owmCurrentData;
 
-  // OpenWeatherMap Air Quality data
+  // OpenWeatherMap Air Pollution; https://openweathermap.org/api/air-pollution
   struct OpenWeatherMapAirQuality {
-    // float lon;   // "lon": 8.54
-    // float lat;   // "lat": 47.37
-    uint16_t aqi;   // "aqi": 2
-    // float co;    // "co": 453.95, in μg/m3
-    // float no;    // "no": 0.47, in μg/m3
-    // float no2;   // "no2": 52.09, in μg/m3
-    // float o3;    // "o3": 17.17, in μg/m3
-    // float so2;   // "so2": 7.51, in μg/m3
-    float pm25;     // "pm2.5": 8.04, in μg/m3
-    // float pm10;  // "pm10": 9.96, in μg/m3
-    // float nh3;   // "nh3": 0.86, in μg/m3
+    // float lon;   // longitude
+    // float lat;   // latitude
+    uint16_t aqi;   // OWM AQI index, composite score of all components, not regionally adjusted
+    // float co;    // carbon monoxide in μg/m3
+    // float no;    // nitrogen oxide in μg/m3
+    // float no2;   // nitrogen dioxide in μg/m3
+    // float o3;    // ozone in μg/m3
+    // float so2;   // sulphur dioxide in μg/m3
+    float pm25;     // pm25 in μg/m3
+    // float pm10;  // pm10 in μg/m3
+    // float nh3;   // ammonia in μg/m3
   };
   extern OpenWeatherMapAirQuality owmAirQuality;
 

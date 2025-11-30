@@ -5,14 +5,14 @@
   See README.md for target information
 */
 
-#include "powered_air_quality.h"
 #include "config.h"           // hardware and internet configuration parameters
+#include "powered_air_quality.h"
 #include "secrets.h"          // private credentials for network, MQTT
 #include "measure.h"          // Utility class for easy handling of aggregate sensor data
 #include "data.h"
 #include <HTTPClient.h>
 #include <Preferences.h>      // read-write to ESP32 persistent storage
-#include <ArduinoJson.h>      // Needed by OWM retrieval routines
+#include <ArduinoJson.h>      // https://arduinojson.org/ , used for OWM retrieval
 #include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager
 
 WiFiClient client;   // WiFi Managers loads WiFi.h, which is used by OWM and MQTT
@@ -46,7 +46,7 @@ SPIClass vspi = SPIClass(VSPI);
 Adafruit_ILI9341 display = Adafruit_ILI9341(&hspi, TFT_DC, TFT_CS, TFT_RST);
 
 // touchscreen
-#include <XPT2046_Touchscreen.h>
+#include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
 XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
 
 // fonts and glyphs
@@ -54,8 +54,8 @@ XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
 #include <Fonts/FreeSans12pt7b.h>
 #include <Fonts/FreeSans18pt7b.h>
 #include <Fonts/FreeSans24pt7b.h>
-#include "Fonts/meteocons16pt7b.h"
 #include "Fonts/meteocons12pt7b.h"
+#include "Fonts/meteocons16pt7b.h"
 #include "glyphs.h"
 
 // external function dependencies
@@ -86,8 +86,8 @@ XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
 // Arrange for the default unique device identifier to be automatically generated at runtime based
 // on ESP32 MAC address and hardware device type as specified in config.h.  This is done using a
 // custom function contained here (see below).
-extern String getDeviceId(String prefix);
-const String defaultDeviceID = getDeviceId(hardwareDeviceType);
+extern String deviceGetID(String prefix);
+const String defaultDeviceID = deviceGetID(hardwareDeviceType);
 
 // data structures defined in powered_air_quality.h
 MqttConfig mqttBrokerConfig;
@@ -99,13 +99,12 @@ OpenWeatherMapCurrentData owmCurrentData;
 OpenWeatherMapAirQuality owmAirQuality; 
 
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.
-Measure totalTemperatureF, totalHumidity, totalCO2, totalVOC, totalPM25, totalNOX;
-
-int16_t co2data[GRAPH_POINTS];
+Measure totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
 
 uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
 uint32_t timeResetPressStartMS = 0; // IMPROVEMENT: Move this as static to CheckResetLongPress()
 bool saveWFMConfig = false;
+enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
 
 void setup() {
   // config Serial first for debugMessage()
@@ -120,7 +119,7 @@ void setup() {
     #endif
   #endif
 
-  // initialize screen first to display (initialization) messages
+  // initialize screen first to display messages
   pinMode(TFT_BACKLIGHT, OUTPUT);
   digitalWrite(TFT_BACKLIGHT, HIGH);
 
@@ -130,9 +129,11 @@ void setup() {
   display.fillScreen(ILI9341_BLACK);
   screenAlert("Initializing");
 
-  // Setup the VSPI to use CYD touchscreen pins
+  // initialize touchscreen
+  // setup the VSPI to use CYD touchscreen pins
   vspi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
   touchscreen.begin(vspi);
+  touchscreen.setRotation(screenRotation);
 
   // truly random numbers for every boot cycle
   randomSeed(analogRead(0));
@@ -150,13 +151,19 @@ void setup() {
     delay(5000);
     // This error often occurs right after a firmware flash and reset.
     // Hardware deep sleep typically resolves it, so quickly cycle the hardware
-    powerDisable(hardwareErrorSleepTimeμS);
+    deviceDeepSleep(hardwareErrorSleepTimeμS);
   }
 
-  // initialize retained CO2 data values array for graphing
-  for(uint8_t loop=0;loop<GRAPH_POINTS;loop++) {
-    co2data[loop] = -1;
+  // initialize sensor value arrays
+  for(uint8_t loop=0;loop<graphPoints;loop++) {
+    sensorData.ambientCO2[loop] = -1;
+    sensorData.vocIndex[loop] = -1;
   }
+
+  #ifdef HARDWARE_SIMULATE
+    // optional, pre-populate CO2 values to test all points graphing
+    // generate values and retain() so measure is populated as well
+  #endif
 
   if (!openWiFiManager()) {
     hardwareData.rssi = 0;  // 0 = no WiFi
@@ -165,15 +172,11 @@ void setup() {
     mqttConnect();
   #endif
 
-  // Explicit start-up delay because the SEN66 takes 5-6 seconds to return valid
-  // CO2 readinggs and 10-11 seconds to return valid NOx index values, and the SEN554
-  // takes up to 6 seconds to return valid NOx index values.  The user interface 
-  // should display "Initializing" during this delay
   #ifdef SENSOR_SEN66
-    delay(12000);
+    delay(12000); // ~6 seconds for valid CO2 and ~11 seconds for valid NOx index values
   #endif
   #ifdef SENSOR_SEN54SCD40
-    delay(7000);
+    delay(7000); // ~6 seconds for valid CO2 values
   #endif
 }
 
@@ -183,15 +186,9 @@ void loop() {
   static uint32_t timeLastInputMS         = millis();  // timestamp for last user input (screensaver)
   static uint32_t timeNextNetworkRetryMS  = 0;
   static uint32_t timeLastOWMUpdateMS     = -(OWMIntervalMS); // forces immediate sample in loop()
-  static uint32_t timeLastMQTTPingMS      = 0;
-
-  // Set first screen to display.  If that first screen is the screen saver then we need to
-  // have the saved screen be something else so it'll get switched to on the first touch
-  static uint8_t screenSaved   = SCREEN_INFO; // Saved when screen saver engages so it can be restored
-  static uint8_t screenCurrent = SCREEN_SAVER; // Initial screen to display (on startup)
 
   // is there a long press on the reset button to wipe all configuration data?
-  checkResetLongPress();  // Always watching for long-press to wipe
+  checkResetLongPress();
 
   // is it time to read the sensor?
   if ((millis() - timeLastSampleMS) >= sensorSampleIntervalMS) {
@@ -201,18 +198,18 @@ void loop() {
       numSamples++;
       totalTemperatureF.include(sensorData.ambientTemperatureF);
       totalHumidity.include(sensorData.ambientHumidity);
-      totalCO2.include(sensorData.ambientCO2);
-      totalVOC.include(sensorData.vocIndex);
+      totalCO2.include(sensorData.ambientCO2[graphPoints-1]);
+      totalVOCIndex.include(sensorData.vocIndex[graphPoints-1]);
       totalPM25.include(sensorData.pm25);
-      totalNOX.include(sensorData.noxIndex);  // TODO: Skip invalid values immediately after initialization
+      totalNOxIndex.include(sensorData.noxIndex);
 
       debugMessage(String("Sample #") + numSamples + ", running totals: ",2);
       debugMessage(String("TemperatureF total: ") + totalTemperatureF.getTotal(),2);
       debugMessage(String("Humidity total: ") + totalHumidity.getTotal(),2);
       debugMessage(String("CO2 total: ") + totalCO2.getTotal(),2);    
-      debugMessage(String("VOC total: ") + totalVOC.getTotal(),2);
+      debugMessage(String("VOC index total: ") + totalVOCIndex.getTotal(),2);
       debugMessage(String("PM25 total: ") + totalPM25.getTotal(),2);
-      debugMessage(String("NOX total: ") + totalNOX.getTotal(),2);
+      debugMessage(String("NOx index total: ") + totalNOxIndex.getTotal(),2);
 
       screenUpdate(screenCurrent);
     }
@@ -226,35 +223,51 @@ void loop() {
 
   // is there user input to process?
   if (touchscreen.touched()) {
-    // If screen saver was active, switch to the previous active screen
-    if( screenCurrent == SCREEN_SAVER) {
-        screenCurrent = screenSaved;
-        debugMessage(String("touchscreen pressed, screen saver off => ") + screenCurrent,1);
-        screenUpdate(screenCurrent);
-    }
-    // Otherwise step to the next screen (and wrap around if necessary)
-    else {
-      ((screenCurrent + 1) >= screenCount) ? screenCurrent = 0 : screenCurrent ++;
-      // Allow stepping through screens to include the screen saver screen, in which case
-      // it is up not because the screen saver timer went off but because it was the next
-      // screen in sequence.  In that case, act like the "saved" screen is the INFO screen
-      // so it'll be switched to next in the overall sequence.
-      if(screenCurrent == SCREEN_SAVER) {
-        screenSaved = SCREEN_INFO;  // Technically, (SCREEN_SAVER+1) to preserve the sequence
+    // If screen saver active, switch to master screen
+    switch (screenCurrent) {
+      case sSaver :
+        // always go to the main screen when returning from screenSaver;
+        screenCurrent = sMain;
+        break;
+      case sMain : {
+        // get raw 12bit touchscreen x,y and then calibrate to screen size
+        TS_Point p = touchscreen.getPoint();
+        uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
+        uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
+        debugMessage(String("input: touchpoint x=") + calibratedX + ", y=" + calibratedY,2);
+        // transition to appropriate component screen
+        if ((calibratedX < display.width()/2) && (calibratedY < display.height()/2)) {
+          // upper left quandrant
+          screenCurrent = sCO2;
+        }
+        else
+          if ((calibratedX < display.width()/2) && (calibratedY > display.height()/2)) {
+            // lower left quandrant
+            screenCurrent = sVOC;
+          }
+          else
+            if ((calibratedX > display.width()/2) && (calibratedY < display.height()/2)) {
+              // upper right quandrant
+              screenCurrent = sPM25;
+            }
+            else
+            // lower right quandrant, either temp/humidity (SCD40/SEN55) or NOx Index (SEN66)
+            screenCurrent = sNOX;
+        break;
       }
-      debugMessage(String("touchscreen pressed, switch to screen ") + screenCurrent,1);
-      screenUpdate(screenCurrent);
+      default:
+        // switch back to main from component screen
+        screenCurrent = sMain;
+        break;
     }
-    // Save time touch input occurred
+    screenUpdate(screenCurrent);
     timeLastInputMS = millis();
   }
 
   // is it time to enable the screensaver AND we're not in screen saver mode already?
-  if ((screenCurrent != SCREEN_SAVER) && ((millis() - timeLastInputMS) > screenSaverIntervalMS)) {
-    // Activate screen saver, retaining current screen for easy return
-    screenSaved = screenCurrent;
-    screenCurrent = SCREEN_SAVER;
-    debugMessage(String("Screen saver engaged, will restore to ") + screenSaved,1);
+  if ((screenCurrent != sSaver) && ((millis() - timeLastInputMS) > screenSaverIntervalMS)) {
+    screenCurrent = sSaver;
+    debugMessage(String("Screen saver engaged"),1);
     screenUpdate(screenCurrent);
   }
 
@@ -268,6 +281,7 @@ void loop() {
 
   // is it time for MQTT keep alive or reconnect?
   #ifdef MQTT
+    static uint32_t timeLastMQTTPingMS = 0;
     if (mqtt.connected()) {
       if (millis() - timeLastMQTTPingMS > timeMQTTKeepAliveIntervalMS) {
         mqtt.loop();
@@ -306,28 +320,31 @@ void loop() {
 void screenUpdate(uint8_t screenCurrent) 
 {
   switch(screenCurrent) {
-    case SCREEN_SAVER:
+    case sSaver:
       screenSaver();
       break;
-    case SCREEN_INFO:
-      screenCurrentInfo();
+    case sMain:
+      screenMain();
       break;
-    case SCREEN_VOC:
+    case sVOC:
       screenVOC();
       break;
-    case SCREEN_COLOR:
-      screenColor();
+    case sCO2:
+      screenCO2();
       break;
-    case SCREEN_AGGREGATE:
-      screenAggregateData();
+    case sPM25:
+      screenPM25();
       break;
-    case SCREEN_GRAPH:
-      screenGraph();
+    case sNOX:
+      #ifdef SENSOR_SEN66  
+        screenNOX();
+      #else
+        screenCurrentInfo();
+      #endif
       break;
     default:
-      // This shouldn't happen, but if it does...
-      screenCurrentInfo();
-      debugMessage("bad screen ID",1);
+      // if on a component screen, go back to main
+      screenMain();
       break;
   }
 }
@@ -352,7 +369,6 @@ void screenCurrentInfo()
   const uint16_t circleRadius = 65;
   // inside the pm25 rings
   const uint16_t xIndoorCircleText = (xIndoorPMCircle - 18);
-  const uint16_t yAQIValue = 160;
   const uint16_t xWeatherIcon = xOutdoorPMCircle - 18;
   const uint16_t yWeatherIcon = yPMCircles - 20;
 
@@ -373,7 +389,10 @@ void screenCurrentInfo()
   // Indoor
   // Indoor temp
   display.setFont(&FreeSans12pt7b);
-  display.setTextColor(ILI9341_WHITE);
+  if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
+    display.setTextColor(ILI9341_YELLOW);
+  else
+    display.setTextColor(ILI9341_WHITE);
   display.setCursor(xMargins + xTempModifier, yTempHumdidity);
   display.print(String((uint8_t)(sensorData.ambientTemperatureF + .5)));
   //display.drawBitmap(xMargins + xTempModifier + 35, yTempHumdidity, bitmapTempFSmall, 20, 28, ILI9341_WHITE);
@@ -382,8 +401,8 @@ void screenCurrentInfo()
 
   // Indoor humidity
   display.setFont(&FreeSans12pt7b);
-  if ((sensorData.ambientHumidity<40) || (sensorData.ambientHumidity>60))
-    display.setTextColor(ILI9341_RED);
+  if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
+    display.setTextColor(ILI9341_YELLOW);
   else
     display.setTextColor(ILI9341_GREEN);
   display.setCursor(xMargins + xTempModifier + xHumidityModifier, yTempHumdidity);
@@ -393,15 +412,15 @@ void screenCurrentInfo()
   display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, ILI9341_WHITE);
 
   // Indoor PM2.5 ring
-  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[aqiRange(sensorData.pm25)]);
+  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
   display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
 
   // Indoor CO2 level inside the circle
   // CO2 value line
   display.setFont(&FreeSans12pt7b);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2)]);  // Use highlight color look-up table
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
   display.setCursor(xIndoorCircleText,yPMCircles);
-  display.print(sensorData.ambientCO2);
+  display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
 
   // CO2 label line
   display.setFont(&FreeSans12pt7b);
@@ -419,7 +438,7 @@ void screenCurrentInfo()
   if (owmAirQuality.aqi != 10000) {
 
     // Outside PM2.5
-    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[aqiRange(owmAirQuality.pm25)]);
+    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
     display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
 
     // Outside air quality index (AQI)
@@ -427,10 +446,10 @@ void screenCurrentInfo()
     display.setTextColor(ILI9341_WHITE);
     // IMPROVEMENT: Dynamic x coordinate based on text length
     // display.setCursor((xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10);
-    display.getTextBounds(OWMAQILabels[(owmAirQuality.aqi)],(xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10, &x1, &y1, &w1, &h1);
+    display.getTextBounds(OWMPollutionLabel[(owmAirQuality.aqi)],(xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10, &x1, &y1, &w1, &h1);
     display.setCursor((xOutdoorPMCircle - (w1/2)),yPMCircles+10);
 
-    display.print(OWMAQILabels[(owmAirQuality.aqi)]);
+    display.print(OWMPollutionLabel[(owmAirQuality.aqi)]);
     display.setCursor(xOutdoorPMCircle-15,yPMCircles + 30);
     display.print("AQI");
   }
@@ -445,6 +464,10 @@ void screenCurrentInfo()
     display.print(owmCurrentData.cityName);
 
     // Outside temp
+    if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
+      display.setTextColor(ILI9341_YELLOW);
+    else
+      display.setTextColor(ILI9341_WHITE);
     display.setCursor(xOutdoorMargin + xTempModifier, yTempHumdidity);
     display.print(String((uint8_t)(owmCurrentData.tempF + 0.5)));
     display.setFont(&meteocons12pt7b);
@@ -452,10 +475,10 @@ void screenCurrentInfo()
 
     // Outside humidity
     display.setFont(&FreeSans12pt7b);
-    if ((owmCurrentData.humidity<40) || (owmCurrentData.humidity>60))
-      display.setTextColor(ILI9341_RED);
+    if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
+      display.setTextColor(ILI9341_YELLOW);
     else
-      display.setTextColor(ILI9341_GREEN);
+      display.setTextColor(ILI9341_WHITE);
     display.setCursor(xOutdoorMargin + xTempModifier + xHumidityModifier, yTempHumdidity);
     display.print(String((uint8_t)(owmCurrentData.humidity + 0.5)));
     // IMPROVEMENT: original icon ratio was 5:7?
@@ -476,6 +499,89 @@ void screenCurrentInfo()
   debugMessage("screenCurrentInfo() end", 2);  // DJB-DEV: was 1
 }
 
+void screenPM25() 
+// Description: Displays indoor and outdoor PM25 information
+// Parameters:
+// Output: NA (void)
+// Improvement: 
+{
+  // screen layout assists in pixels
+  const uint16_t yStatusRegion = display.height()/8;
+  const uint16_t xOutdoorMargin = ((display.width() / 2) + 10);
+  // temp & humidity
+  const uint16_t yPollution = 210;
+  // pm25 rings
+  const uint16_t xIndoorPMCircle = (display.width() / 4);
+  const uint16_t xOutdoorPMCircle = ((display.width() / 4) * 3);
+  const uint16_t yPMCircles = 110;
+  const uint16_t circleRadius = 65;
+  // inside the pm25 rings
+  const uint16_t xIndoorCircleText = (xIndoorPMCircle - 18);
+  const uint16_t xOutdoorCircleText = (xOutdoorPMCircle - 18);
+
+  debugMessage("screenPM25() start",2);
+
+  // clear screen
+  display.fillScreen(ILI9341_BLACK);
+
+  // status region
+  display.fillRect(0,0,display.width(),yStatusRegion,ILI9341_DARKGREY);
+  // split indoor v. outside
+  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), ILI9341_WHITE);
+  // screen helpers in status region
+  // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
+  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
+  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), yMargins);
+  // labels
+  display.setFont(&FreeSans12pt7b);
+  display.setTextColor(ILI9341_WHITE);
+  display.setCursor(xMargins, ((display.height()/8)-7));
+  display.print("Indoor");
+  display.setCursor(xOutdoorMargin, ((display.height()/8)-7));
+  display.print("Outdoor");
+
+  // Indoor PM2.5 ring
+  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
+  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
+
+  // Indoor pm25 value and label inside the circle
+  display.setFont(&FreeSans12pt7b);
+  display.setTextColor(warningColor[pm25Range(sensorData.pm25)]);  // Use highlight color look-up table
+  display.setCursor(xIndoorCircleText,yPMCircles);
+  display.print(sensorData.pm25);
+  // label
+  display.setTextColor(ILI9341_WHITE);
+  display.setCursor(xIndoorCircleText,yPMCircles+23);
+  display.setFont(&FreeSans9pt7b);
+  display.print("PM25");
+  
+  // Outside
+  // do we have OWM Air Quality data to display?
+  if (owmAirQuality.aqi != 10000) {
+    // Outside PM2.5
+    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
+    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
+
+    // outdoor pm25 value and label inside the circle
+    display.setFont(&FreeSans12pt7b);
+    display.setTextColor(warningColor[pm25Range(owmAirQuality.pm25)]);  // Use highlight color look-up table
+    display.setCursor(xOutdoorCircleText, yPMCircles);
+    display.print(owmAirQuality.pm25);
+    //label
+    display.setTextColor(ILI9341_WHITE);
+    display.setCursor(xOutdoorCircleText,yPMCircles + 23);
+    display.setFont(&FreeSans9pt7b);
+    display.print("PM25");
+  }
+
+  // outside AQI
+  display.setCursor(xOutdoorMargin, yPollution);
+  display.print(OWMPollutionLabel[(owmAirQuality.aqi)]);
+  display.setCursor(xOutdoorMargin, yPollution + 15);
+  display.print("air pollution");
+  debugMessage("screenPM25() end", 2);
+}
+
 void screenAggregateData()
 // Displays minimum, average, and maximum values for primary sensor values
 // using a table-style layout (with labels)
@@ -486,12 +592,14 @@ void screenAggregateData()
   const uint16_t xMaxColumn   = 255;
   const uint16_t yHeaderRow   =  10;
   const uint16_t yPM25Row     =  40;
-  const uint16_t yCO2Row      =  70;
-  const uint16_t yVOCRow      = 100;
-  const uint16_t yNOXRow      = 130;
-  const uint16_t yTempFRow    = 160;
-  const uint16_t yHumidityRow = 190;
-  const uint16_t yAQIRow      = 220;
+  const uint16_t yAQIRow      =  70;
+  const uint16_t yCO2Row      = 100;
+  const uint16_t yVOCRow      = 130;
+  const uint16_t yNOXRow      = 170;
+  const uint16_t yTempFRow    = 200;
+  const uint16_t yHumidityRow = 220;
+
+  debugMessage("screenAggregateData() start",2);
 
   // clear screen and initialize properties
   display.fillScreen(ILI9341_BLACK);
@@ -499,7 +607,7 @@ void screenAggregateData()
   display.setTextSize(2);
   display.setTextColor(ILI9341_WHITE);
 
-  // Display column headings
+  // Display column heaings
   display.setTextColor(ILI9341_BLUE);
   display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
   display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,ILI9341_BLUE);
@@ -508,55 +616,64 @@ void screenAggregateData()
   // Display a unique unit ID based on the high-order 16 bits of the
   // ESP32 MAC address (as the header for the data name column)
   display.setCursor(0,yHeaderRow);
-  display.print(getDeviceId("AQ"));
+  display.print(deviceGetID("AQ"));
 
-  // Display column headers for our data table
+  // Display column headers
   display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
   display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
 
   // Display row headings
   display.setCursor(xValueColumn, yPM25Row); display.print("PM25");
+  display.setCursor(xValueColumn, yAQIRow); display.print("AQI");
   display.setCursor(xValueColumn, yCO2Row); display.print("CO2");
   display.setCursor(xValueColumn, yVOCRow); display.print("VOC");
-  display.setCursor(xValueColumn, yNOXRow); display.print("NOX");
+  display.setCursor(xValueColumn, yNOXRow); display.print("NOx");
   display.setCursor(xValueColumn, yTempFRow); display.print(" F");
   display.setCursor(xValueColumn, yHumidityRow); display.print("%RH");
-  display.setCursor(xValueColumn, yAQIRow); display.print("AQI");
 
-  // Fill in the data row by row
+  // PM2.5
   display.setCursor(xMinColumn,yPM25Row); display.print(totalPM25.getMin(),1);
   display.setCursor(xAvgColumn,yPM25Row); display.print(totalPM25.getAverage(),1);
   display.setCursor(xMaxColumn,yPM25Row); display.print(totalPM25.getMax(),1);
 
-  // Color code the CO2 row
-  display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
-  display.setCursor(xMinColumn,yCO2Row); display.print(totalCO2.getMin(),0);
-  display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);  // Use highlight color look-up table
-  display.setCursor(xAvgColumn,yCO2Row); display.print(totalCO2.getAverage(),0);
-  display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);  // Use highlight color look-up table
-  display.setCursor(xMaxColumn,yCO2Row); display.print(totalCO2.getMax(),0);
-  display.setTextColor(ILI9341_WHITE);  // Restore text color
-
-  display.setCursor(xMinColumn,yVOCRow); display.print(totalVOC.getMin(),0);
-  display.setCursor(xAvgColumn,yVOCRow); display.print(totalVOC.getAverage(),0);
-  display.setCursor(xMaxColumn,yVOCRow); display.print(totalVOC.getMax(),0);
-
-  display.setCursor(xMinColumn,yNOXRow); display.print(totalNOX.getMin(),1);
-  display.setCursor(xAvgColumn,yNOXRow); display.print(totalNOX.getAverage(),1);
-  display.setCursor(xMaxColumn,yNOXRow); display.print(totalNOX.getMax(),1);
-
-  display.setCursor(xMinColumn,yTempFRow); display.print(totalTemperatureF.getMin(),1);
-  display.setCursor(xAvgColumn,yTempFRow); display.print(totalTemperatureF.getAverage(),1);
-  display.setCursor(xMaxColumn,yTempFRow); display.print(totalTemperatureF.getMax(),1);
-
-  display.setCursor(xMinColumn,yHumidityRow); display.print(totalHumidity.getMin(),0);
-  display.setCursor(xAvgColumn,yHumidityRow); display.print(totalHumidity.getAverage(),0);
-  display.setCursor(xMaxColumn,yHumidityRow); display.print(totalHumidity.getMax(),0);
-
+  // AQI
   display.setCursor(xMinColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMin()),1);
   display.setCursor(xAvgColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getAverage()),1);
   display.setCursor(xMaxColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMax()),1);
 
+  // CO2 color coded
+  display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
+  display.setCursor(xMinColumn,yCO2Row); display.print(totalCO2.getMin(),0);
+  display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);
+  display.setCursor(xAvgColumn,yCO2Row); display.print(totalCO2.getAverage(),0);
+  display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);
+  display.setCursor(xMaxColumn,yCO2Row); display.print(totalCO2.getMax(),0);
+  display.setTextColor(ILI9341_WHITE);  // Restore text color
+
+  //VOC index
+  display.setCursor(xMinColumn,yVOCRow); display.print(totalVOCIndex.getMin(),0);
+  display.setCursor(xAvgColumn,yVOCRow); display.print(totalVOCIndex.getAverage(),0);
+  display.setCursor(xMaxColumn,yVOCRow); display.print(totalVOCIndex.getMax(),0);
+
+  // NOx index
+  display.setCursor(xMinColumn,yNOXRow); display.print(totalNOxIndex.getMin(),1);
+  display.setCursor(xAvgColumn,yNOXRow); display.print(totalNOxIndex.getAverage(),1);
+  display.setCursor(xMaxColumn,yNOXRow); display.print(totalNOxIndex.getMax(),1);
+
+  // temperature
+  display.setCursor(xMinColumn,yTempFRow); display.print(totalTemperatureF.getMin(),1);
+  display.setCursor(xAvgColumn,yTempFRow); display.print(totalTemperatureF.getAverage(),1);
+  display.setCursor(xMaxColumn,yTempFRow); display.print(totalTemperatureF.getMax(),1);
+
+  // humidity
+  display.setCursor(xMinColumn,yHumidityRow); display.print(totalHumidity.getMin(),0);
+  display.setCursor(xAvgColumn,yHumidityRow); display.print(totalHumidity.getAverage(),0);
+  display.setCursor(xMaxColumn,yHumidityRow); display.print(totalHumidity.getMax(),0);
+
+  // return to default text size
+  display.setTextSize(1);
+
+  debugMessage("screenAggregateData() end",2);
 }
 
 bool screenAlert(String messageText)
@@ -641,151 +758,158 @@ bool screenAlert(String messageText)
   return success;
 }
 
-// Draw a simple graph of recent CO2 values. Time-ordered data to be plottted is stored in an array with the
-// most recent point last.  Values of -1 are to be skipped in the plotting, allowing the line of points to
-// always have the most recent value at the right edge of the graph but still work if not enough data has yet
-// been reported to fully cover the plot area.
-void screenGraph()
-// Displays CO2 values over time as a graph
+void retainCO2(float co2)
+// Description: add new element, FIFO, to CO2 array
+// Parameters:  new CO2 value from sensor
+// Returns: NA (void)
+// Improvement: ?
 {
-  int16_t i, x1, y1;
-  uint16_t width, height, deltax, w1, h1, x, y, xp, yp;
-  uint16_t gx0, gy0, gx1, gy1;  // Drawing area bouding box
-  String minlabel, maxlabel, xlabel;
-  float c, minvalue, maxvalue;
-  bool firstpoint = true, nodata = true;
-
-  debugMessage("screenGraph start",1);
-  width = display.width();
-  height = display.height();
-
-  // Set drawing area bounding box values
-  gx0 = 50;
-  gy0 = 10;
-  gx1 = width-30;
-  gy1 = height-30;  // Room at the bottom for the graph label
-
-  display.fillScreen(ILI9341_BLACK);
-  display.setFont(&FreeSans9pt7b);
-
-  // Scan the retained CO2 data for max & min to scale the plot
-  minvalue = 5000;
-  maxvalue = 0;
-  for(i=0;i<GRAPH_POINTS;i++) {
-    if(co2data[i] == -1) continue;   // Skip "empty" slots
-    nodata = false;  // At least one data point
-    if(co2data[i] < minvalue) minvalue = co2data[i];
-    if(co2data[i] > maxvalue) maxvalue = co2data[i];
+  for(uint8_t loop=1;loop<graphPoints;loop++) {
+    sensorData.ambientCO2[loop-1] = sensorData.ambientCO2[loop];
   }
-  // Deal with no data condition (e.g., just booted)
-  if(nodata) {
-    // Label plot with "awating" message
-    display.setTextColor(ILI9341_WHITE);
-    xlabel = String("Awaiting CO2 Values");  // Center overall graph label below the drawing area
-    display.getTextBounds(xlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
-    display.setCursor( ((width-w1)/2),(height-(h1/2)) );
-    display.print(xlabel);
-    // Set reasonable bounds for the (empty) plot
-    minvalue = 400;
-    maxvalue = 1200;
-  }
-  else {
-    // We have data to plot, so say so
-    display.setTextColor(ILI9341_WHITE);
-    xlabel = String("Recent CO2 Values");  // Center overall graph label below the drawing area
-    display.getTextBounds(xlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
-    display.setCursor( ((width-w1)/2),(height-(h1/2)) );
-    display.print(xlabel);
-
-    // Pad min and max CO2 to add room and be multiples of 50 (for nicer axis labels)
-    minvalue = (int(minvalue)/50)*50;
-    maxvalue = ((int(maxvalue)/50)+1)*50;
-  }
-  
-  display.setTextColor(ILI9341_LIGHTGREY);
-  // Draw Y axis labels
-  minlabel = String(int(minvalue));
-  maxlabel = String(int(maxvalue));
-  display.getTextBounds(maxlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
-  display.setCursor(gx0-5-w1,h1+5); display.print(maxlabel);
-  display.getTextBounds(minlabel.c_str(),0,0,&x1,&y1,&w1,&h1);
-  display.setCursor(gx0-5-w1,gy1); display.print(minlabel);
-
-  // Draw axis lines
-  display.drawLine(gx0,gy0,gx0,gy1,ILI9341_LIGHTGREY);
-  display.drawLine(gx0,gy1,gx1,gy1,ILI9341_LIGHTGREY);
-  display.setTextColor(ILI9341_WHITE);
-
-  // Plot however many data points we have both with filled circles at each
-  // point and lines connecting the points.  Color the filled circles with the
-  // appropriate CO2 warning level color.
-  deltax = (gx1 - gx0 - 10)/ (GRAPH_POINTS-1);  // 10 pixel padding for Y axis
-  xp = gx0;
-  yp = gy1;
-  for(i=0;i<GRAPH_POINTS;i++) {
-    if(co2data[i] == -1) continue;
-    c = co2data[i];
-    x = gx0 + 10 + (i*deltax);  // Include 10 pixel padding for Y axis
-    y = gy1 - (((c - minvalue)/(maxvalue-minvalue)) * (gy1-gy0));
-    display.fillCircle(x,y,4,warningColor[co2Range(c)]);
-    if(firstpoint) {
-      // If this is the first drawn point then don't try to draw a line
-      firstpoint = false;
-    }
-    else {
-      // Draw line from previous point (if one) to this point
-      display.drawLine(xp,yp,x,y,ILI9341_WHITE);
-    }
-    // Save x & y of this point to use as previous point for next one.
-    xp = x;
-    yp = y;
-  }
-
-  debugMessage("screenGraph end",1);
-}
-// Accumulate a CO2 value into the data array used by the screen graphing function above
-void retainCO2(uint16_t co2)
-{
-  for(uint8_t loop=1;loop<GRAPH_POINTS;loop++) {
-    co2data[loop-1] = co2data[loop];
-  }
-  co2data[GRAPH_POINTS-1] = co2;
+  sensorData.ambientCO2[graphPoints-1] = co2;
 }
 
-void screenColor()
-// Represents CO2 and PM25 values as a single color rectangles
+void retainVOC(float voc)
+// Description: add new element, FIFO, to VOC array
+// Parameters:  new VOC index value from sensor
+// Returns: NA (void)
+// Improvement: not merged with retainCO2 because reads are in independent functions
 {
-  debugMessage("screenColor start",1);
+  for(uint8_t loop=1;loop<graphPoints;loop++) {
+    sensorData.vocIndex[loop-1] = sensorData.vocIndex[loop];
+  }
+  sensorData.vocIndex[graphPoints-1] = voc;
+}
+
+void screenMain()
+// Description: Represent CO2, VOC, PM25, and either T/H or NOx as touchscreen input quadrants color coded by current quality
+// Parameters:  NA
+// Returns: NA (void)
+// Improvement: ?
+{
+  // screen assists
+  const uint8_t halfBorderWidth = 2;
+  const uint8_t cornerRoundRadius = 4;
+
+  debugMessage("screenMain start",1);
+
   display.setFont(&FreeSans18pt7b);
-  display.setTextColor(ILI9341_WHITE);
+  display.setTextColor(ILI9341_BLACK);
   display.fillScreen(ILI9341_BLACK);
-  display.fillRoundRect(0, 0, ((display.width()/2)-2), display.height(), 4, warningColor[co2Range(sensorData.ambientCO2)]);
-  display.setCursor(display.width()/8,display.height()/2);
+  // CO2
+  display.fillRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+  display.setCursor((display.width()/8),(display.height()/4));
   display.print("CO2");
-  display.fillRoundRect(((display.width()/2)+2), 0, ((display.width()/2)-2), display.height(), 4, warningColor[aqiRange(sensorData.pm25)]);
-  display.setCursor(display.width()*5/8,display.height()/2);
+  // PM2.5
+  display.fillRoundRect(((display.width()/2)+halfBorderWidth), 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[pm25Range(sensorData.pm25)]);
+  display.setCursor((display.width()*5/8),(display.height()/4));
   display.print("PM25");
-  debugMessage("screenColor end",1);
+  // VOC Index
+  display.fillRoundRect(0, ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
+  display.setCursor((display.width()/8),((display.height()*3)/4));
+  display.print("VOC");
+  #ifdef SENSOR_SEN66
+    // NOx index
+    display.fillRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[pm25Range(sensorData.pm25)]);
+    display.setCursor((display.width()*5/8),(display.height()*3/4));
+    display.print("NOx");
+  #else
+    // Temperature
+    if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
+      //display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),display.height(),ILI9341_RED);
+      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_YELLOW);
+    else
+      // display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
+      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
+    display.setCursor(((display.width()*5)/8),((display.height()*3)/4));
+    display.setFont(&meteocons16pt7b);
+    display.print("+");
+    // Humdity
+    if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
+      // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_RED);
+      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_YELLOW);
+    else
+      // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
+      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
+    display.drawBitmap(((display.width()*7)/8),((display.height()*5)/8), bitmapHumidityIconSmall, 20, 28, ILI9341_BLACK);
+  #endif
+
+  debugMessage("screenMain end",1);
 }
 
 void screenSaver()
-// Display current CO2 reading at a random location (e.g. "screen saver")
+// Description: Display current CO2 reading at a random location (e.g. "screen saver")
+// Parameters:  NA
+// Returns: NA (void)
+// Improvement: ?
 {
-  debugMessage("screenSaver start",1);
+  // screen assists
+  int16_t x1, y1; // used by getTextBounds()
+  uint16_t text1Width, text1Height; // used by getTextBounds()
+
+  debugMessage("screenSaver() start",1);
+
   display.fillScreen(ILI9341_BLACK);
-  display.setTextSize(1);  // Needed so custom fonts scale properly
   display.setFont(&FreeSans24pt7b);
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+
+  display.getTextBounds(String(sensorData.ambientCO2[graphPoints-1]),0,0,&x1,&y1,&text1Width,&text1Height);
 
   // Pick a random location that'll show up
-  int16_t x = random(xMargins,display.width()-xMargins-100);  // 90 pixels leaves room for 4 digit CO2 value
-  int16_t y = random(44,display.height()-yMargins); // 35 pixels leaves vertical room for text display
-  display.setCursor(x,y);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2)]);  // Use highlight color LUT
-  display.println(sensorData.ambientCO2);
-  debugMessage("screenSaver end",1);
+  display.setCursor(random(xMargins,display.width()-xMargins-text1Width), random(yMargins + text1Height, display.height() - yMargins));
+  display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
+
+  debugMessage("screenSaver() end",1);
 }
 
 void screenVOC()
+// Description: Display VOC index information (ppm, color grade, graph)
+// Parameters:  NA
+// Returns: NA (void)
+// Improvement: ?
+{
+  // screen layout assists in pixels
+  const uint8_t legendHeight = 20;
+  const uint8_t legendWidth = 10;
+  const uint16_t borderWidth = 15;
+  const uint16_t borderHeight = 15;
+  const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
+  const uint16_t yLegend =  ((display.height()/4) + (2*legendHeight));
+  const uint16_t xLabel = display.width()/2;
+  const uint16_t yLabel = yMargins + borderHeight + 30;
+
+  debugMessage("screenVOC() start",1);
+
+  display.setFont(&FreeSans18pt7b);
+  display.setTextColor(ILI9341_WHITE);
+
+  // fill screen with VOC value color
+  display.fillScreen(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
+  display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,ILI9341_BLACK);
+
+  // value and label
+  display.setCursor(borderWidth + 20,yLabel);
+  display.print("VOC");
+  display.setTextColor(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);  // Use highlight color look-up table
+  display.setCursor(xLabel, yLabel);
+  display.print(uint16_t(sensorData.vocIndex[graphPoints-1]));
+
+  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)), sensorData.vocIndex, "Recent values");
+
+  // legend for CO2 color wheel
+  for(uint8_t loop = 0; loop < 4; loop++){
+    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
+  }
+
+  debugMessage("screenVOC() end",1);
+}
+
+void screenNOX()
+// Description: Display NOx index information (ppm, color grade, graph)
+// Parameters:  NA
+// Returns: NA (void)
+// Improvement: ?
 {
   // screen layout assists in pixels
   const uint8_t legendHeight = 20;
@@ -798,13 +922,14 @@ void screenVOC()
   const uint16_t xVOCLabel = xVOCCircle - 35;
   const uint16_t yVOCLabel = yVOCCircle + 35;
 
-  debugMessage("screenVOC start",1);
+  debugMessage("screenNOX() start",1);
 
   // clear screen
   display.fillScreen(ILI9341_BLACK);
+  display.setFont(&FreeSans18pt7b);
 
   // VOC color circle
-  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[vocRange(sensorData.vocIndex)]);
+  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[noxRange(sensorData.noxIndex)]);
   display.fillCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,ILI9341_BLACK);
 
   // VOC color legend
@@ -813,15 +938,56 @@ void screenVOC()
   }
 
   // VOC value and label (displayed inside circle)
-  display.setFont(&FreeSans18pt7b);
-  display.setTextColor(warningColor[vocRange(sensorData.vocIndex)]);  // Use highlight color look-up table
+  display.setTextColor(warningColor[vocRange(sensorData.noxIndex)]);  // Use highlight color look-up table
   display.setCursor(xVOCCircle-20,yVOCCircle);
-  display.print(int(sensorData.vocIndex+.5));
+  display.print(int(sensorData.noxIndex+.5));
   display.setTextColor(ILI9341_WHITE);
   display.setCursor(xVOCLabel,yVOCLabel);
-  display.print("VOC");
+  display.print("NOx");
 
-  debugMessage("screenVOC end",1);
+  debugMessage("screenNOX() end",1);
+}
+
+void screenCO2()
+// Description: Display CO2 information (ppm, color grade, graph)
+// Parameters:  NA
+// Returns: NA (void)
+// Improvement: ?
+{
+  // screen layout assists in pixels
+  const uint8_t legendHeight = 20;
+  const uint8_t legendWidth = 10;
+  const uint16_t borderWidth = 15;
+  const uint16_t borderHeight = 15;
+  const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
+  const uint16_t yLegend =  ((display.height()/4) + (2*legendHeight));
+  const uint16_t xLabel = display.width()/2;
+  const uint16_t yLabel = yMargins + borderHeight + 30;
+
+  debugMessage("screenCO2() start",1);
+
+  display.setFont(&FreeSans18pt7b);
+  display.setTextColor(ILI9341_WHITE);
+
+  // fill screen with CO2 value color
+  display.fillScreen(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+  display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,ILI9341_BLACK);
+
+  // value and label
+  display.setCursor(borderWidth + 20,yLabel);
+  display.print("CO2");
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
+  display.setCursor(xLabel, yLabel);
+  display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
+
+  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)), sensorData.ambientCO2, "Recent values");
+
+  // legend for CO2 color wheel
+  for(uint8_t loop = 0; loop < 4; loop++){
+    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
+  }
+
+  debugMessage("screenCO2() end",1);
 }
 
 void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
@@ -861,6 +1027,114 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
   #endif
 }
 
+void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, const float *values, String xLabel)
+// Description : Draw a graph of recent (CO2) values from right (most recent) to left. -1 values not graphed.
+// Parameters: starting graph position (x,y), width and height of graph, x axis description
+// Return : none
+// Improvement : This function assumes the use of the default Adafruit GFX font and its rendering direction (down, right)
+//  determine minimum size and block width and height smaller than that  
+{
+  uint8_t loop; // upper bound is graphPoints definition
+  int16_t x1, y1; // used by getTextBounds()
+  uint16_t text1Width, text1Height; // used by getTextBounds()
+  uint16_t deltaX, x, y, xp, yp;  // graphing positions
+  float minValue, maxValue;
+  bool firstpoint = true, nodata = true;
+
+  // screen layout assists in pixels
+  uint8_t labelSpacer = 2;
+  uint16_t graphLineX; // dynamically defined below
+  uint16_t graphLineY;
+
+  debugMessage("screenHelperGraph() start",1);
+
+  display.fillRect(initialX,initialY,xWidth,yHeight,ILI9341_BLACK);
+  display.setFont();
+  display.setTextColor(ILI9341_LIGHTGREY);
+
+  switch (screenCurrent) {
+    case sCO2:
+      minValue = sensorCO2Max;
+      maxValue = sensorCO2Min;
+      break;
+    case sVOC:
+      minValue = sensorVOCMax;
+      maxValue = sensorVOCMin;
+      break;  
+}
+  // scan the array for min/max
+  for(loop=0;loop<graphPoints;loop++) {
+    if(values[loop] == -1) continue;   // Skip "empty" slots
+    nodata = false;  // At least one data point
+    if(values[loop] < minValue) minValue = values[loop];
+    if(values[loop] > maxValue) maxValue = values[loop];
+  }
+  debugMessage(String("Min value in samples is ") + minValue + ", max is " + maxValue, 2);
+
+  // do we have data? (e.g., just booted)
+  if (nodata)
+    xLabel = "Awaiting samples";
+  else {
+    // since we have data, pad min and max CO2 to add room and be multiples of 50 (for nicer axis labels)
+    minValue = (uint16_t(minValue)/50)*50;
+    maxValue = ((uint16_t(maxValue)/50)+1)*50;
+  }
+
+  // draw the X axis description, if provided, and set the position of the horizontal axis line
+  if (strlen(xLabel.c_str())) {
+    display.getTextBounds(xLabel,0,0,&x1,&y1,&text1Width,&text1Height);
+    graphLineY = initialY + yHeight - text1Height - labelSpacer;
+    display.setCursor((((initialX + xWidth)/2) - (text1Width/2)), (initialY + yHeight - text1Height));
+    display.print(xLabel);
+  }
+
+  // calculate text width and height of longest Y axis label
+  display.getTextBounds(String(maxValue),0,0,&x1,&y1,&text1Width,&text1Height);
+  graphLineX = initialX + text1Width + labelSpacer;
+  
+  // draw top Y axis label
+  display.setCursor(initialX, initialY);
+  display.print(uint16_t(maxValue));
+  // draw bottom Y axis label
+  display.setCursor(initialX, graphLineY-text1Height); 
+  display.print(uint16_t(minValue));
+
+  // Draw vertical axis
+  display.drawFastVLine(graphLineX,initialY,(graphLineY-initialY), ILI9341_LIGHTGREY);
+  // Draw horitzonal axis
+  display.drawFastHLine(graphLineX,graphLineY,(xWidth-graphLineX),ILI9341_LIGHTGREY);
+
+  // Plot however many data points we have both with filled circles at each
+  // point and lines connecting the points.  Color the filled circles with the
+  // appropriate CO2 warning level color.
+  deltaX = ((xWidth-graphLineX) - 10) / (graphPoints-1);  // X distance between points, 10 pixel padding for Y axis
+  xp = graphLineX;
+  yp = graphLineY;
+  for(loop=0;loop<graphPoints;loop++) {
+    if(values[loop] == -1) continue;
+    x = graphLineX + 10 + (loop*deltaX);  // Include 10 pixel padding for Y axis
+    y = graphLineY - (((values[loop] - minValue)/(maxValue-minValue)) * (graphLineY-initialY));
+    debugMessage(String("Array ") + loop + " y value is " + y,2);
+    if (screenCurrent == sCO2)
+      display.fillCircle(x,y,4,warningColor[co2Range(sensorData.ambientCO2[loop])]);
+    else
+      if (screenCurrent == sVOC)
+        display.fillCircle(x,y,4,warningColor[vocRange(sensorData.vocIndex[loop])]);
+    if(firstpoint) {
+      // If this is the first drawn point then don't try to draw a line
+      firstpoint = false;
+    }
+    else {
+      // Draw line from previous point (if one) to this point
+      display.drawLine(xp,yp,x,y,ILI9341_WHITE);
+    }
+    // Save x & y of this point to use as previous point for next one.
+    xp = x;
+    yp = y;
+  }
+  debugMessage("screenHelperGraph() end",1);
+}
+
 // Hardware simulation routines
 #ifdef HARDWARE_SIMULATE
   void OWMCurrentWeatherSimulate()
@@ -898,25 +1172,70 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
   {
     // Note: tempF and humidity come from SCD4X simulation
 
-    sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.pm4 = random(sensorPMMin, sensorPMMax) / 100.0;
-    sensorData.vocIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
+    sensorData.pm1 = random(sensorPMMin, sensorPMMax);
+    sensorData.pm10 = random(sensorPMMin, sensorPMMax);
+    sensorData.pm25 = random(sensorPMMin, sensorPMMax);
+    sensorData.pm4 = random(sensorPMMin, sensorPMMax);
     // IMPROVEMENT: not supported on SEN54, so return NAN
-    //sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
+    //sensorData.vocIndex = NAN;
 
-    debugMessage(String("SIMULATED SEN5x PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex,1);
+    debugMessage(String("Simulated SEN5X PM2.5: ") + sensorData.pm25 + "ppm, VOC Index: " + sensorData.vocIndex + ", NOx Index: " + sensorData.noxIndex, 1);
   }
 
-  void sensorCO2Simulate()
-  // Simulate ranged data from the SCD40
-  // IMPROVEMENT: implement stable, rapid rise and fall 
+  void sensorSCD4xSimulate(uint8_t mode = 0, uint8_t cycles = 0)
+  // Description: Simulates temp, humidity, and CO2 values from Sensirion SCD4X sensor
+  // Parameters:
+  //  mode
+  //    default = random values, ignores cycles parameter
+  //    1 = random values, slightly +/- per cycle
+  //  cycles = If used, determines how many times the current mode executes before resetting
+  // Output : NA
+  // Improvement : implement edge value mode, rapid CO2 rise mode 
   {
-    sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
-    sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
-    sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
-    debugMessage(String("SIMULATED SEN5x PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex,1);
+    static uint8_t currentMode = 1;
+    static uint8_t cycleCount = 0;
+    static float simulatedTempF;
+    static float simulatedHumidity;
+    static uint16_t simulatedCO2;
+
+    if (mode != currentMode) {
+      cycleCount = 0;
+      currentMode = mode;
+    }
+    switch (currentMode) {
+    case 1: // 1 = random values, slightly +/- per cycle
+      if (cycleCount == cycles) {
+        cycleCount = 0;
+      }
+      if (!cycleCount) {
+        // create new base values
+        simulatedTempF = randomFloatRange(sensorTempMinF,sensorTempMaxF);
+        simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+        simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
+        cycleCount++;
+      }
+      else
+      {
+        // slightly +/- CO2 value
+        int8_t sign = random(0, 2) == 0 ? -1 : 1;
+        simulatedCO2 = simulatedCO2 + (sign * random(0, sensorCO2VariabilityRange));
+        // slightly +/- temp value
+        // slightly +/- humidity value
+        cycleCount++;
+      }
+      break;
+    default: // random values, ignores cycles value
+      simulatedTempF = randomFloatRange(sensorTempMinF,sensorTempMaxF);
+      simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+      simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
+      break;
+    }
+    sensorData.ambientTemperatureF = simulatedTempF;
+    sensorData.ambientHumidity = simulatedHumidity;
+    retainCO2(simulatedCO2);
+
+    debugMessage(String("Simulated temp: ") + sensorData.ambientTemperatureF + "F, humidity: " + sensorData.ambientHumidity
+      + "%, CO2: " + uint16_t(sensorData.ambientCO2[graphPoints-1]) + "ppm",1);
   }
 #endif
 
@@ -1093,43 +1412,41 @@ String OWMtoMeteoconIcon(String icon)
 
 void processSamples(uint8_t numSamples)
 {
+  debugMessage(String("processSamples() start"),2);
+
   // do we have samples to process?
   if (numSamples) {
-    // avgCO2 used by screenGraph and endPoint reporting
-    uint16_t avgCO2 = totalCO2.getAverage();
     // can we report to network endPoints?
     if (WiFi.status() == WL_CONNECTED) {
       #if !defined HARDWARE_SIMULATE
         // Get averaged sample values from Measure class objects for endPoint reporting
         float avgTemperatureF = totalTemperatureF.getAverage();
         float avgHumidity = totalHumidity.getAverage();
-        float avgVOC = totalVOC.getAverage();
+        uint16_t avgCO2 = totalCO2.getAverage();
+        float avgVOC = totalVOCIndex.getAverage();
         float avgPM25 = totalPM25.getAverage();
-        float maxPM25 = totalPM25.getMax();
-        float minPM25 = totalPM25.getMin();
-        float avgNOX = totalNOX.getAverage();
+        float avgNOX = totalNOxIndex.getAverage();
 
-        debugMessage(String("** ----- Reporting averages (") + (reportIntervalMS/60000) + " minutes) ----- ",1);
-
-        debugMessage(String("** PM2.5: ") + avgPM25 + String(", CO2: ") + avgCO2 + " ppm" + 
-          String(", VOC: ") + avgVOC+ String(", NOX: ") + avgNOX + String(", ") + 
-          avgTemperatureF + "F, " + avgHumidity + String("%, ") + String("AQI(US): ") + pm25toAQI_US(avgPM25),1);
+        debugMessage(String("Averages for the last ") + (reportIntervalMS/60000) + " minutes for endpoint reporting",1);
+        debugMessage(String("PM2.5: ") + avgPM25 + "ppm, CO2: " + avgCO2 + "ppm, VOC index: " + avgVOC + ", NOx index: " + avgNOX + ", " + 
+          avgTemperatureF + "F, humidity: " + avgHumidity + "%", 1);
 
         #ifdef THINGSPEAK
-        // IMPROVEMENT : Post the AQI sensor data to ThingSpeak. Make sure to use the PM25 to AQI conversion formula for the
-        // desired country as there is no global standard.
+          debugMessage(String("AQI(US): ") + pm25toAQI_US(avgPM25),1);
           if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
             Serial.println("ERROR: Did not write to ThingSpeak");
           }
         #endif
 
         #ifdef INFLUX
-          // IMPROVEMENT: Modify to include NOX readings
+          debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
           if (!post_influx(avgTemperatureF, avgHumidity, avgCO2 , avgPM25, avgVOC, avgNOX, hardwareData.rssi))
             Serial.println("ERROR: Did not write to influxDB");
         #endif
 
         #ifdef MQTT
+          debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
+
           // publish device data
           const char* topic;
 
@@ -1164,20 +1481,19 @@ void processSamples(uint8_t numSamples)
     else {
       debugMessage("No network, endpoint reporting skipped",1);
     }
-    // retain CO2 data for screenGraph
-    retainCO2(avgCO2);
 
     // Reset sample counters
     totalTemperatureF.clear();
     totalHumidity.clear();
     totalCO2.clear();
-    totalVOC.clear();
+    totalVOCIndex.clear();
     totalPM25.clear();
-    totalNOX.clear();
+    totalNOxIndex.clear();
   }      
   else {
     debugMessage("No samples to process this cycle",1);
   }
+  debugMessage(String("processSamples() end"),2);
 }
 
 // WiFiManager portal functions
@@ -1506,12 +1822,8 @@ void checkResetLongPress() {
   }
 }
 
-/**************************************************************************************
- *                 SENSOR SPECIFIC ROUTINES AND CONVENIENCE FUNCTIONS                 *
- *************************************************************************************/
-
-// Generalized entry point for sensor initialization
 bool sensorInit()
+// Generalized entry point for sensor initialization
 {
   // Conditionally compiled based on the sensor configuration as defined in config.h
   #ifdef SENSOR_SEN66
@@ -1536,8 +1848,8 @@ bool sensorInit()
   return false;
 }
 
-// Generalized entry point for reading sensor values
 bool sensorRead()
+// Generalized entry point for reading sensor values
 {
   #ifdef SENSOR_SEN66
     return(sensorSEN6xRead());
@@ -1615,14 +1927,15 @@ bool sensorRead()
     #endif
       static char errorMessage[64];
       static int16_t error;
-      float ambientTemperatureC;
+      float ambientTemperatureC, voc;
+      uint16_t co2 = 0;
 
       // TODO: Add support for checking isDataReady flag on SEN66
 
       error = paqSensor.readMeasuredValues(
         sensorData.pm1, sensorData.pm25, sensorData.pm4,
-        sensorData.pm10, sensorData.ambientHumidity, ambientTemperatureC , sensorData.vocIndex,
-        sensorData.noxIndex, sensorData.ambientCO2);
+        sensorData.pm10, sensorData.ambientHumidity, ambientTemperatureC , voc,
+        sensorData.noxIndex, co2);
 
     if (error != 0) {
         debugMessage("Error trying to execute readMeasuredValues(): ",1);
@@ -1632,10 +1945,13 @@ bool sensorRead()
     }
     // Convert temperature Celsius from sensor into Farenheit
     sensorData.ambientTemperatureF = (1.8*ambientTemperatureC) + 32.0;
+
+    retainCO2(co2);
+    retainVOC(voc);
     
-    debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + String(", CO2: ") + sensorData.ambientCO2 +
-      String(", VOC: ") + sensorData.vocIndex + String(", NOX: ") + sensorData.noxIndex + String(", ") + 
-      sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + String("%, "),1);
+    debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + ", CO2: " + uint16_t(sensorData.ambientCO2[graphPoints-1]) +
+      "ppm, VOC index: " + sensorData.vocIndex[graphPoints-1] + ", NOx index: " + sensorData.noxIndex + ", temp:" + 
+      sensorData.ambientTemperatureF + "F, humidity:" + sensorData.ambientHumidity + "%",1);
     return true;
   }
 
@@ -1643,19 +1959,25 @@ bool sensorRead()
     // Simulates sensor reading from SEN66 sensor
     void sensorSEN6xSimulate()
     {
+      uint16_t simulatedCO2 = 0;
+      float simulatedVOCIndex = 0.00f;
+
       sensorData.pm1 = random(sensorPMMin, sensorPMMax) / 100.0;
       sensorData.pm10 = random(sensorPMMin, sensorPMMax) / 100.0;
       sensorData.pm25 = random(sensorPMMin, sensorPMMax) / 100.0;
       sensorData.pm4 = random(sensorPMMin, sensorPMMax) / 100.0;
-      sensorData.vocIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
+      simulatedVOCIndex = random(sensorVOCMin, sensorVOCMax) / 100.0;
       sensorData.noxIndex = random(sensorVOCMin, sensorVOCMax) / 10.0;
       sensorData.ambientTemperatureF = (random(sensorTempMinF,sensorTempMaxF) / 100.0);
       sensorData.ambientHumidity = random(sensorHumidityMin,sensorHumidityMax) / 100.0;
-      sensorData.ambientCO2 = random(sensorCO2Min, sensorCO2Max);
+      simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
 
-      debugMessage(String("SIMULATED SEN66 PM2.5: ")+sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex +
-        sensorData.pm25+" ppm, VOC index: " + sensorData.vocIndex + ",NOX index: " + sensorData.noxIndex,1);
+      retainCO2(simulatedCO2);
+      retainVOC(simulatedVOCIndex);
 
+      debugMessage(String("Simulated SEN6x: PM2.5: ") + sensorData.pm25 + ", CO2: " + sensorData.ambientCO2[graphPoints-1] +
+      "ppm, VOC index: " + sensorData.vocIndex[graphPoints-1] + ", NOx index: " + sensorData.noxIndex + ", temp:" + 
+      sensorData.ambientTemperatureF + "F, humidity:" + sensorData.ambientHumidity + "%",1);
     }
   #endif // HARDWARE_SIMULATE
 #endif // SENSOR_SEN66
@@ -1730,21 +2052,23 @@ bool sensorRead()
       char errorMessage[256];
       // we'll use the SCD4X values for these
       // IMPROVEMENT: Compare to SCD4X values?
-      float sen5xTempF;
-      float sen5xHumidity;
+      float sen5xTempF, sen5xHumidity, sen5xvoc;
+
 
       debugMessage("SEN5X read initiated",1);
 
       error = pmSensor.readMeasuredValues(
         sensorData.pm1, sensorData.pm25, sensorData.pm4,
-        sensorData.pm10, sen5xHumidity, sen5xTempF, sensorData.vocIndex,
+        sensorData.pm10, sen5xHumidity, sen5xTempF, sen5xvoc,
         sensorData.noxIndex);
       if (error) {
         errorToString(error, errorMessage, 256);
         debugMessage(String(errorMessage) + " error during SEN5x read",1);
         return false;
       }
-      debugMessage(String("SEN5X PM2.5: ") + sensorData.pm25 + ", VOC: " + sensorData.vocIndex, 1);
+
+      retainVOC(sen5xvoc);
+      debugMessage(String("SEN5X PM2.5: ") + sensorData.pm25 + "ppm, VOC Index: " + sensorData.vocIndex[graphPoints-1] + ", NOx Index: " + sensorData.noxIndex, 1);
       return true;
     #endif
   }
@@ -1807,7 +2131,7 @@ bool sensorRead()
 
     #ifdef HARDWARE_SIMULATE
       success = true;
-      sensorCO2Simulate();
+      sensorSCD4xSimulate();
     #else
       char errorMessage[256];
       uint16_t co2 = 0;
@@ -1855,8 +2179,8 @@ bool sensorRead()
           // Valid measurement available, update globals
           sensorData.ambientTemperatureF = (temperatureC*1.8)+32.0;
           sensorData.ambientHumidity = humidity;
-          sensorData.ambientCO2 = co2;
-          debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + sensorData.ambientCO2 + " ppm",1);
+          retainCO2(co2);
+          debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + uint16_t(sensorData.ambientCO2[graphPoints-1]) + " ppm",1);
           // Update global sensor readings
           success = true;
           break;
@@ -1868,25 +2192,25 @@ bool sensorRead()
   }
 #endif // SENSOR_SEN54SCD40
 
-uint8_t co2Range(uint16_t co2) 
+uint8_t co2Range(float co2) 
 // converts co2 value to index value for labeling and color
 {
   uint8_t co2Range = 
-    (co2 <= co2Fair) ? 0 :
-    (co2 <= co2Poor) ? 1 :
-    (co2 <= co2Bad)  ? 2 : 3;
+    (co2 <= sensorCO2Fair) ? 0 :
+    (co2 <= sensorCO2Poor) ? 1 :
+    (co2 <= sensorCO2Bad)  ? 2 : 3;
 
-  debugMessage(String("CO2 input of ") + co2 + " yields co2Range of " + co2Range, 2);
+  debugMessage(String("CO2 input of ") + co2 + " yields " + co2Range + " CO2 band", 2);
   return co2Range;
 }
 
-uint8_t aqiRange(float pm25)
+uint8_t pm25Range(float pm25)
 // converts pm25 value to index value for labeling and color
 {
   uint8_t aqi =
-  (pm25 <= pmFair) ? 0 :
-  (pm25 <= pmPoor) ? 1 :
-  (pm25 <= pm2Bad) ? 2 : 3;
+  (pm25 <= sensorPMFair) ? 0 :
+  (pm25 <= sensorPMPoor) ? 1 :
+  (pm25 <= sensorPMBad) ? 2 : 3;
 
   debugMessage(String("PM2.5 input of ") + pm25 + " yields " + aqi + " aqi",2);
   return aqi;
@@ -1896,12 +2220,24 @@ uint8_t vocRange(float vocIndex)
 // converts vocIndex value to index value for labeling and color
 {
   uint8_t vocRange =
-  (vocIndex <= vocFair) ? 0 :
-  (vocIndex <= vocPoor) ? 1 :
-  (vocIndex <= vocBad)  ? 2 : 3;
+  (vocIndex <= sensorVOCFair) ? 0 :
+  (vocIndex <= sensorVOCPoor) ? 1 :
+  (vocIndex <= sensorVOCBad)  ? 2 : 3;
 
-  debugMessage(String("VOC index input of ") + vocIndex + " yields " + vocRange + " vocRange",2);
+  debugMessage(String("VOC index input of ") + vocIndex + " yields " + vocRange + " VOC band",2);
   return vocRange;
+}
+
+uint8_t noxRange(float noxIndex)
+// converts noxIndex value to index value for labeling and color
+{
+  uint8_t noxRange =
+  (noxIndex <= noxFair) ? 0 :
+  (noxIndex <= noxPoor) ? 1 :
+  (noxIndex <= noxBad)  ? 2 : 3;
+
+  debugMessage(String("NOx index input of ") + noxIndex + " yields " + noxRange + " NOx band",2);
+  return noxRange;
 }
 
 float pm25toAQI_US(float pm25)
@@ -1926,21 +2262,10 @@ float fmap(float x, float xmin, float xmax, float ymin, float ymax)
   return( ymin + ((x - xmin)*(ymax-ymin)/(xmax - xmin)));
 }
 
-void debugMessage(String messageText, uint8_t messageLevel)
-// wraps Serial.println as #define conditional
-{
-  #ifdef DEBUG
-    if (messageLevel <= DEBUG) {
-      Serial.println(messageText);
-      Serial.flush();      // Make sure the message gets output (before any sleeping...)
-    }
-  #endif
-}
-
-void powerDisable(uint32_t deepSleepTime)
+void deviceDeepSleep(uint32_t deepSleepTime)
 // turns off component hardware then puts ESP32 into deep sleep mode for specified seconds
 {
-  debugMessage("powerDisable start",1);
+  debugMessage("deviceDeepSleep() start",1);
 
   // power down SCD4X by stopping potentially started measurement then power down SCD4X
   #ifndef HARDWARE_SIMULATE
@@ -1962,16 +2287,11 @@ void powerDisable(uint32_t deepSleepTime)
   networkDisconnect();
 
   esp_sleep_enable_timer_wakeup(deepSleepTime);
-  debugMessage(String("powerDisable complete: ESP32 deep sleep for ") + (deepSleepTime/1000000) + " seconds",1);
+  debugMessage(String("deviceDeepSleep() end: ESP32 deep sleep for ") + (deepSleepTime/1000000) + " seconds",1);
   esp_deep_sleep_start();
 }
 
-/*
- * Utility function to return a unique device identifier string, combining the prefix passed in as
- * an argument and the high-order four hex digits of the ESP32 MAC address (which should be unique
- * for ESP32 units). Typically used in combination with hardware device type info from secrets.h.
-*/
-String getDeviceId(String prefix)
+String deviceGetID(String prefix)
 // Returns a unique device identifier based on ESP32 MAC address along with a specified prefix
 {
   uint16_t shortid = (uint16_t) ((ESP.getEfuseMac() >> 32) & 0xFFFF ) ;
@@ -1981,4 +2301,15 @@ String getDeviceId(String prefix)
   else {
     return(prefix + "-" + String(shortid,HEX));
   }
+}
+
+void debugMessage(String messageText, uint8_t messageLevel)
+// wraps Serial.println as #define conditional
+{
+  #ifdef DEBUG
+    if (messageLevel <= DEBUG) {
+      Serial.println(messageText);
+      Serial.flush();      // Make sure the message gets output (before any sleeping...)
+    }
+  #endif
 }

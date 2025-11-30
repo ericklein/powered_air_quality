@@ -27,7 +27,7 @@
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
 // #define SENSOR_SEN66
-// #define SENSOR_SEN54SCD40
+#define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 
@@ -40,14 +40,14 @@ const uint32_t timeMQTTKeepAliveIntervalMS = 10000; // ping MQTT broker to keep 
 const String OWMServer = "http://api.openweathermap.org/data/2.5/";
 const String OWMWeatherPath =  "weather?";
 const String OWMAQMPath = "air_pollution?";
-// aqi labels from https://openweathermap.org/api/air-pollution
-const String OWMAQILabels[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
+// OWM Air Pollution scale from https://openweathermap.org/api/air-pollution
+const String OWMPollutionLabel[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 const uint32_t OWMIntervalMS = 1800000;
 
 // sampling and reporting intervals
 #ifdef DEBUG
-  const uint32_t sensorSampleIntervalMS = 30000;   // time between samples
-  const uint32_t reportIntervalMS = 90000;     // time between reports
+  const uint32_t sensorSampleIntervalMS = 30000;  // time between samples
+  const uint32_t reportIntervalMS = 90000;        // time between reports
 #else
   const uint32_t sensorSampleIntervalMS = 60000;
   const uint32_t reportIntervalMS = 900000;
@@ -56,14 +56,7 @@ const uint8_t reportFailureThreshold = 3; // number of times reporting has to fa
 
 // Display
 const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
-// Manage the suported display screens
-#define SCREEN_SAVER      0
-#define SCREEN_INFO       1
-#define SCREEN_VOC        2 
-#define SCREEN_COLOR      3
-#define SCREEN_GRAPH      4
-#define SCREEN_AGGREGATE  5
-const uint8_t screenCount = 6;
+enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX};
 
 // screen layout assists in pixels
 const uint8_t xMargins = 5;
@@ -72,15 +65,13 @@ const uint8_t wifiBarWidth = 3;
 const uint8_t wifiBarHeightIncrement = 3;
 const uint8_t wifiBarSpacing = 5;
 
-// How many CO2 points to retain for the graphing screen
-#define GRAPH_POINTS 10
+// How many data samples are retained for graphing
+const uint8_t graphPoints = 10;
 
-// Screen saver timeout.  Will automatically switch to screen saver if
-// no user input (via touchscreen) in this many seconds
-const uint32_t screenSaverIntervalMS = 300000;
+const uint32_t screenSaverIntervalMS = 300000; // switch to screen saver if no input after this period
 
 // warnings
-const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
+// const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
 // Subjective color scheme using 16 bit ('565') RGB colors
 const uint16_t warningColor[4] = {
     0x07E0, // Green = "Good"
@@ -88,8 +79,6 @@ const uint16_t warningColor[4] = {
     0xFD20, // Orange = "Poor"
     0xF800  // Red = "Bad"
   };
-
-// Hardware
 
 // hardware
 const String hardwareDeviceType = "AirQuality";
@@ -111,30 +100,41 @@ const String hardwareDeviceType = "AirQuality";
   const uint8_t networkRSSIMax = 90;
 
   const uint16_t sensorPMMin = 0;
-  const uint16_t sensorPMMax = 100000; // divided by 100.0 to give float
-
-  const uint16_t sensorVOCMin = 0;
-  const uint16_t sensorVOCMax = 50000; // divided by 100.0 to give float
+  const uint16_t sensorPMMax = 1000;
 #endif
 
-// CO2 value thresholds for labeling
-const uint16_t co2Fair = 800;
-const uint16_t co2Poor = 1200;
-const uint16_t co2Bad = 2000;
+// tempF value threshholds
+const uint8_t sensorTempFComfortMin = 65;
+const uint8_t sensorTempFComfortMax = 80;
 
-const uint16_t sensorCO2Min =      400;   // in ppm
-const uint16_t sensorCO2Max =      2000;  // in ppm
+// humidity value thresholds
+const uint8_t sensorHumidityComfortMin = 40;
+const uint8_t sensorHumidityComfortMax = 60;
+
+// CO2 value thresholds
+const uint16_t sensorCO2Min =   400;   // in ppm
+const uint16_t sensorCO2Fair =  800;
+const uint16_t sensorCO2Poor =  1200;
+const uint16_t sensorCO2Bad =   1600;
+const uint16_t sensorCO2Max =   2000;
 const uint8_t co2SensorReadFailureLimit = 20;
 
-// Particulates (pm1, pm2.5, pm4, pm10) value thresholds for labeling
-const uint16_t pmFair = 25;
-const uint16_t pmPoor = 50;
-const uint16_t pm2Bad = 150;
+// Particulates (pm1, pm2.5, pm4, pm10) value thresholds
+const uint16_t sensorPMFair = 25;
+const uint16_t sensorPMPoor = 50;
+const uint16_t sensorPMBad = 150;
 
-// VOC (volatile organic compounds) value thresholds for labeling
-const uint16_t vocFair = 150;
-const uint16_t vocPoor = 250;
-const uint16_t vocBad = 400;
+// VOC (volatile organic compounds) index value thresholds
+const uint8_t   sensorVOCMin =  0;
+const uint16_t  sensorVOCFair = 150;
+const uint16_t  sensorVOCPoor = 250;
+const uint16_t  sensorVOCBad =  400;
+const uint16_t  sensorVOCMax =  500;
+
+// NOx (nitrogen oxide) index value thresholds, Sensiron Info_Note_NOx_Index.pdf
+const uint16_t noxFair = 49;
+const uint16_t noxPoor = 150;
+const uint16_t noxBad = 300;
 
 const uint32_t hardwareErrorSleepTimeμS = 10000000;  // sleep time if hardware error occurs
 
@@ -157,6 +157,11 @@ const uint16_t timeResetButtonHoldMS = 10000; // Long-press duration to wipe con
 #define XPT2046_MISO 39
 #define XPT2046_CLK 25
 #define XPT2046_CS 33
+// used to calibrate touchscreen
+const uint16_t touchscreenMinX = 450;
+const uint16_t touchscreenMaxX = 3700;
+const uint16_t touchscreenMinY = 450;
+const uint16_t touchscreenMaxY = 3700;
 
 // CYD i2c pin configuration, used in Wire.begin()
 #define CYD_SDA 22
