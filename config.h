@@ -7,7 +7,7 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 2
+#define DEBUG 2
 
 // Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -102,6 +102,14 @@ const String hardwareDeviceType = "AirQuality";
   const uint16_t sensorPMMin = 0;
   const uint16_t sensorPMMax = 1000;
 #endif
+
+// tempF value threshholds
+const uint8_t sensorTempFComfortMin = 65;
+const uint8_t sensorTempFComfortMax = 80;
+
+// humidity value thresholds
+const uint8_t sensorHumidityComfortMin = 40;
+const uint8_t sensorHumidityComfortMax = 60;
 
 // CO2 value thresholds
 const uint16_t sensorCO2Min =   400;   // in ppm

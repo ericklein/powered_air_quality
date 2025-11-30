@@ -86,8 +86,8 @@ XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
 // Arrange for the default unique device identifier to be automatically generated at runtime based
 // on ESP32 MAC address and hardware device type as specified in config.h.  This is done using a
 // custom function contained here (see below).
-extern String getDeviceId(String prefix);
-const String defaultDeviceID = getDeviceId(hardwareDeviceType);
+extern String deviceGetID(String prefix);
+const String defaultDeviceID = deviceGetID(hardwareDeviceType);
 
 // data structures defined in powered_air_quality.h
 MqttConfig mqttBrokerConfig;
@@ -151,7 +151,7 @@ void setup() {
     delay(5000);
     // This error often occurs right after a firmware flash and reset.
     // Hardware deep sleep typically resolves it, so quickly cycle the hardware
-    powerDisable(hardwareErrorSleepTimeμS);
+    deviceDeepSleep(hardwareErrorSleepTimeμS);
   }
 
   // initialize sensor value arrays
@@ -389,7 +389,10 @@ void screenCurrentInfo()
   // Indoor
   // Indoor temp
   display.setFont(&FreeSans12pt7b);
-  display.setTextColor(ILI9341_WHITE);
+  if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
+    display.setTextColor(ILI9341_YELLOW);
+  else
+    display.setTextColor(ILI9341_WHITE);
   display.setCursor(xMargins + xTempModifier, yTempHumdidity);
   display.print(String((uint8_t)(sensorData.ambientTemperatureF + .5)));
   //display.drawBitmap(xMargins + xTempModifier + 35, yTempHumdidity, bitmapTempFSmall, 20, 28, ILI9341_WHITE);
@@ -398,8 +401,8 @@ void screenCurrentInfo()
 
   // Indoor humidity
   display.setFont(&FreeSans12pt7b);
-  if ((sensorData.ambientHumidity<40) || (sensorData.ambientHumidity>60))
-    display.setTextColor(ILI9341_RED);
+  if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
+    display.setTextColor(ILI9341_YELLOW);
   else
     display.setTextColor(ILI9341_GREEN);
   display.setCursor(xMargins + xTempModifier + xHumidityModifier, yTempHumdidity);
@@ -461,6 +464,10 @@ void screenCurrentInfo()
     display.print(owmCurrentData.cityName);
 
     // Outside temp
+    if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
+      display.setTextColor(ILI9341_YELLOW);
+    else
+      display.setTextColor(ILI9341_WHITE);
     display.setCursor(xOutdoorMargin + xTempModifier, yTempHumdidity);
     display.print(String((uint8_t)(owmCurrentData.tempF + 0.5)));
     display.setFont(&meteocons12pt7b);
@@ -468,10 +475,10 @@ void screenCurrentInfo()
 
     // Outside humidity
     display.setFont(&FreeSans12pt7b);
-    if ((owmCurrentData.humidity<40) || (owmCurrentData.humidity>60))
-      display.setTextColor(ILI9341_RED);
+    if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
+      display.setTextColor(ILI9341_YELLOW);
     else
-      display.setTextColor(ILI9341_GREEN);
+      display.setTextColor(ILI9341_WHITE);
     display.setCursor(xOutdoorMargin + xTempModifier + xHumidityModifier, yTempHumdidity);
     display.print(String((uint8_t)(owmCurrentData.humidity + 0.5)));
     // IMPROVEMENT: original icon ratio was 5:7?
@@ -609,7 +616,7 @@ void screenAggregateData()
   // Display a unique unit ID based on the high-order 16 bits of the
   // ESP32 MAC address (as the header for the data name column)
   display.setCursor(0,yHeaderRow);
-  display.print(getDeviceId("AQ"));
+  display.print(deviceGetID("AQ"));
 
   // Display column headers
   display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
@@ -809,9 +816,9 @@ void screenMain()
     display.print("NOx");
   #else
     // Temperature
-    if ((sensorData.ambientTemperatureF<65) || (sensorData.ambientTemperatureF>85))
+    if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
       //display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),display.height(),ILI9341_RED);
-      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_RED);
+      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_YELLOW);
     else
       // display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
       display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
@@ -819,9 +826,9 @@ void screenMain()
     display.setFont(&meteocons16pt7b);
     display.print("+");
     // Humdity
-    if ((sensorData.ambientHumidity<40) || (sensorData.ambientHumidity>60))
+    if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
       // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_RED);
-      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_RED);
+      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_YELLOW);
     else
       // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
       display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
@@ -837,16 +844,20 @@ void screenSaver()
 // Returns: NA (void)
 // Improvement: ?
 {
+  // screen assists
+  int16_t x1, y1; // used by getTextBounds()
+  uint16_t text1Width, text1Height; // used by getTextBounds()
+
   debugMessage("screenSaver() start",1);
 
   display.fillScreen(ILI9341_BLACK);
   display.setFont(&FreeSans24pt7b);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color LUT
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+
+  display.getTextBounds(String(sensorData.ambientCO2[graphPoints-1]),0,0,&x1,&y1,&text1Width,&text1Height);
 
   // Pick a random location that'll show up
-  int16_t x = random(xMargins,display.width()-xMargins-100);  // 90 pixels leaves room for 4 digit CO2 value
-  int16_t y = random(44,display.height()-yMargins); // 35 pixels leaves vertical room for text display
-  display.setCursor(x,y);
+  display.setCursor(random(xMargins,display.width()-xMargins-text1Width), random(yMargins + text1Height, display.height() - yMargins));
   display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
 
   debugMessage("screenSaver() end",1);
@@ -1047,8 +1058,8 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
       maxValue = sensorCO2Min;
       break;
     case sVOC:
-      minValue = sensorVOCMin;
-      maxValue = sensorVOCMax;
+      minValue = sensorVOCMax;
+      maxValue = sensorVOCMin;
       break;  
 }
   // scan the array for min/max
@@ -2189,7 +2200,7 @@ uint8_t co2Range(float co2)
     (co2 <= sensorCO2Poor) ? 1 :
     (co2 <= sensorCO2Bad)  ? 2 : 3;
 
-  debugMessage(String("CO2 input of ") + co2 + " yields " + co2Range + "CO2 band", 2);
+  debugMessage(String("CO2 input of ") + co2 + " yields " + co2Range + " CO2 band", 2);
   return co2Range;
 }
 
@@ -2251,21 +2262,10 @@ float fmap(float x, float xmin, float xmax, float ymin, float ymax)
   return( ymin + ((x - xmin)*(ymax-ymin)/(xmax - xmin)));
 }
 
-void debugMessage(String messageText, uint8_t messageLevel)
-// wraps Serial.println as #define conditional
-{
-  #ifdef DEBUG
-    if (messageLevel <= DEBUG) {
-      Serial.println(messageText);
-      Serial.flush();      // Make sure the message gets output (before any sleeping...)
-    }
-  #endif
-}
-
-void powerDisable(uint32_t deepSleepTime)
+void deviceDeepSleep(uint32_t deepSleepTime)
 // turns off component hardware then puts ESP32 into deep sleep mode for specified seconds
 {
-  debugMessage("powerDisable start",1);
+  debugMessage("deviceDeepSleep() start",1);
 
   // power down SCD4X by stopping potentially started measurement then power down SCD4X
   #ifndef HARDWARE_SIMULATE
@@ -2287,11 +2287,11 @@ void powerDisable(uint32_t deepSleepTime)
   networkDisconnect();
 
   esp_sleep_enable_timer_wakeup(deepSleepTime);
-  debugMessage(String("powerDisable complete: ESP32 deep sleep for ") + (deepSleepTime/1000000) + " seconds",1);
+  debugMessage(String("deviceDeepSleep() end: ESP32 deep sleep for ") + (deepSleepTime/1000000) + " seconds",1);
   esp_deep_sleep_start();
 }
 
-String getDeviceId(String prefix)
+String deviceGetID(String prefix)
 // Returns a unique device identifier based on ESP32 MAC address along with a specified prefix
 {
   uint16_t shortid = (uint16_t) ((ESP.getEfuseMac() >> 32) & 0xFFFF ) ;
@@ -2301,4 +2301,15 @@ String getDeviceId(String prefix)
   else {
     return(prefix + "-" + String(shortid,HEX));
   }
+}
+
+void debugMessage(String messageText, uint8_t messageLevel)
+// wraps Serial.println as #define conditional
+{
+  #ifdef DEBUG
+    if (messageLevel <= DEBUG) {
+      Serial.println(messageText);
+      Serial.flush();      // Make sure the message gets output (before any sleeping...)
+    }
+  #endif
 }
