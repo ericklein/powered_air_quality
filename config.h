@@ -54,8 +54,7 @@ const uint32_t OWMIntervalMS = 1800000;
 #endif
 const uint8_t reportFailureThreshold = 3; // number of times reporting has to fail before UI reflects issue
 
-// Display
-const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
+// UI
 enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX};
 
 // screen layout assists in pixels
@@ -83,7 +82,8 @@ const uint16_t warningColor[4] = {
 // hardware
 const String hardwareDeviceType = "AirQuality";
 
-// Simulation boundary values
+// sensors
+// simulation boundary values
 #ifdef HARDWARE_SIMULATE
   const uint16_t sensorTempMinF =       1400; // divided by 100.0 to give floats
   const uint16_t sensorTempMaxF =       14000;
@@ -142,27 +142,38 @@ const uint32_t hardwareErrorSleepTimeμS = 10000000;  // sleep time if hardware 
 const uint8_t hardwareWipeButton = 0; // boot button on most ESP32 boards
 const uint16_t timeResetButtonHoldMS = 10000; // Long-press duration to wipe config
 
-// CYD display pinout
+// display
+const uint8_t screenRotation = 1; // horizontal orientation with USB port on right side
+
+// CYD variations
+// standard CYD (2.8" TFT, micro-USB) 
+
+// display pins (for Adafruit ILI9341 library)
 #define TFT_BACKLIGHT 21
 #define TFT_CS 15
 #define TFT_DC 2
-#define TFT_MISO 12
-#define TFT_MOSI 13
-#define TFT_SCLK 14
+// #define TFT_MISO 12
+// #define TFT_MOSI 13
+// #define TFT_SCLK 14
 #define TFT_RST -1
 
-// CYD touchscreen pinout
+// touchscreen pins
 #define XPT2046_IRQ 36
 #define XPT2046_MOSI 32
 #define XPT2046_MISO 39
 #define XPT2046_CLK 25
 #define XPT2046_CS 33
-// used to calibrate touchscreen
+
+// touchscreen calibration
 const uint16_t touchscreenMinX = 450;
 const uint16_t touchscreenMaxX = 3700;
 const uint16_t touchscreenMinY = 450;
 const uint16_t touchscreenMaxY = 3700;
 
-// CYD i2c pin configuration, used in Wire.begin()
-#define CYD_SDA 22
-#define CYD_SCL 27
+// i2c pins, used in Wire.begin()
+// #define CYD_SDA 22
+// #define CYD_SCL 27
+
+// 3.2" TFT, usb-c CYD (Freenode FNK0103L_3P2)
+#define CYD_SDA 32
+#define CYD_SCL 25

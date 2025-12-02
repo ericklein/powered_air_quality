@@ -18,11 +18,11 @@
 WiFiClient client;   // WiFi Managers loads WiFi.h, which is used by OWM and MQTT
 Preferences nvConfig;
 
-#include <SPI.h>
-// ESP32 has 2 SPI ports; for CYD to work with the TFT and touchscreen on different SPI ports
-// each needs to be defined and passed to the library
-SPIClass hspi = SPIClass(HSPI);
-SPIClass vspi = SPIClass(VSPI);
+// #include <SPI.h>
+// // ESP32 has 2 SPI ports; for CYD to work with the TFT and touchscreen on different SPI ports
+// // each needs to be defined and passed to the library
+// SPIClass hspi = SPIClass(HSPI);
+// SPIClass vspi = SPIClass(VSPI);
 
 // environment sensors
 #ifdef SENSOR_SEN66
@@ -54,9 +54,9 @@ TFT_eSPI display = TFT_eSPI();
 #include "Fonts/meteocons16pt7b.h"
 #include "glyphs.h"
 
-// touchscreen
-#include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
-XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
+// // touchscreen
+// #include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
+// XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
 
 // external function dependencies
 #ifdef THINGSPEAK
@@ -119,21 +119,21 @@ void setup() {
     #endif
   #endif
 
-  // initialize screen first to display messages
-  pinMode(TFT_BACKLIGHT, OUTPUT);
-  digitalWrite(TFT_BACKLIGHT, HIGH);
+  // // initialize screen first to display messages
+  // pinMode(TFT_BACKLIGHT, OUTPUT);
+  // digitalWrite(TFT_BACKLIGHT, HIGH);
 
-  display.init();
+  display.begin();
   display.setRotation(screenRotation);
   display.setTextWrap(false);
   display.fillScreen(TFT_BLACK);
   screenAlert("Initializing");
 
-  // initialize touchscreen
-  // setup the VSPI to use CYD touchscreen pins
-  vspi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
-  touchscreen.begin(vspi);
-  touchscreen.setRotation(screenRotation);
+  // // initialize touchscreen
+  // // setup the VSPI to use CYD touchscreen pins
+  // vspi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
+  // touchscreen.begin(vspi);
+  // touchscreen.setRotation(screenRotation);
 
   // truly random numbers for every boot cycle
   randomSeed(analogRead(0));
@@ -146,7 +146,7 @@ void setup() {
 
   // *** Initialize sensors and other connected/onboard devices ***
   if( !sensorInit()) {
-    debugMessage("Sensor initialization failure",1);
+    debugMessage("setup(): sensor initialization failure",1);
     screenAlert("Sensor failure, rebooting");
     delay(5000);
     // This error often occurs right after a firmware flash and reset.
@@ -186,6 +186,7 @@ void loop() {
   static uint32_t timeLastInputMS         = millis();  // timestamp for last user input (screensaver)
   static uint32_t timeNextNetworkRetryMS  = 0;
   static uint32_t timeLastOWMUpdateMS     = -(OWMIntervalMS); // forces immediate sample in loop()
+  uint16_t x,y, calibratedX, calibratedY;
 
   // is there a long press on the reset button to wipe all configuration data?
   checkResetLongPress();
@@ -222,7 +223,7 @@ void loop() {
   }
 
   // is there user input to process?
-  if (touchscreen.touched()) {
+  if (display.getTouch(&x,&y)) {
     // If screen saver active, switch to master screen
     switch (screenCurrent) {
       case sSaver :
@@ -231,9 +232,11 @@ void loop() {
         break;
       case sMain : {
         // get raw 12bit touchscreen x,y and then calibrate to screen size
-        TS_Point p = touchscreen.getPoint();
-        uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
-        uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
+        // TS_Point p = touchscreen.getPoint();
+        // uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
+        // uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
+        calibratedX = x;
+        calibratedY = y;
         debugMessage(String("input: touchpoint x=") + calibratedX + ", y=" + calibratedY,2);
         // transition to appropriate component screen
         if ((calibratedX < display.width()/2) && (calibratedY < display.height()/2)) {
@@ -689,10 +692,11 @@ bool screenAlert(String messageText)
 
   debugMessage(String("screenAlert text is '") + messageText + "'",2);
 
-  // does message fit on one line?
+  // does message fit on one line with large font?
   display.setFreeFont(&FreeSans24pt7b);
   text1Width = display.textWidth(messageText);
   text1Height = display.fontHeight();
+  debugMessage(String("Message at font size ") + text1Height + " is " + text1Width + " pixels wide",2);
   if (text1Width <= (display.width()-(display.width()/2-(text1Width/2)))) {
     // fits with large font, display
     display.setCursor(((display.width()/2)-(text1Width/2)),((display.height()/2)+(text1Height/2)));
@@ -700,8 +704,8 @@ bool screenAlert(String messageText)
     success = true;
   }
   else {
-    // does message fit on two lines?
-    debugMessage(String("text with large font is ") + abs(text1Width - (display.width()-(display.width()/2-(text1Width/2)))) + " pixels too long, trying 2 lines", 1);
+    // does message fit on two lines with large font?
+    debugMessage(String("large font is ") + abs(display.width()-text1Width) + " pixels too long, trying 2 lines", 1);
     // does the string break into two pieces based on a space character?
     uint8_t spaceLocation;
     String messageTextPartOne, messageTextPartTwo;
@@ -730,12 +734,13 @@ bool screenAlert(String messageText)
         success = true;
     }
     else {
-      // does message fit on one line with small text?
-      debugMessage("couldn't break text into 2 lines or one line is too long, trying small text",1);
+      // does message fit on one line with medium sized text?
+      debugMessage("couldn't break text into 2 lines or one line is too long, trying medium text",1);
 
       display.setFreeFont(&FreeSans18pt7b);
       text1Width = display.textWidth(messageText);
       text1Height = display.fontHeight();
+      debugMessage(String("Message at font size ") + text1Height + " is " + text1Width + " pixels wide",2);
       if (text1Width <= (display.width()-(display.width()/2-(text1Width/2)))) {
         // fits with small size
         display.setCursor(display.width()/2-text1Width/2,display.height()/2+text1Height/2);
@@ -743,8 +748,8 @@ bool screenAlert(String messageText)
         success = true;
       }
       else {
-        // doesn't fit at any size/line split configuration, display as truncated, small text
-        debugMessage(String("text with small font is ") + abs(text1Width - (display.width()-(display.width()/2-(text1Width/2)))) + " pixels too long, displaying truncated", 1);
+        // doesn't fit with medium font, display as truncated, small text
+        debugMessage(String("medium font is ") + abs(display.width()-text1Width) + " pixels too long, displaying small and truncated", 1);
         display.setFreeFont(&FreeSans12pt7b);
         text1Width = display.textWidth(messageText);
         text1Height = display.fontHeight();
@@ -1890,25 +1895,16 @@ bool sensorRead()
 
       error = paqSensor.deviceReset();
       if (error != 0) {
-          debugMessage("Error trying to execute deviceReset(): ",1);
+          debugMessage("sensorSEN6xInit(): error msg from deviceReset() is",1);
           errorToString(error, errorMessage, sizeof errorMessage);
           debugMessage(errorMessage,1);
           return false;
       }
       delay(1200);
-      int8_t serialNumber[32] = {0};
-      error = paqSensor.getSerialNumber(serialNumber, 32);
-      if (error != 0) {
-          debugMessage("Error trying to execute SEN6x getSerialNumber(): ",1);
-          errorToString(error, errorMessage, sizeof errorMessage);
-          debugMessage(errorMessage,1);
-          return false;
-      }
-      debugMessage("SEN6x serial number: ",2);
-      debugMessage((const char *)serialNumber,2);
+
       error = paqSensor.startContinuousMeasurement();
       if (error != 0) {
-          debugMessage("Error trying to execute SEN6x startContinuousMeasurement(): ",1);
+          debugMessage("sensorSEN6xInit(): error msg from startContinuousMeasurement() is",1);
           errorToString(error, errorMessage, sizeof errorMessage);
           debugMessage(errorMessage,1);
           return false;
