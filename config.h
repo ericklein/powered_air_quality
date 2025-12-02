@@ -55,7 +55,7 @@ const uint32_t OWMIntervalMS = 1800000;
 const uint8_t reportFailureThreshold = 3; // number of times reporting has to fail before UI reflects issue
 
 // Display
-const uint8_t screenRotation = 3; // rotation 3 orients 0,0 next to D0 button
+const uint8_t screenRotation = 3; // rotation 3 orients 0,0 with usb connector on left side
 enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX};
 
 // screen layout assists in pixels

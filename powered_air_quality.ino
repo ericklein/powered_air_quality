@@ -146,7 +146,7 @@ void setup() {
 
   // *** Initialize sensors and other connected/onboard devices ***
   if( !sensorInit()) {
-    debugMessage("Sensor initialization failure",1);
+    debugMessage("setup(): sensor initialization failure",1);
     screenAlert("Sensor failure, rebooting");
     delay(5000);
     // This error often occurs right after a firmware flash and reset.
@@ -693,7 +693,7 @@ bool screenAlert(String messageText)
 
   debugMessage(String("screenAlert text is '") + messageText + "'",2);
 
-  // does message fit on one line?
+  // does message fit on one line with large font?
   display.setFont(&FreeSans24pt7b);
   display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
   if (largeFontPhraseOneWidth <= (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) {
@@ -703,8 +703,8 @@ bool screenAlert(String messageText)
     success = true;
   }
   else {
-    // does message fit on two lines?
-    debugMessage(String("text with large font is ") + abs(largeFontPhraseOneWidth - (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) + " pixels too long, trying 2 lines", 1);
+    // does message fit on two lines with large font?
+    debugMessage(String("large font is ") + abs(display.width() - largeFontPhraseOneWidth) + " pixels too long, trying 2 lines", 1);
     // does the string break into two pieces based on a space character?
     uint8_t spaceLocation;
     String messageTextPartOne, messageTextPartTwo;
@@ -732,21 +732,21 @@ bool screenAlert(String messageText)
         success = true;
     }
     else {
-      // does message fit on one line with small text?
-      debugMessage("couldn't break text into 2 lines or one line is too long, trying small text",1);
-      uint16_t smallFontWidth, smallFontHeight;
+      // does message fit on one line with medium font?
+      debugMessage("couldn't break text into 2 lines or one line is too long, trying medium text",1);
+      uint16_t mediumFontWidth, mediumFontHeight;
 
       display.setFont(&FreeSans18pt7b);
-      display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &smallFontWidth, &smallFontHeight);
-      if (smallFontWidth <= (display.width()-(display.width()/2-(smallFontWidth/2)))) {
+      display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &mediumFontWidth, &mediumFontHeight);
+      if (mediumFontWidth <= (display.width()-(display.width()/2-(mediumFontWidth/2)))) {
         // fits with small size
-        display.setCursor(display.width()/2-smallFontWidth/2,display.height()/2+smallFontHeight/2);
+        display.setCursor(display.width()/2-mediumFontWidth/2,display.height()/2+mediumFontHeight/2);
         display.print(messageText);
         success = true;
       }
       else {
-        // doesn't fit at any size/line split configuration, display as truncated, large text
-        debugMessage(String("text with small font is ") + abs(smallFontWidth - (display.width()-(display.width()/2-(smallFontWidth/2)))) + " pixels too long, displaying truncated", 1);
+        // doesn't fit with medium font, display truncated with small font
+        debugMessage(String("medium font is ") + abs(display.width() - mediumFontWidth) + " pixels too long, displaying truncated", 1);
         display.setFont(&FreeSans12pt7b);
         display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
         display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,display.height()/2+largeFontPhraseOneHeight/2);
@@ -1890,25 +1890,16 @@ bool sensorRead()
 
       error = paqSensor.deviceReset();
       if (error != 0) {
-          debugMessage("Error trying to execute deviceReset(): ",1);
+          debugMessage("sensorSEN6xInit(): error msg from deviceReset() is",1);
           errorToString(error, errorMessage, sizeof errorMessage);
           debugMessage(errorMessage,1);
           return false;
       }
       delay(1200);
-      int8_t serialNumber[32] = {0};
-      error = paqSensor.getSerialNumber(serialNumber, 32);
-      if (error != 0) {
-          debugMessage("Error trying to execute SEN6x getSerialNumber(): ",1);
-          errorToString(error, errorMessage, sizeof errorMessage);
-          debugMessage(errorMessage,1);
-          return false;
-      }
-      debugMessage("SEN6x serial number: ",2);
-      debugMessage((const char *)serialNumber,2);
+
       error = paqSensor.startContinuousMeasurement();
       if (error != 0) {
-          debugMessage("Error trying to execute SEN6x startContinuousMeasurement(): ",1);
+          debugMessage("sensorSEN6xInit(): error msg from startContinuousMeasurement() is",1);
           errorToString(error, errorMessage, sizeof errorMessage);
           debugMessage(errorMessage,1);
           return false;
