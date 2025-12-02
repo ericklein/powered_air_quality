@@ -42,21 +42,21 @@ SPIClass vspi = SPIClass(VSPI);
 #endif // SENSOR_SEN54SCD40
 
 // 3.2″ 320x240 color TFT w/resistive touch screen
-#include <Adafruit_ILI9341.h>
-Adafruit_ILI9341 display = Adafruit_ILI9341(&hspi, TFT_DC, TFT_CS, TFT_RST);
+#include <TFT_eSPI.h>  // https://github.com/Bodmer/TFT_eSPI
+TFT_eSPI display = TFT_eSPI();
+
+// fonts and glyphs
+// #include <Fonts/GFXFF/FreeSans9pt7b.h>
+// #include <Fonts/GFXFF/FreeSans12pt7b.h>
+// #include <Fonts/GFXFF/FreeSans18pt7b.h>
+// #include <Fonts/GFXFF/FreeSans24pt7b.h>
+#include "Fonts/meteocons12pt7b.h"
+#include "Fonts/meteocons16pt7b.h"
+#include "glyphs.h"
 
 // touchscreen
 #include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
 XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
-
-// fonts and glyphs
-#include <Fonts/FreeSans9pt7b.h>
-#include <Fonts/FreeSans12pt7b.h>
-#include <Fonts/FreeSans18pt7b.h>
-#include <Fonts/FreeSans24pt7b.h>
-#include "Fonts/meteocons12pt7b.h"
-#include "Fonts/meteocons16pt7b.h"
-#include "glyphs.h"
 
 // external function dependencies
 #ifdef THINGSPEAK
@@ -123,10 +123,10 @@ void setup() {
   pinMode(TFT_BACKLIGHT, OUTPUT);
   digitalWrite(TFT_BACKLIGHT, HIGH);
 
-  display.begin();
+  display.init();
   display.setRotation(screenRotation);
   display.setTextWrap(false);
-  display.fillScreen(ILI9341_BLACK);
+  display.fillScreen(TFT_BLACK);
   screenAlert("Initializing");
 
   // initialize touchscreen
@@ -352,8 +352,7 @@ void screenUpdate(uint8_t screenCurrent)
 void screenCurrentInfo() 
 // Display current particulate matter, CO2, and local weather on screen
 {
-  int16_t x1, y1; // For (x,y) calculations
-  uint16_t w1, h1;  // For text size calculations
+  uint16_t text1Width;  // For text size calculation
 
   // screen layout assists in pixels
   const uint16_t yStatusRegion = display.height()/8;
@@ -375,12 +374,12 @@ void screenCurrentInfo()
   debugMessage("screenCurrentInfo() start",2);
 
   // clear screen
-  display.fillScreen(ILI9341_BLACK);
+  display.fillScreen(TFT_BLACK);
 
   // status region
-  display.fillRect(0,0,display.width(),yStatusRegion,ILI9341_DARKGREY);
+  display.fillRect(0,0,display.width(),yStatusRegion,TFT_DARKGREY);
   // split indoor v. outside
-  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), ILI9341_WHITE);
+  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_WHITE);
   // screen helpers in status region
   // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
   screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
@@ -388,47 +387,47 @@ void screenCurrentInfo()
 
   // Indoor
   // Indoor temp
-  display.setFont(&FreeSans12pt7b);
+  display.setFreeFont(&FreeSans12pt7b);
   if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
-    display.setTextColor(ILI9341_YELLOW);
+    display.setTextColor(TFT_YELLOW);
   else
-    display.setTextColor(ILI9341_WHITE);
+    display.setTextColor(TFT_WHITE);
   display.setCursor(xMargins + xTempModifier, yTempHumdidity);
   display.print(String((uint8_t)(sensorData.ambientTemperatureF + .5)));
-  //display.drawBitmap(xMargins + xTempModifier + 35, yTempHumdidity, bitmapTempFSmall, 20, 28, ILI9341_WHITE);
-  display.setFont(&meteocons12pt7b);
+  //display.drawBitmap(xMargins + xTempModifier + 35, yTempHumdidity, bitmapTempFSmall, 20, 28, TFT_WHITE);
+  display.setFreeFont(&meteocons12pt7b);
   display.print("+");
 
   // Indoor humidity
-  display.setFont(&FreeSans12pt7b);
+  display.setFreeFont(&FreeSans12pt7b);
   if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
-    display.setTextColor(ILI9341_YELLOW);
+    display.setTextColor(TFT_YELLOW);
   else
-    display.setTextColor(ILI9341_GREEN);
+    display.setTextColor(TFT_GREEN);
   display.setCursor(xMargins + xTempModifier + xHumidityModifier, yTempHumdidity);
   display.print(String((uint8_t)(sensorData.ambientHumidity + 0.5)));
   // IMPROVEMENT: original icon ratio was 5:7?
   // IMPROVEMENT: move this into meteoicons so it can be inline text
-  display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, ILI9341_WHITE);
+  display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
 
   // Indoor PM2.5 ring
   display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
-  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
+  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
   // Indoor CO2 level inside the circle
   // CO2 value line
-  display.setFont(&FreeSans12pt7b);
+  display.setFreeFont(&FreeSans12pt7b);
   display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
   display.setCursor(xIndoorCircleText,yPMCircles);
   display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
 
   // CO2 label line
-  display.setFont(&FreeSans12pt7b);
-  display.setTextColor(ILI9341_WHITE);
+  display.setFreeFont(&FreeSans12pt7b);
+  display.setTextColor(TFT_WHITE);
   display.setCursor(xIndoorCircleText,yPMCircles+23);
   display.print("CO");
   // subscript
-  display.setFont(&FreeSans9pt7b);
+  display.setFreeFont(&FreeSans9pt7b);
   display.setCursor(xIndoorCircleText+35,yPMCircles+33);
   display.print("2");
 
@@ -439,15 +438,13 @@ void screenCurrentInfo()
 
     // Outside PM2.5
     display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
-    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
+    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
     // Outside air quality index (AQI)
-    display.setFont(&FreeSans9pt7b);
-    display.setTextColor(ILI9341_WHITE);
-    // IMPROVEMENT: Dynamic x coordinate based on text length
-    // display.setCursor((xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10);
-    display.getTextBounds(OWMPollutionLabel[(owmAirQuality.aqi)],(xOutdoorPMCircle - ((circleRadius*0.8)-10)), yPMCircles+10, &x1, &y1, &w1, &h1);
-    display.setCursor((xOutdoorPMCircle - (w1/2)),yPMCircles+10);
+    display.setFreeFont(&FreeSans9pt7b);
+    display.setTextColor(TFT_WHITE);
+    text1Width = display.textWidth(OWMPollutionLabel[(owmAirQuality.aqi)]);
+    display.setCursor((xOutdoorPMCircle - (text1Width/2)),yPMCircles+10);
 
     display.print(OWMPollutionLabel[(owmAirQuality.aqi)]);
     display.setCursor(xOutdoorPMCircle-15,yPMCircles + 30);
@@ -457,41 +454,41 @@ void screenCurrentInfo()
   // do we have OWM Current data to display?
   if (owmCurrentData.tempF != 10000) {
     // location label
-    display.setFont(&FreeSans12pt7b);
-    display.setTextColor(ILI9341_WHITE);
+    display.setFreeFont(&FreeSans12pt7b);
+    display.setTextColor(TFT_WHITE);
     // IMPROVEMENT: Dynamic x coordinate based on text length
     display.setCursor((display.width()/4), ((display.height()/8)-7));
     display.print(owmCurrentData.cityName);
 
     // Outside temp
     if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
-      display.setTextColor(ILI9341_YELLOW);
+      display.setTextColor(TFT_YELLOW);
     else
-      display.setTextColor(ILI9341_WHITE);
+      display.setTextColor(TFT_WHITE);
     display.setCursor(xOutdoorMargin + xTempModifier, yTempHumdidity);
     display.print(String((uint8_t)(owmCurrentData.tempF + 0.5)));
-    display.setFont(&meteocons12pt7b);
+    display.setFreeFont(&meteocons12pt7b);
     display.print("+");
 
     // Outside humidity
-    display.setFont(&FreeSans12pt7b);
+    display.setFreeFont(&FreeSans12pt7b);
     if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
-      display.setTextColor(ILI9341_YELLOW);
+      display.setTextColor(TFT_YELLOW);
     else
-      display.setTextColor(ILI9341_WHITE);
+      display.setTextColor(TFT_WHITE);
     display.setCursor(xOutdoorMargin + xTempModifier + xHumidityModifier, yTempHumdidity);
     display.print(String((uint8_t)(owmCurrentData.humidity + 0.5)));
     // IMPROVEMENT: original icon ratio was 5:7?
     // IMPROVEMENT: move this into meteoicons so it can be inline text
-    display.drawBitmap(xOutdoorMargin + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, ILI9341_WHITE);
+    display.drawBitmap(xOutdoorMargin + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
 
     // weather icon
     String weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
     // if getMeteoIcon doesn't have a matching symbol, skip display
     if (weatherIcon != ")") {
       // display icon
-      display.setFont(&meteocons16pt7b);
-      display.setTextColor(ILI9341_WHITE);
+      display.setFreeFont(&meteocons16pt7b);
+      display.setTextColor(TFT_WHITE);
       display.setCursor(xWeatherIcon, yWeatherIcon);
       display.print(weatherIcon);
     }
@@ -522,19 +519,19 @@ void screenPM25()
   debugMessage("screenPM25() start",2);
 
   // clear screen
-  display.fillScreen(ILI9341_BLACK);
+  display.fillScreen(TFT_BLACK);
 
   // status region
-  display.fillRect(0,0,display.width(),yStatusRegion,ILI9341_DARKGREY);
+  display.fillRect(0,0,display.width(),yStatusRegion,TFT_DARKGREY);
   // split indoor v. outside
-  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), ILI9341_WHITE);
+  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_WHITE);
   // screen helpers in status region
   // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
   screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
   screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), yMargins);
   // labels
-  display.setFont(&FreeSans12pt7b);
-  display.setTextColor(ILI9341_WHITE);
+  display.setFreeFont(&FreeSans12pt7b);
+  display.setTextColor(TFT_WHITE);
   display.setCursor(xMargins, ((display.height()/8)-7));
   display.print("Indoor");
   display.setCursor(xOutdoorMargin, ((display.height()/8)-7));
@@ -542,17 +539,17 @@ void screenPM25()
 
   // Indoor PM2.5 ring
   display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
-  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
+  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
   // Indoor pm25 value and label inside the circle
-  display.setFont(&FreeSans12pt7b);
+  display.setFreeFont(&FreeSans12pt7b);
   display.setTextColor(warningColor[pm25Range(sensorData.pm25)]);  // Use highlight color look-up table
   display.setCursor(xIndoorCircleText,yPMCircles);
   display.print(sensorData.pm25);
   // label
-  display.setTextColor(ILI9341_WHITE);
+  display.setTextColor(TFT_WHITE);
   display.setCursor(xIndoorCircleText,yPMCircles+23);
-  display.setFont(&FreeSans9pt7b);
+  display.setFreeFont(&FreeSans9pt7b);
   display.print("PM25");
   
   // Outside
@@ -560,17 +557,17 @@ void screenPM25()
   if (owmAirQuality.aqi != 10000) {
     // Outside PM2.5
     display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
-    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,ILI9341_BLACK);
+    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
     // outdoor pm25 value and label inside the circle
-    display.setFont(&FreeSans12pt7b);
+    display.setFreeFont(&FreeSans12pt7b);
     display.setTextColor(warningColor[pm25Range(owmAirQuality.pm25)]);  // Use highlight color look-up table
     display.setCursor(xOutdoorCircleText, yPMCircles);
     display.print(owmAirQuality.pm25);
     //label
-    display.setTextColor(ILI9341_WHITE);
+    display.setTextColor(TFT_WHITE);
     display.setCursor(xOutdoorCircleText,yPMCircles + 23);
-    display.setFont(&FreeSans9pt7b);
+    display.setFreeFont(&FreeSans9pt7b);
     display.print("PM25");
   }
 
@@ -602,16 +599,16 @@ void screenAggregateData()
   debugMessage("screenAggregateData() start",2);
 
   // clear screen and initialize properties
-  display.fillScreen(ILI9341_BLACK);
-  display.setFont();  // Revert to built-in font
+  display.fillScreen(TFT_BLACK);
+  display.setFreeFont();  // Revert to built-in font
   display.setTextSize(2);
-  display.setTextColor(ILI9341_WHITE);
+  display.setTextColor(TFT_WHITE);
 
   // Display column heaings
-  display.setTextColor(ILI9341_BLUE);
+  display.setTextColor(TFT_BLUE);
   display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
-  display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,ILI9341_BLUE);
-  display.setTextColor(ILI9341_WHITE);
+  display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,TFT_BLUE);
+  display.setTextColor(TFT_WHITE);
 
   // Display a unique unit ID based on the high-order 16 bits of the
   // ESP32 MAC address (as the header for the data name column)
@@ -648,7 +645,7 @@ void screenAggregateData()
   display.setCursor(xAvgColumn,yCO2Row); display.print(totalCO2.getAverage(),0);
   display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);
   display.setCursor(xMaxColumn,yCO2Row); display.print(totalCO2.getMax(),0);
-  display.setTextColor(ILI9341_WHITE);  // Restore text color
+  display.setTextColor(TFT_WHITE);  // Restore text color
 
   //VOC index
   display.setCursor(xMinColumn,yVOCRow); display.print(totalVOCIndex.getMin(),0);
@@ -683,73 +680,75 @@ bool screenAlert(String messageText)
 // Improvement: ?
 {
   bool success = false;
-  int16_t x1, y1;
-  uint16_t largeFontPhraseOneWidth, largeFontPhraseOneHeight;
+  uint16_t text1Width, text1Height;
 
   debugMessage("screenAlert start",1);
 
-  display.setTextColor(ILI9341_WHITE);
-  display.fillScreen(ILI9341_BLACK);
+  display.setTextColor(TFT_WHITE);
+  display.fillScreen(TFT_BLACK);
 
   debugMessage(String("screenAlert text is '") + messageText + "'",2);
 
   // does message fit on one line?
-  display.setFont(&FreeSans24pt7b);
-  display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
-  if (largeFontPhraseOneWidth <= (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) {
+  display.setFreeFont(&FreeSans24pt7b);
+  text1Width = display.textWidth(messageText);
+  text1Height = display.fontHeight();
+  if (text1Width <= (display.width()-(display.width()/2-(text1Width/2)))) {
     // fits with large font, display
-    display.setCursor(((display.width()/2)-(largeFontPhraseOneWidth/2)),((display.height()/2)+(largeFontPhraseOneHeight/2)));
+    display.setCursor(((display.width()/2)-(text1Width/2)),((display.height()/2)+(text1Height/2)));
     display.print(messageText);
     success = true;
   }
   else {
     // does message fit on two lines?
-    debugMessage(String("text with large font is ") + abs(largeFontPhraseOneWidth - (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) + " pixels too long, trying 2 lines", 1);
+    debugMessage(String("text with large font is ") + abs(text1Width - (display.width()-(display.width()/2-(text1Width/2)))) + " pixels too long, trying 2 lines", 1);
     // does the string break into two pieces based on a space character?
     uint8_t spaceLocation;
     String messageTextPartOne, messageTextPartTwo;
-    uint16_t largeFontPhraseTwoWidth, largeFontPhraseTwoHeight;
+    uint16_t text2Width;
 
     spaceLocation = messageText.indexOf(' ');
     if (spaceLocation) {
       // has a space character, measure two lines
       messageTextPartOne = messageText.substring(0,spaceLocation);
       messageTextPartTwo = messageText.substring(spaceLocation+1);
-      display.getTextBounds(messageTextPartOne.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
-      display.getTextBounds(messageTextPartTwo.c_str(), 0, 0, &x1, &y1, &largeFontPhraseTwoWidth, &largeFontPhraseTwoHeight);
-      debugMessage(String("Message part one with large font is ") + largeFontPhraseOneWidth + " pixels wide",2);
-      debugMessage(String("Message part two with large font is ") + largeFontPhraseTwoWidth + " pixels wide",2);
+      // we can use the previous height calculation
+      text1Width = display.textWidth(messageTextPartOne);
+      text2Width = display.textWidth(messageTextPartTwo);
+      debugMessage(String("Message part one with large font is ") + text1Width + " pixels wide",2);
+      debugMessage(String("Message part two with large font is ") + text2Width + " pixels wide",2);
     }
     else {
       debugMessage("there is no space in message to break message into 2 lines",2);
     }
-    if (spaceLocation && (largeFontPhraseOneWidth <= (display.width()-(display.width()/2-(largeFontPhraseOneWidth/2)))) && (largeFontPhraseTwoWidth <= (display.width()-(display.width()/2-(largeFontPhraseTwoWidth/2))))) {
+    if (spaceLocation && (text1Width <= (display.width()-(display.width()/2-(text1Width/2)))) && (text2Width <= (display.width()-(display.width()/2-(text2Width/2))))) {
         // fits on two lines, display
-        display.setCursor(((display.width()/2)-(largeFontPhraseOneWidth/2)),(display.height()/2+largeFontPhraseOneHeight/2)-25);
+        display.setCursor(((display.width()/2)-(text1Width/2)),(display.height()/2+text1Height/2)-25);
         display.print(messageTextPartOne);
-        display.setCursor(((display.width()/2)-(largeFontPhraseTwoWidth/2)),(display.height()/2+largeFontPhraseTwoHeight/2)+25);
+        display.setCursor(((display.width()/2)-(text2Width/2)),(display.height()/2+text1Height/2)+25);
         display.print(messageTextPartTwo);
         success = true;
     }
     else {
       // does message fit on one line with small text?
       debugMessage("couldn't break text into 2 lines or one line is too long, trying small text",1);
-      uint16_t smallFontWidth, smallFontHeight;
 
-      display.setFont(&FreeSans18pt7b);
-      display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &smallFontWidth, &smallFontHeight);
-      if (smallFontWidth <= (display.width()-(display.width()/2-(smallFontWidth/2)))) {
+      display.setFreeFont(&FreeSans18pt7b);
+      text1Width = display.textWidth(messageText);
+      text1Height = display.fontHeight();
+      if (text1Width <= (display.width()-(display.width()/2-(text1Width/2)))) {
         // fits with small size
-        display.setCursor(display.width()/2-smallFontWidth/2,display.height()/2+smallFontHeight/2);
+        display.setCursor(display.width()/2-text1Width/2,display.height()/2+text1Height/2);
         display.print(messageText);
         success = true;
       }
       else {
-        // doesn't fit at any size/line split configuration, display as truncated, large text
-        debugMessage(String("text with small font is ") + abs(smallFontWidth - (display.width()-(display.width()/2-(smallFontWidth/2)))) + " pixels too long, displaying truncated", 1);
-        display.setFont(&FreeSans12pt7b);
-        display.getTextBounds(messageText.c_str(), 0, 0, &x1, &y1, &largeFontPhraseOneWidth, &largeFontPhraseOneHeight);
-        display.setCursor(display.width()/2-largeFontPhraseOneWidth/2,display.height()/2+largeFontPhraseOneHeight/2);
+        // doesn't fit at any size/line split configuration, display as truncated, small text
+        debugMessage(String("text with small font is ") + abs(text1Width - (display.width()-(display.width()/2-(text1Width/2)))) + " pixels too long, displaying truncated", 1);
+        display.setFreeFont(&FreeSans12pt7b);
+        text1Width = display.textWidth(messageText);
+        text1Height = display.fontHeight();
+        display.setCursor(display.width()/2-text1Width/2,display.height()/2+text1Height/2);
         display.print(messageText);
       }
     }
@@ -794,9 +793,9 @@ void screenMain()
 
   debugMessage("screenMain start",1);
 
-  display.setFont(&FreeSans18pt7b);
-  display.setTextColor(ILI9341_BLACK);
-  display.fillScreen(ILI9341_BLACK);
+  display.setFreeFont(&FreeSans18pt7b);
+  display.setTextColor(TFT_BLACK);
+  display.fillScreen(TFT_BLACK);
   // CO2
   display.fillRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
   display.setCursor((display.width()/8),(display.height()/4));
@@ -817,22 +816,22 @@ void screenMain()
   #else
     // Temperature
     if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
-      //display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),display.height(),ILI9341_RED);
-      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_YELLOW);
+      //display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),display.height(),TFT_RED);
+      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_YELLOW);
     else
-      // display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
-      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
+      // display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),(display.height()),TFT_GREEN);
+      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_GREEN);
     display.setCursor(((display.width()*5)/8),((display.height()*3)/4));
-    display.setFont(&meteocons16pt7b);
+    display.setFreeFont(&meteocons16pt7b);
     display.print("+");
     // Humdity
     if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
-      // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_RED);
-      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_YELLOW);
+      // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),TFT_RED);
+      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_YELLOW);
     else
-      // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),ILI9341_GREEN);
-      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,ILI9341_GREEN);
-    display.drawBitmap(((display.width()*7)/8),((display.height()*5)/8), bitmapHumidityIconSmall, 20, 28, ILI9341_BLACK);
+      // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),TFT_GREEN);
+      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_GREEN);
+    display.drawBitmap(((display.width()*7)/8),((display.height()*5)/8), bitmapHumidityIconSmall, 20, 28, TFT_BLACK);
   #endif
 
   debugMessage("screenMain end",1);
@@ -845,16 +844,16 @@ void screenSaver()
 // Improvement: ?
 {
   // screen assists
-  int16_t x1, y1; // used by getTextBounds()
-  uint16_t text1Width, text1Height; // used by getTextBounds()
+  uint16_t text1Width, text1Height;
 
   debugMessage("screenSaver() start",1);
 
-  display.fillScreen(ILI9341_BLACK);
-  display.setFont(&FreeSans24pt7b);
+  display.fillScreen(TFT_BLACK);
+  display.setFreeFont(&FreeSans24pt7b);
   display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
 
-  display.getTextBounds(String(sensorData.ambientCO2[graphPoints-1]),0,0,&x1,&y1,&text1Width,&text1Height);
+  text1Width = display.textWidth(String(sensorData.ambientCO2[graphPoints-1]));
+  text1Height = display.fontHeight();
 
   // Pick a random location that'll show up
   display.setCursor(random(xMargins,display.width()-xMargins-text1Width), random(yMargins + text1Height, display.height() - yMargins));
@@ -881,12 +880,12 @@ void screenVOC()
 
   debugMessage("screenVOC() start",1);
 
-  display.setFont(&FreeSans18pt7b);
-  display.setTextColor(ILI9341_WHITE);
+  display.setFreeFont(&FreeSans18pt7b);
+  display.setTextColor(TFT_WHITE);
 
   // fill screen with VOC value color
   display.fillScreen(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
-  display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,ILI9341_BLACK);
+  display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,TFT_BLACK);
 
   // value and label
   display.setCursor(borderWidth + 20,yLabel);
@@ -925,12 +924,12 @@ void screenNOX()
   debugMessage("screenNOX() start",1);
 
   // clear screen
-  display.fillScreen(ILI9341_BLACK);
-  display.setFont(&FreeSans18pt7b);
+  display.fillScreen(TFT_BLACK);
+  display.setFreeFont(&FreeSans18pt7b);
 
   // VOC color circle
   display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[noxRange(sensorData.noxIndex)]);
-  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,ILI9341_BLACK);
+  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,TFT_BLACK);
 
   // VOC color legend
   for(uint8_t loop = 0; loop < 4; loop++){
@@ -941,7 +940,7 @@ void screenNOX()
   display.setTextColor(warningColor[vocRange(sensorData.noxIndex)]);  // Use highlight color look-up table
   display.setCursor(xVOCCircle-20,yVOCCircle);
   display.print(int(sensorData.noxIndex+.5));
-  display.setTextColor(ILI9341_WHITE);
+  display.setTextColor(TFT_WHITE);
   display.setCursor(xVOCLabel,yVOCLabel);
   display.print("NOx");
 
@@ -966,12 +965,12 @@ void screenCO2()
 
   debugMessage("screenCO2() start",1);
 
-  display.setFont(&FreeSans18pt7b);
-  display.setTextColor(ILI9341_WHITE);
+  display.setFreeFont(&FreeSans18pt7b);
+  display.setTextColor(TFT_WHITE);
 
   // fill screen with CO2 value color
   display.fillScreen(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,ILI9341_BLACK);
+  display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,TFT_BLACK);
 
   // value and label
   display.setCursor(borderWidth + 20,yLabel);
@@ -1001,7 +1000,7 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
       // <50 rssi value = 5 bars, each +10 rssi value range = one less bar
       // draw bars to represent WiFi strength
       for (uint8_t loop = 1; loop <= barCount; loop++) {
-        display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, ILI9341_WHITE);
+        display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_WHITE);
       }
       debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
     } else {
@@ -1021,9 +1020,9 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
     if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (reportIntervalMS * reportFailureThreshold)))
         // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
-        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_RED);
+        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_RED);
       else
-        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, ILI9341_GREEN);
+        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_GREEN);
   #endif
 }
 
@@ -1035,8 +1034,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
 //  determine minimum size and block width and height smaller than that  
 {
   uint8_t loop; // upper bound is graphPoints definition
-  int16_t x1, y1; // used by getTextBounds()
-  uint16_t text1Width, text1Height; // used by getTextBounds()
+  uint16_t text1Width, text1Height;
   uint16_t deltaX, x, y, xp, yp;  // graphing positions
   float minValue, maxValue;
   bool firstpoint = true, nodata = true;
@@ -1048,9 +1046,9 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
 
   debugMessage("screenHelperGraph() start",1);
 
-  display.fillRect(initialX,initialY,xWidth,yHeight,ILI9341_BLACK);
-  display.setFont();
-  display.setTextColor(ILI9341_LIGHTGREY);
+  display.fillRect(initialX,initialY,xWidth,yHeight,TFT_BLACK);
+  display.setFreeFont();
+  display.setTextColor(TFT_WHITE);
 
   switch (screenCurrent) {
     case sCO2:
@@ -1082,14 +1080,16 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
 
   // draw the X axis description, if provided, and set the position of the horizontal axis line
   if (strlen(xLabel.c_str())) {
-    display.getTextBounds(xLabel,0,0,&x1,&y1,&text1Width,&text1Height);
+    text1Width = display.textWidth(xLabel);
+    text1Height = display.fontHeight();
     graphLineY = initialY + yHeight - text1Height - labelSpacer;
     display.setCursor((((initialX + xWidth)/2) - (text1Width/2)), (initialY + yHeight - text1Height));
     display.print(xLabel);
   }
 
   // calculate text width and height of longest Y axis label
-  display.getTextBounds(String(maxValue),0,0,&x1,&y1,&text1Width,&text1Height);
+  text1Width = display.textWidth(String(maxValue));
+  text1Height = display.fontHeight(); 
   graphLineX = initialX + text1Width + labelSpacer;
   
   // draw top Y axis label
@@ -1100,9 +1100,9 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   display.print(uint16_t(minValue));
 
   // Draw vertical axis
-  display.drawFastVLine(graphLineX,initialY,(graphLineY-initialY), ILI9341_LIGHTGREY);
+  display.drawFastVLine(graphLineX,initialY,(graphLineY-initialY), TFT_WHITE);
   // Draw horitzonal axis
-  display.drawFastHLine(graphLineX,graphLineY,(xWidth-graphLineX),ILI9341_LIGHTGREY);
+  display.drawFastHLine(graphLineX,graphLineY,(xWidth-graphLineX),TFT_WHITE);
 
   // Plot however many data points we have both with filled circles at each
   // point and lines connecting the points.  Color the filled circles with the
@@ -1126,7 +1126,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     }
     else {
       // Draw line from previous point (if one) to this point
-      display.drawLine(xp,yp,x,y,ILI9341_WHITE);
+      display.drawLine(xp,yp,x,y,TFT_WHITE);
     }
     // Save x & y of this point to use as previous point for next one.
     xp = x;
