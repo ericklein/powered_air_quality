@@ -334,7 +334,7 @@ void screenUpdate(uint8_t screenCurrent)
       #ifdef SENSOR_SEN66  
         screenNOX();
       #else
-        screenCurrentInfo();
+        screenTempHumidity();
       #endif
       break;
     default:
@@ -344,8 +344,11 @@ void screenUpdate(uint8_t screenCurrent)
   }
 }
 
-void screenCurrentInfo() 
-// Display current particulate matter, CO2, and local weather on screen
+void screenTempHumidity() 
+// Description: Displays indoor and outdoor temperature and humidity
+// Parameters:
+// Output: NA (void)
+// Improvement: 
 {
   uint16_t text1Width;  // For text size calculation
 
@@ -356,17 +359,8 @@ void screenCurrentInfo()
   const uint16_t xTempModifier = 15;
   const uint16_t xHumidityModifier = 60;
   const uint16_t yTempHumdidity = (display.height()*0.9);
-  // pm25 rings
-  const uint16_t xIndoorPMCircle = (display.width() / 4);
-  const uint16_t xOutdoorPMCircle = ((display.width() / 4) * 3);
-  const uint16_t yPMCircles = 110;
-  const uint16_t circleRadius = 65;
-  // inside the pm25 rings
-  const uint16_t xIndoorCircleText = (xIndoorPMCircle - 18);
-  const uint16_t xWeatherIcon = xOutdoorPMCircle - 18;
-  const uint16_t yWeatherIcon = yPMCircles - 20;
 
-  debugMessage("screenCurrentInfo() start",2);
+  debugMessage("screenTempHumidity() start",2);
 
   // clear screen
   display.fillScreen(TFT_BLACK);
@@ -379,6 +373,13 @@ void screenCurrentInfo()
   // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
   screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
   screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), yMargins);
+  // labels
+  display.setFreeFont(&FreeSans12pt7b);
+  display.setTextColor(TFT_WHITE);
+  display.setCursor(xMargins, ((display.height()/8)-7));
+  display.print("Indoor");
+  display.setCursor(xOutdoorMargin, ((display.height()/8)-7));
+  display.print("Outdoor");
 
   // Indoor
   // Indoor temp
@@ -405,56 +406,10 @@ void screenCurrentInfo()
   // IMPROVEMENT: move this into meteoicons so it can be inline text
   display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
 
-  // Indoor PM2.5 ring
-  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
-  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
-
-  // Indoor CO2 level inside the circle
-  // CO2 value line
-  display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
-  display.setCursor(xIndoorCircleText,yPMCircles);
-  display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
-
-  // CO2 label line
-  display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(TFT_WHITE);
-  display.setCursor(xIndoorCircleText,yPMCircles+23);
-  display.print("CO");
-  // subscript
-  display.setFreeFont(&FreeSans9pt7b);
-  display.setCursor(xIndoorCircleText+35,yPMCircles+33);
-  display.print("2");
-
   // Outside
-
-    // do we have OWM Air Quality data to display?
-  if (owmAirQuality.aqi != 10000) {
-
-    // Outside PM2.5
-    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
-    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
-
-    // Outside air quality index (AQI)
-    display.setFreeFont(&FreeSans9pt7b);
-    display.setTextColor(TFT_WHITE);
-    text1Width = display.textWidth(OWMPollutionLabel[(owmAirQuality.aqi)]);
-    display.setCursor((xOutdoorPMCircle - (text1Width/2)),yPMCircles+10);
-
-    display.print(OWMPollutionLabel[(owmAirQuality.aqi)]);
-    display.setCursor(xOutdoorPMCircle-15,yPMCircles + 30);
-    display.print("AQI");
-  }
 
   // do we have OWM Current data to display?
   if (owmCurrentData.tempF != 10000) {
-    // location label
-    display.setFreeFont(&FreeSans12pt7b);
-    display.setTextColor(TFT_WHITE);
-    // IMPROVEMENT: Dynamic x coordinate based on text length
-    display.setCursor((display.width()/4), ((display.height()/8)-7));
-    display.print(owmCurrentData.cityName);
-
     // Outside temp
     if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
       display.setTextColor(TFT_YELLOW);
@@ -476,23 +431,12 @@ void screenCurrentInfo()
     // IMPROVEMENT: original icon ratio was 5:7?
     // IMPROVEMENT: move this into meteoicons so it can be inline text
     display.drawBitmap(xOutdoorMargin + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
-
-    // weather icon
-    String weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
-    // if getMeteoIcon doesn't have a matching symbol, skip display
-    if (weatherIcon != ")") {
-      // display icon
-      display.setFreeFont(&meteocons16pt7b);
-      display.setTextColor(TFT_WHITE);
-      display.setCursor(xWeatherIcon, yWeatherIcon);
-      display.print(weatherIcon);
-    }
   }
-  debugMessage("screenCurrentInfo() end", 2);  // DJB-DEV: was 1
+  debugMessage("screenTempHumidity() end", 2);
 }
 
 void screenPM25() 
-// Description: Displays indoor and outdoor PM25 information
+// Description: Displays indoor and outdoor PM25, outdoor air pollution index
 // Parameters:
 // Output: NA (void)
 // Improvement: 
@@ -574,99 +518,99 @@ void screenPM25()
   debugMessage("screenPM25() end", 2);
 }
 
-void screenAggregateData()
-// Displays minimum, average, and maximum values for primary sensor values
-// using a table-style layout (with labels)
-{
-  const uint16_t xValueColumn =  10;
-  const uint16_t xMinColumn   = 115;
-  const uint16_t xAvgColumn   = 185;
-  const uint16_t xMaxColumn   = 255;
-  const uint16_t yHeaderRow   =  10;
-  const uint16_t yPM25Row     =  40;
-  const uint16_t yAQIRow      =  70;
-  const uint16_t yCO2Row      = 100;
-  const uint16_t yVOCRow      = 130;
-  const uint16_t yNOXRow      = 170;
-  const uint16_t yTempFRow    = 200;
-  const uint16_t yHumidityRow = 220;
+// void screenAggregateData()
+// // Displays minimum, average, and maximum values for primary sensor values
+// // using a table-style layout (with labels)
+// {
+//   const uint16_t xValueColumn =  10;
+//   const uint16_t xMinColumn   = 115;
+//   const uint16_t xAvgColumn   = 185;
+//   const uint16_t xMaxColumn   = 255;
+//   const uint16_t yHeaderRow   =  10;
+//   const uint16_t yPM25Row     =  40;
+//   const uint16_t yAQIRow      =  70;
+//   const uint16_t yCO2Row      = 100;
+//   const uint16_t yVOCRow      = 130;
+//   const uint16_t yNOXRow      = 170;
+//   const uint16_t yTempFRow    = 200;
+//   const uint16_t yHumidityRow = 220;
 
-  debugMessage("screenAggregateData() start",2);
+//   debugMessage("screenAggregateData() start",2);
 
-  // clear screen and initialize properties
-  display.fillScreen(TFT_BLACK);
-  display.setFreeFont();  // Revert to built-in font
-  display.setTextSize(2);
-  display.setTextColor(TFT_WHITE);
+//   // clear screen and initialize properties
+//   display.fillScreen(TFT_BLACK);
+//   display.setFreeFont();  // Revert to built-in font
+//   display.setTextSize(2);
+//   display.setTextColor(TFT_WHITE);
 
-  // Display column heaings
-  display.setTextColor(TFT_BLUE);
-  display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
-  display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,TFT_BLUE);
-  display.setTextColor(TFT_WHITE);
+//   // Display column heaings
+//   display.setTextColor(TFT_BLUE);
+//   display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
+//   display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,TFT_BLUE);
+//   display.setTextColor(TFT_WHITE);
 
-  // Display a unique unit ID based on the high-order 16 bits of the
-  // ESP32 MAC address (as the header for the data name column)
-  display.setCursor(0,yHeaderRow);
-  display.print(deviceGetID("AQ"));
+//   // Display a unique unit ID based on the high-order 16 bits of the
+//   // ESP32 MAC address (as the header for the data name column)
+//   display.setCursor(0,yHeaderRow);
+//   display.print(deviceGetID("AQ"));
 
-  // Display column headers
-  display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
-  display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
+//   // Display column headers
+//   display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
+//   display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
 
-  // Display row headings
-  display.setCursor(xValueColumn, yPM25Row); display.print("PM25");
-  display.setCursor(xValueColumn, yAQIRow); display.print("AQI");
-  display.setCursor(xValueColumn, yCO2Row); display.print("CO2");
-  display.setCursor(xValueColumn, yVOCRow); display.print("VOC");
-  display.setCursor(xValueColumn, yNOXRow); display.print("NOx");
-  display.setCursor(xValueColumn, yTempFRow); display.print(" F");
-  display.setCursor(xValueColumn, yHumidityRow); display.print("%RH");
+//   // Display row headings
+//   display.setCursor(xValueColumn, yPM25Row); display.print("PM25");
+//   display.setCursor(xValueColumn, yAQIRow); display.print("AQI");
+//   display.setCursor(xValueColumn, yCO2Row); display.print("CO2");
+//   display.setCursor(xValueColumn, yVOCRow); display.print("VOC");
+//   display.setCursor(xValueColumn, yNOXRow); display.print("NOx");
+//   display.setCursor(xValueColumn, yTempFRow); display.print(" F");
+//   display.setCursor(xValueColumn, yHumidityRow); display.print("%RH");
 
-  // PM2.5
-  display.setCursor(xMinColumn,yPM25Row); display.print(totalPM25.getMin(),1);
-  display.setCursor(xAvgColumn,yPM25Row); display.print(totalPM25.getAverage(),1);
-  display.setCursor(xMaxColumn,yPM25Row); display.print(totalPM25.getMax(),1);
+//   // PM2.5
+//   display.setCursor(xMinColumn,yPM25Row); display.print(totalPM25.getMin(),1);
+//   display.setCursor(xAvgColumn,yPM25Row); display.print(totalPM25.getAverage(),1);
+//   display.setCursor(xMaxColumn,yPM25Row); display.print(totalPM25.getMax(),1);
 
-  // AQI
-  display.setCursor(xMinColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMin()),1);
-  display.setCursor(xAvgColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getAverage()),1);
-  display.setCursor(xMaxColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMax()),1);
+//   // AQI
+//   display.setCursor(xMinColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMin()),1);
+//   display.setCursor(xAvgColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getAverage()),1);
+//   display.setCursor(xMaxColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMax()),1);
 
-  // CO2 color coded
-  display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
-  display.setCursor(xMinColumn,yCO2Row); display.print(totalCO2.getMin(),0);
-  display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);
-  display.setCursor(xAvgColumn,yCO2Row); display.print(totalCO2.getAverage(),0);
-  display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);
-  display.setCursor(xMaxColumn,yCO2Row); display.print(totalCO2.getMax(),0);
-  display.setTextColor(TFT_WHITE);  // Restore text color
+//   // CO2 color coded
+//   display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
+//   display.setCursor(xMinColumn,yCO2Row); display.print(totalCO2.getMin(),0);
+//   display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);
+//   display.setCursor(xAvgColumn,yCO2Row); display.print(totalCO2.getAverage(),0);
+//   display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);
+//   display.setCursor(xMaxColumn,yCO2Row); display.print(totalCO2.getMax(),0);
+//   display.setTextColor(TFT_WHITE);  // Restore text color
 
-  //VOC index
-  display.setCursor(xMinColumn,yVOCRow); display.print(totalVOCIndex.getMin(),0);
-  display.setCursor(xAvgColumn,yVOCRow); display.print(totalVOCIndex.getAverage(),0);
-  display.setCursor(xMaxColumn,yVOCRow); display.print(totalVOCIndex.getMax(),0);
+//   //VOC index
+//   display.setCursor(xMinColumn,yVOCRow); display.print(totalVOCIndex.getMin(),0);
+//   display.setCursor(xAvgColumn,yVOCRow); display.print(totalVOCIndex.getAverage(),0);
+//   display.setCursor(xMaxColumn,yVOCRow); display.print(totalVOCIndex.getMax(),0);
 
-  // NOx index
-  display.setCursor(xMinColumn,yNOXRow); display.print(totalNOxIndex.getMin(),1);
-  display.setCursor(xAvgColumn,yNOXRow); display.print(totalNOxIndex.getAverage(),1);
-  display.setCursor(xMaxColumn,yNOXRow); display.print(totalNOxIndex.getMax(),1);
+//   // NOx index
+//   display.setCursor(xMinColumn,yNOXRow); display.print(totalNOxIndex.getMin(),1);
+//   display.setCursor(xAvgColumn,yNOXRow); display.print(totalNOxIndex.getAverage(),1);
+//   display.setCursor(xMaxColumn,yNOXRow); display.print(totalNOxIndex.getMax(),1);
 
-  // temperature
-  display.setCursor(xMinColumn,yTempFRow); display.print(totalTemperatureF.getMin(),1);
-  display.setCursor(xAvgColumn,yTempFRow); display.print(totalTemperatureF.getAverage(),1);
-  display.setCursor(xMaxColumn,yTempFRow); display.print(totalTemperatureF.getMax(),1);
+//   // temperature
+//   display.setCursor(xMinColumn,yTempFRow); display.print(totalTemperatureF.getMin(),1);
+//   display.setCursor(xAvgColumn,yTempFRow); display.print(totalTemperatureF.getAverage(),1);
+//   display.setCursor(xMaxColumn,yTempFRow); display.print(totalTemperatureF.getMax(),1);
 
-  // humidity
-  display.setCursor(xMinColumn,yHumidityRow); display.print(totalHumidity.getMin(),0);
-  display.setCursor(xAvgColumn,yHumidityRow); display.print(totalHumidity.getAverage(),0);
-  display.setCursor(xMaxColumn,yHumidityRow); display.print(totalHumidity.getMax(),0);
+//   // humidity
+//   display.setCursor(xMinColumn,yHumidityRow); display.print(totalHumidity.getMin(),0);
+//   display.setCursor(xAvgColumn,yHumidityRow); display.print(totalHumidity.getAverage(),0);
+//   display.setCursor(xMaxColumn,yHumidityRow); display.print(totalHumidity.getMax(),0);
 
-  // return to default text size
-  display.setTextSize(1);
+//   // return to default text size
+//   display.setTextSize(1);
 
-  debugMessage("screenAggregateData() end",2);
-}
+//   debugMessage("screenAggregateData() end",2);
+// }
 
 bool screenAlert(String messageText)
 // Description: Display error message centered on screen, using different font sizes and/or splitting to fit on screen
@@ -1263,6 +1207,8 @@ bool OWMCurrentWeatherRead()
         return false;
       }
 
+      debugMessage(String("JsonDocument requires ") + doc.memoryUsage() + " bytes",2);
+
       uint8_t code = (uint8_t)doc["cod"];
       if (code != 200) {
         debugMessage(String("OWM error: ") + (const char *)doc["message"], 1);
@@ -1335,6 +1281,8 @@ bool OWMAirPollutionRead()
         return false;
       }
 
+      debugMessage(String("JsonDocument requires ") + doc.memoryUsage() + " bytes",2);
+
       // owmAirQuality.lon = (float) doc["coord"]["lon"];
       // owmAirQuality.lat = (float) doc["coord"]["lat"];
       JsonObject list_0 = doc["list"][0];
@@ -1358,48 +1306,48 @@ bool OWMAirPollutionRead()
   #endif
 }
 
-String OWMtoMeteoconIcon(String icon)
-// Maps OWM icon data to the appropropriate Meteocon font character
-// https://www.alessioatzeni.com/meteocons/#:~:text=Meteocons%20is%20a%20set%20of,free%20and%20always%20will%20be.
-{
-  if (icon == "01d")  // 01d = sunny = Meteocon "B"
-    return "B";
-  if (icon == "01n")  // 01n = clear night = Meteocon "C"
-    return "C";
-  if (icon == "02d")  // 02d = partially sunny = Meteocon "H"
-    return "H";
-  if (icon == "02n")  // 02n = partially clear night = Meteocon "4"
-    return "4";
-  if (icon == "03d")  // 03d = clouds = Meteocon "N"
-    return "N";
-  if (icon == "03n")  // 03n = clouds night = Meteocon "5"
-    return "5";
-  if (icon == "04d")  // 04d = broken clouds = Meteocon "Y"
-    return "Y";
-  if (icon == "04n")  // 04n = broken night clouds = Meteocon "%"
-    return "%";
-  if (icon == "09d")  // 09d = rain = Meteocon "R"
-    return "R";
-  if (icon == "09n")  // 09n = night rain = Meteocon "8"
-    return "8";
-  if (icon == "10d")  // 10d = light rain = Meteocon "Q"
-    return "Q";
-  if (icon == "10n")  // 10n = night light rain = Meteocon "7"
-    return "7";
-  if (icon == "11d")  // 11d = thunderstorm = Meteocon "P"
-    return "P";
-  if (icon == "11n")  // 11n = night thunderstorm = Meteocon "6"
-    return "6";
-  if (icon == "13d")  // 13d = snow = Meteocon "W"
-    return "W";
-  if (icon == "13n")  // 13n = night snow = Meteocon "#"
-    return "#";
-  if ((icon == "50d") || (icon == "50n"))  // 50d = mist = Meteocon "M"
-    return "M";
-  // Nothing matched
-  debugMessage("OWM icon not matched to Meteocon, why?", 1);
-  return ")";
-}
+// String OWMtoMeteoconIcon(String icon)
+// // Maps OWM icon data to the appropropriate Meteocon font character
+// // https://www.alessioatzeni.com/meteocons/#:~:text=Meteocons%20is%20a%20set%20of,free%20and%20always%20will%20be.
+// {
+//   if (icon == "01d")  // 01d = sunny = Meteocon "B"
+//     return "B";
+//   if (icon == "01n")  // 01n = clear night = Meteocon "C"
+//     return "C";
+//   if (icon == "02d")  // 02d = partially sunny = Meteocon "H"
+//     return "H";
+//   if (icon == "02n")  // 02n = partially clear night = Meteocon "4"
+//     return "4";
+//   if (icon == "03d")  // 03d = clouds = Meteocon "N"
+//     return "N";
+//   if (icon == "03n")  // 03n = clouds night = Meteocon "5"
+//     return "5";
+//   if (icon == "04d")  // 04d = broken clouds = Meteocon "Y"
+//     return "Y";
+//   if (icon == "04n")  // 04n = broken night clouds = Meteocon "%"
+//     return "%";
+//   if (icon == "09d")  // 09d = rain = Meteocon "R"
+//     return "R";
+//   if (icon == "09n")  // 09n = night rain = Meteocon "8"
+//     return "8";
+//   if (icon == "10d")  // 10d = light rain = Meteocon "Q"
+//     return "Q";
+//   if (icon == "10n")  // 10n = night light rain = Meteocon "7"
+//     return "7";
+//   if (icon == "11d")  // 11d = thunderstorm = Meteocon "P"
+//     return "P";
+//   if (icon == "11n")  // 11n = night thunderstorm = Meteocon "6"
+//     return "6";
+//   if (icon == "13d")  // 13d = snow = Meteocon "W"
+//     return "W";
+//   if (icon == "13n")  // 13n = night snow = Meteocon "#"
+//     return "#";
+//   if ((icon == "50d") || (icon == "50n"))  // 50d = mist = Meteocon "M"
+//     return "M";
+//   // Nothing matched
+//   debugMessage("OWM icon not matched to Meteocon, why?", 1);
+//   return ")";
+// }
 
 void processSamples(uint8_t numSamples)
 {
