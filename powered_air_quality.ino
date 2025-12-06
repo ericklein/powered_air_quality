@@ -10,6 +10,7 @@
 #include "secrets.h"          // private credentials for network, MQTT
 #include "measure.h"          // Utility class for easy handling of aggregate sensor data
 #include "data.h"
+#include <SPI.h>              // TFT_eSPI and XPT2046_Touchscreen
 #include <HTTPClient.h>
 #include <Preferences.h>      // read-write to ESP32 persistent storage
 #include <ArduinoJson.h>      // https://arduinojson.org/ , used for OWM retrieval
@@ -17,12 +18,6 @@
 
 WiFiClient client;   // WiFi Managers loads WiFi.h, which is used by OWM and MQTT
 Preferences nvConfig;
-
-// #include <SPI.h>
-// // ESP32 has 2 SPI ports; for CYD to work with the TFT and touchscreen on different SPI ports
-// // each needs to be defined and passed to the library
-// SPIClass hspi = SPIClass(HSPI);
-// SPIClass vspi = SPIClass(VSPI);
 
 // environment sensors
 #ifdef SENSOR_SEN66
@@ -46,17 +41,14 @@ Preferences nvConfig;
 TFT_eSPI display = TFT_eSPI();
 
 // fonts and glyphs
-// #include <Fonts/GFXFF/FreeSans9pt7b.h>
-// #include <Fonts/GFXFF/FreeSans12pt7b.h>
-// #include <Fonts/GFXFF/FreeSans18pt7b.h>
-// #include <Fonts/GFXFF/FreeSans24pt7b.h>
 #include "Fonts/meteocons12pt7b.h"
 #include "Fonts/meteocons16pt7b.h"
 #include "glyphs.h"
 
 // // touchscreen
-// #include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
-// XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
+#include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
+SPIClass touchscreenSPI = SPIClass(VSPI);
+XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
 
 // external function dependencies
 #ifdef THINGSPEAK
@@ -119,21 +111,16 @@ void setup() {
     #endif
   #endif
 
-  // // initialize screen first to display messages
-  // pinMode(TFT_BACKLIGHT, OUTPUT);
-  // digitalWrite(TFT_BACKLIGHT, HIGH);
-
   display.begin();
   display.setRotation(screenRotation);
   display.setTextWrap(false);
   display.fillScreen(TFT_BLACK);
   screenAlert("Initializing");
 
-  // // initialize touchscreen
-  // // setup the VSPI to use CYD touchscreen pins
-  // vspi.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
-  // touchscreen.begin(vspi);
-  // touchscreen.setRotation(screenRotation);
+  // initialize touchscreen
+  touchscreenSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS); // setup the VSPI to use CYD touchscreen pins
+  touchscreen.begin(touchscreenSPI);
+  touchscreen.setRotation(screenRotation);
 
   // truly random numbers for every boot cycle
   randomSeed(analogRead(0));
@@ -173,10 +160,10 @@ void setup() {
   #endif
 
   #ifdef SENSOR_SEN66
-    delay(12000); // ~6 seconds for valid CO2 and ~11 seconds for valid NOx index values
+    delay(12000); // ~6 seconds for valid CO2 and ~12 seconds for valid NOx index values
   #endif
   #ifdef SENSOR_SEN54SCD40
-    delay(7000); // ~6 seconds for valid CO2 values
+    delay(7000); // ~7 seconds for valid CO2 values
   #endif
 }
 
@@ -223,7 +210,10 @@ void loop() {
   }
 
   // is there user input to process?
-  if (display.getTouch(&x,&y)) {
+  // cyd 2.8 touchscreen from XPT2046
+  if (touchscreen.tirqTouched() && touchscreen.touched()) {
+  // cyd 3.2 usb-c touchscreen from TFT_eSPI
+  // if (display.getTouch(&x,&y)) {
     // If screen saver active, switch to master screen
     switch (screenCurrent) {
       case sSaver :
@@ -232,11 +222,15 @@ void loop() {
         break;
       case sMain : {
         // get raw 12bit touchscreen x,y and then calibrate to screen size
-        // TS_Point p = touchscreen.getPoint();
+        TS_Point p = touchscreen.getPoint();
+        uint16_t calibratedX = map(p.x, touchscreenMinX, touchscreenMaxX, 1, display.width());
+        uint16_t calibratedY = map(p.y, touchscreenMinY, touchscreenMaxY, 1, display.height());
+        // alternate conversion
         // uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
         // uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
-        calibratedX = x;
-        calibratedY = y;
+        // TFT_eSPI 
+        // calibratedX = x;
+        // calibratedY = y;
         debugMessage(String("input: touchpoint x=") + calibratedX + ", y=" + calibratedY,2);
         // transition to appropriate component screen
         if ((calibratedX < display.width()/2) && (calibratedY < display.height()/2)) {
@@ -2272,9 +2266,6 @@ void deviceDeepSleep(uint32_t deepSleepTime)
     debugMessage("power off: SCD4X",2);
     */
   #endif
-  
-  // turn off TFT backlight
-  digitalWrite(TFT_BACKLIGHT, LOW);
 
   networkDisconnect();
 
