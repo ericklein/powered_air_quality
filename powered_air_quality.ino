@@ -414,8 +414,8 @@ void screenCurrentInfo()
   display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
 
   // Indoor PM2.5 ring
-  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
-  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
+  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
+  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
   // Indoor CO2 level inside the circle
   // CO2 value line
@@ -440,8 +440,8 @@ void screenCurrentInfo()
   if (owmAirQuality.aqi != 10000) {
 
     // Outside PM2.5
-    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
-    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
+    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
+    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
     // Outside air quality index (AQI)
     display.setFreeFont(&FreeSans9pt7b);
@@ -541,8 +541,8 @@ void screenPM25()
   display.print("Outdoor");
 
   // Indoor PM2.5 ring
-  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
-  display.fillCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
+  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
+  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
   // Indoor pm25 value and label inside the circle
   display.setFreeFont(&FreeSans12pt7b);
@@ -559,8 +559,8 @@ void screenPM25()
   // do we have OWM Air Quality data to display?
   if (owmAirQuality.aqi != 10000) {
     // Outside PM2.5
-    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
-    display.fillCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
+    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
+    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
     // outdoor pm25 value and label inside the circle
     display.setFreeFont(&FreeSans12pt7b);
@@ -800,42 +800,38 @@ void screenMain()
 
   display.setFreeFont(&FreeSans18pt7b);
   display.setTextColor(TFT_BLACK);
+  display.setTextDatum(MC_DATUM);
+
   display.fillScreen(TFT_BLACK);
   // CO2
-  display.fillRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  display.setCursor((display.width()/8),(display.height()/4));
-  display.print("CO2");
+  display.fillSmoothRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+  display.drawString("CO2",display.width()/4,display.height()/4);
   // PM2.5
-  display.fillRoundRect(((display.width()/2)+halfBorderWidth), 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[pm25Range(sensorData.pm25)]);
-  display.setCursor((display.width()*5/8),(display.height()/4));
-  display.print("PM25");
+  display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth), 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[pm25Range(sensorData.pm25)]);
+  display.drawString("PM25",display.width()*3/4,display.height()/4);
   // VOC Index
-  display.fillRoundRect(0, ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
-  display.setCursor((display.width()/8),((display.height()*3)/4));
-  display.print("VOC");
+  display.fillSmoothRoundRect(0, ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
+  display.drawString("VOC",display.width()/4,display.height()*3/4);
   #ifdef SENSOR_SEN66
     // NOx index
-    display.fillRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[pm25Range(sensorData.pm25)]);
-    display.setCursor((display.width()*5/8),(display.height()*3/4));
-    display.print("NOx");
+    display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[pm25Range(sensorData.pm25)]);
+    display.drawString("NOx",display.width()*3/4,display.height()*3/4);
   #else
     // Temperature
     if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
       //display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),display.height(),TFT_RED);
-      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_YELLOW);
+      display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_YELLOW);
     else
       // display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),(display.height()),TFT_GREEN);
-      display.fillRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_GREEN);
+      display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_GREEN);
     display.setCursor(((display.width()*5)/8),((display.height()*3)/4));
     display.setFreeFont(&meteocons16pt7b);
     display.print("+");
     // Humdity
     if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
-      // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),TFT_RED);
-      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_YELLOW);
+      display.fillSmoothRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_YELLOW);
     else
-      // display.fillTriangle(display.width(),((display.height()/2)+2),display.width(),display.height(),((display.width()/2)+2),(display.height()),TFT_GREEN);
-      display.fillRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_GREEN);
+      display.fillSmoothRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_GREEN);
     display.drawBitmap(((display.width()*7)/8),((display.height()*5)/8), bitmapHumidityIconSmall, 20, 28, TFT_BLACK);
   #endif
 
@@ -890,7 +886,7 @@ void screenVOC()
 
   // fill screen with VOC value color
   display.fillScreen(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
-  display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,TFT_BLACK);
+  display.fillSmoothRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,TFT_BLACK);
 
   // value and label
   display.setCursor(borderWidth + 20,yLabel);
@@ -933,8 +929,8 @@ void screenNOX()
   display.setFreeFont(&FreeSans18pt7b);
 
   // VOC color circle
-  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[noxRange(sensorData.noxIndex)]);
-  display.fillCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,TFT_BLACK);
+  display.fillSmoothCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[noxRange(sensorData.noxIndex)]);
+  display.fillSmoothCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,TFT_BLACK);
 
   // VOC color legend
   for(uint8_t loop = 0; loop < 4; loop++){
@@ -975,7 +971,7 @@ void screenCO2()
 
   // fill screen with CO2 value color
   display.fillScreen(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  display.fillRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,TFT_BLACK);
+  display.fillSmoothRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,TFT_BLACK);
 
   // value and label
   display.setCursor(borderWidth + 20,yLabel);
@@ -1121,10 +1117,10 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     y = graphLineY - (((values[loop] - minValue)/(maxValue-minValue)) * (graphLineY-initialY));
     debugMessage(String("Array ") + loop + " y value is " + y,2);
     if (screenCurrent == sCO2)
-      display.fillCircle(x,y,4,warningColor[co2Range(sensorData.ambientCO2[loop])]);
+      display.fillSmoothCircle(x,y,4,warningColor[co2Range(sensorData.ambientCO2[loop])]);
     else
       if (screenCurrent == sVOC)
-        display.fillCircle(x,y,4,warningColor[vocRange(sensorData.vocIndex[loop])]);
+        display.fillSmoothCircle(x,y,4,warningColor[vocRange(sensorData.vocIndex[loop])]);
     if(firstpoint) {
       // If this is the first drawn point then don't try to draw a line
       firstpoint = false;

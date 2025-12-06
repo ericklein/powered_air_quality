@@ -26,8 +26,8 @@
 // Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
-#define SENSOR_SEN66
-// #define SENSOR_SEN54SCD40
+// #define SENSOR_SEN66
+#define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 
@@ -143,7 +143,8 @@ const uint8_t hardwareWipeButton = 0; // boot button on most ESP32 boards
 const uint16_t timeResetButtonHoldMS = 10000; // Long-press duration to wipe config
 
 // display
-const uint8_t screenRotation = 1; // horizontal orientation with USB port on right side
+// const uint8_t screenRotation = 1; // CYD 3.2; horizontal orientation with USB port on right side
+const uint8_t screenRotation = 3; // CYD 2.8; horizontal orientation with USB port on left side
 
 // CYD variations
 // standard CYD (2.8" TFT, micro-USB) 
@@ -171,9 +172,9 @@ const uint16_t touchscreenMinY = 450;
 const uint16_t touchscreenMaxY = 3700;
 
 // i2c pins, used in Wire.begin()
-// #define CYD_SDA 22
-// #define CYD_SCL 27
+#define CYD_SDA 22
+#define CYD_SCL 27
 
 // 3.2" TFT, usb-c CYD (Freenode FNK0103L_3P2)
-#define CYD_SDA 32
-#define CYD_SCL 25
+// #define CYD_SDA 32
+// #define CYD_SCL 25
