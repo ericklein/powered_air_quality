@@ -60,6 +60,7 @@ enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX};
 // screen layout assists in pixels
 const uint8_t xMargins = 5;
 const uint8_t yMargins = 5;
+const uint8_t cornerRoundRadius = 4;
 const uint8_t wifiBarWidth = 3;
 const uint8_t wifiBarHeightIncrement = 3;
 const uint8_t wifiBarSpacing = 5;

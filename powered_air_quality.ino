@@ -43,6 +43,7 @@ TFT_eSPI display = TFT_eSPI();
 // fonts and glyphs
 #include "Fonts/meteocons12pt7b.h"
 #include "Fonts/meteocons16pt7b.h"
+#include "Fonts/meteocons24pt7b.h"
 #include "glyphs.h"
 
 // // touchscreen
@@ -173,7 +174,7 @@ void loop() {
   static uint32_t timeLastInputMS         = millis();  // timestamp for last user input (screensaver)
   static uint32_t timeNextNetworkRetryMS  = 0;
   static uint32_t timeLastOWMUpdateMS     = -(OWMIntervalMS); // forces immediate sample in loop()
-  uint16_t x,y, calibratedX, calibratedY;
+  uint16_t calibratedX, calibratedY;
 
   // is there a long press on the reset button to wipe all configuration data?
   checkResetLongPress();
@@ -213,7 +214,7 @@ void loop() {
   // cyd 2.8 touchscreen from XPT2046
   if (touchscreen.tirqTouched() && touchscreen.touched()) {
   // cyd 3.2 usb-c touchscreen from TFT_eSPI
-  // if (display.getTouch(&x,&y)) {
+  // if (display.getTouch(&calibratedX,&calibratedY)) {
     // If screen saver active, switch to master screen
     switch (screenCurrent) {
       case sSaver :
@@ -228,9 +229,6 @@ void loop() {
         // alternate conversion
         // uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
         // uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
-        // TFT_eSPI 
-        // calibratedX = x;
-        // calibratedY = y;
         debugMessage(String("input: touchpoint x=") + calibratedX + ", y=" + calibratedY,2);
         // transition to appropriate component screen
         if ((calibratedX < display.width()/2) && (calibratedY < display.height()/2)) {
@@ -788,7 +786,6 @@ void screenMain()
 {
   // screen assists
   const uint8_t halfBorderWidth = 2;
-  const uint8_t cornerRoundRadius = 4;
 
   debugMessage("screenMain start",1);
 
@@ -813,20 +810,19 @@ void screenMain()
   #else
     // Temperature
     if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
-      //display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),display.height(),TFT_RED);
       display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_YELLOW);
     else
-      // display.fillTriangle(((display.width()/2)+2),((display.height()/2)+2),display.width(),((display.height()/2)+2),((display.width()/2)+2),(display.height()),TFT_GREEN);
       display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_GREEN);
-    display.setCursor(((display.width()*5)/8),((display.height()*3)/4));
-    display.setFreeFont(&meteocons16pt7b);
-    display.print("+");
+    // display.setCursor(((display.width()*5)/8),((display.height()*3)/4));
+    display.setFreeFont(&meteocons24pt7b);
+    display.drawString("+",display.width()*5/8,display.height()*3/4);
+    // display.print("+");
     // Humdity
     if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
       display.fillSmoothRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_YELLOW);
     else
       display.fillSmoothRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_GREEN);
-    display.drawBitmap(((display.width()*7)/8),((display.height()*5)/8), bitmapHumidityIconSmall, 20, 28, TFT_BLACK);
+    display.drawBitmap(((display.width()*7/8)-10),((display.height()*3/4)-14), bitmapHumidityIconSmall, 20, 28, TFT_BLACK);
   #endif
 
   debugMessage("screenMain end",1);
@@ -869,7 +865,7 @@ void screenVOC()
   const uint16_t borderWidth = 15;
   const uint16_t borderHeight = 15;
   const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
-  const uint16_t yLegend =  ((display.height()/4) + (2*legendHeight));
+  const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*legendHeight)));
   const uint16_t xLabel = display.width()/2;
   const uint16_t yLabel = yMargins + borderHeight + 30;
 
@@ -880,7 +876,7 @@ void screenVOC()
 
   // fill screen with VOC value color
   display.fillScreen(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
-  display.fillSmoothRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,TFT_BLACK);
+  display.fillSmoothRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),cornerRoundRadius,TFT_BLACK);
 
   // value and label
   display.setCursor(borderWidth + 20,yLabel);
@@ -954,7 +950,7 @@ void screenCO2()
   const uint16_t borderWidth = 15;
   const uint16_t borderHeight = 15;
   const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
-  const uint16_t yLegend =  ((display.height()/4) + (2*legendHeight));
+  const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*legendHeight)));
   const uint16_t xLabel = display.width()/2;
   const uint16_t yLabel = yMargins + borderHeight + 30;
 
@@ -965,7 +961,7 @@ void screenCO2()
 
   // fill screen with CO2 value color
   display.fillScreen(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  display.fillSmoothRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),3,TFT_BLACK);
+  display.fillSmoothRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),cornerRoundRadius,TFT_BLACK);
 
   // value and label
   display.setCursor(borderWidth + 20,yLabel);
