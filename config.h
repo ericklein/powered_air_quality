@@ -86,22 +86,19 @@ const String hardwareDeviceType = "AirQuality";
 // sensors
 // simulation boundary values
 #ifdef HARDWARE_SIMULATE
-  const uint16_t sensorTempMinF =       1400; // divided by 100.0 to give floats
-  const uint16_t sensorTempMaxF =       14000;
-  const uint16_t sensorHumidityMin =    0; // RH%, divided by 100.0 to give float
-  const uint16_t sensorHumidityMax =    10000;
+  const uint16_t sensorTempMinF =       14; // -10C per datasheet
+  const uint16_t sensorTempMaxF =       140; // 60C per datasheet
+  const uint16_t sensorHumidityMin =    0; // RH% per datasheet
+  const uint16_t sensorHumidityMax =    100;
 
   const uint8_t OWMAQIMin = 1;  // https://openweathermap.org/api/air-pollution
   const uint8_t OWMAQIMax = 5;
 
-  const uint16_t OWMPM25Min = 0;  // will be divided by 100.0 to give float
-  const uint32_t OWMPM25Max = 10000; // will be divided by 100.0 to give float
+  const uint16_t OWMPM25Min = 0;
+  const uint16_t OWMPM25Max = 100; 
 
   const uint8_t networkRSSIMin = 30;
   const uint8_t networkRSSIMax = 90;
-
-  const uint16_t sensorPMMin = 0;
-  const uint16_t sensorPMMax = 1000;
 #endif
 
 // tempF value threshholds
@@ -119,11 +116,14 @@ const uint16_t sensorCO2Poor =  1200;
 const uint16_t sensorCO2Bad =   1600;
 const uint16_t sensorCO2Max =   2000;
 const uint8_t co2SensorReadFailureLimit = 20;
+const uint8_t sensorCO2VariabilityRange = 30;
 
 // Particulates (pm1, pm2.5, pm4, pm10) value thresholds
+const uint16_t sensorPMMin =  0;
 const uint16_t sensorPMFair = 25;
 const uint16_t sensorPMPoor = 50;
-const uint16_t sensorPMBad = 150;
+const uint16_t sensorPMBad =  150;
+const uint16_t sensorPMMax =  1000;
 
 // VOC (volatile organic compounds) index value thresholds
 const uint8_t   sensorVOCMin =  0;
