@@ -1358,35 +1358,6 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     return (connected);
   }
 
-  String networkHTTPGETRequest(const char* serverName) 
-  {
-    String payload = "{}";
-    #ifdef HARDWARE_SIMULATE
-      return payload;
-    #else
-      // !!! ESP32 hardware dependent, using Esperif library
-
-      HTTPClient http;
-
-      // servername is domain name w/URL path or IP address w/URL path
-      http.begin(client, serverName);
-
-      // Send HTTP GET request
-      uint16_t httpResponseCode = http.GET();
-
-      if (httpResponseCode == HTTP_CODE_OK) {
-        // HTTP reponse OK code
-        payload = http.getString();
-      } else {
-        debugMessage("HTTP GET error code: " + httpResponseCode,1);
-        payload = "HTTP GET error";
-      }
-      // free resources
-      http.end();
-      return payload;
-    #endif
-  }
-
   void checkResetLongPress() {
   uint8_t buttonState = digitalRead(hardwareWipeButton);
 
@@ -1524,71 +1495,66 @@ bool OWMCurrentWeatherRead()
     OWMCurrentWeatherSimulate();
     return true;
   #else
-    // check for internet connectivity
-    if (WiFi.status() == WL_CONNECTED) 
-    {
-      String jsonBuffer;
+    // OWM latitude + longitude is "lat=xx.xxx&lon=-yyy.yyyy"
+    String serverPath = OWMServer + OWMWeatherPath +
+      "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&units=imperial&APPID=" + OWMKey;
 
-      // OWM latitude + longitude is "lat=xx.xxx&lon=-yyy.yyyy"
-      String serverPath = OWMServer + OWMWeatherPath +
-       "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&units=imperial&APPID=" + OWMKey;
-
-      jsonBuffer = networkHTTPGETRequest(serverPath.c_str());
-      debugMessage("Raw JSON from OWM Current Weather feed", 2);
-      debugMessage(jsonBuffer, 2);
-      if (jsonBuffer == "HTTP GET error") {
-        debugMessage("OWM Weather: HTTP Get error",1);
-        return false;
-      }
-
-      DynamicJsonDocument doc(2048);
-
-      DeserializationError error = deserializeJson(doc, jsonBuffer);
-
-      if (error) {
-        debugMessage(String("deserializeJson failed with error message: ") + error.c_str(), 1);
-        return false;
-      }
-
-      debugMessage(String("JsonDocument requires ") + doc.memoryUsage() + " bytes",2);
-
-      uint8_t code = (uint8_t)doc["cod"];
-      if (code != 200) {
-        debugMessage(String("OWM error: ") + (const char *)doc["message"], 1);
-        return false;
-      }
-
-      // owmCurrentData.lat = (float) doc["coord"]["lat"];
-      // owmCurrentData.lon = (float) doc["coord"]["lon"];
-
-      // owmCurrentData.main = (const char*) doc["weather"][0]["main"];
-      // owmCurrentData.description = (const char*) doc["weather"][0]["description"];
-      owmCurrentData.icon = (const char *)doc["weather"][0]["icon"];
-
-      owmCurrentData.cityName = (const char *)doc["name"];
-      // owmCurrentData.visibility = (uint16_t) doc["visibility"];
-      // owmCurrentData.timezone = (time_t) doc["timezone"];
-
-      // owmCurrentData.country = (const char*) doc["sys"]["country"];
-      // owmCurrentData.observationTime = (time_t) doc["dt"];
-      // owmCurrentData.sunrise = (time_t) doc["sys"]["sunrise"];
-      // owmCurrentData.sunset = (time_t) doc["sys"]["sunset"];
-
-      owmCurrentData.tempF = (float)doc["main"]["temp"];
-      // owmCurrentData.pressure = (uint16_t) doc["main"]["pressure"];
-      owmCurrentData.humidity = (uint8_t)doc["main"]["humidity"];
-      // owmCurrentData.tempMin = (float) doc["main"]["temp_min"];
-      // owmCurrentData.tempMax = (float) doc["main"]["temp_max"];
-
-      // owmCurrentData.windSpeed = (float) doc["wind"]["speed"];
-      // owmCurrentData.windDeg = (float) doc["wind"]["deg"];
-      debugMessage(String("OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "% RH", 1);
-      return true;
-    }
-    else {
-      debugMessage("No network for OWM Weather update connection",1);
+    HTTPClient http;
+    if (!http.begin(serverPath)) {
+      debugMessage("OWM Current Weather connection failed",1);
       return false;
     }
+
+    uint16_t httpResponseCode = http.GET();
+    if (httpResponseCode != HTTP_CODE_OK) {
+      debugMessage("OWM Current Weather HTTP GET error code: " + httpResponseCode,1);
+      http.end();
+      return false;
+    }  
+
+    // Filter: only parse what we need (saves RAM)
+    JsonDocument filter;
+    filter["main"]["temp"] = true;
+    filter["main"]["humidity"] = true;
+    filter["name"] = true;
+    filter["weather"][0]["icon"] = true;
+
+    JsonDocument doc;
+    const DeserializationError error = deserializeJson(
+      doc,
+      http.getStream(),                      // parse directly from stream
+      DeserializationOption::Filter(filter)  // apply filter
+    );
+
+    http.end();
+
+    if (error) {
+      debugMessage(String("deserializeJson failed with error message: ") + error.c_str(), 1);
+      return false;
+    }
+
+    // owmCurrentData.lat = doc["coord"]["lat"];
+    // owmCurrentData.lon = doc["coord"]["lon"];
+    // owmCurrentData.main = (const char*) doc["weather"][0]["main"];
+    // owmCurrentData.description = (const char*) doc["weather"][0]["description"];
+    const char* iconStr = doc["weather"][0]["icon"] | "";
+    strlcpy(owmCurrentData.icon, iconStr, sizeof(owmCurrentData.icon));
+    owmCurrentData.cityName = (const char *)(doc["name"] | "");
+    // owmCurrentData.visibility = doc["visibility"];
+    // owmCurrentData.timezone = (time_t) doc["timezone"];
+    // owmCurrentData.country = (const char*) doc["sys"]["country"];
+    // owmCurrentData.observationTime = (time_t) doc["dt"];
+    // owmCurrentData.sunrise = (time_t) doc["sys"]["sunrise"];
+    // owmCurrentData.sunset = (time_t) doc["sys"]["sunset"];
+    owmCurrentData.tempF = doc["main"]["temp"] | NAN;
+    // owmCurrentData.pressure = (uint16_t) doc["main"]["pressure"];
+    owmCurrentData.humidity = doc["main"]["humidity"] | 0;
+    // owmCurrentData.tempMin = (float) doc["main"]["temp_min"];
+    // owmCurrentData.tempMax = (float) doc["main"]["temp_max"];
+    // owmCurrentData.windSpeed = (float) doc["wind"]["speed"];
+    // owmCurrentData.windDeg = (float) doc["wind"]["deg"];
+    debugMessage(String("OWM Current Weather for ") + owmCurrentData.cityName + " is " + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "% RH", 1);
+    return true;
   #endif
 }
 
@@ -1599,98 +1565,89 @@ bool OWMAirPollutionRead()
     OWMAirPollutionSimulate();
     return true;
   #else
-    // check for internet connectivity
-    if (WiFi.status() == WL_CONNECTED)
-    {
-      String jsonBuffer;
+    String serverPath = OWMServer + OWMAQMPath +
+     "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&APPID=" + OWMKey;
 
-      // Get local AQI
-      String serverPath = OWMServer + OWMAQMPath +
-       "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&APPID=" + OWMKey;
-
-      jsonBuffer = networkHTTPGETRequest(serverPath.c_str());
-      debugMessage("Raw JSON from OWM AQI feed", 2);
-      debugMessage(jsonBuffer, 2);
-      if (jsonBuffer == "HTTP GET error") {
-        debugMessage("OWM AQI: HTTP Get error",1);
-        return false;
-      }
-
-      DynamicJsonDocument doc(384);
-
-      DeserializationError error = deserializeJson(doc, jsonBuffer);
-      if (error) {
-        debugMessage(String("deserializeJson failed with error message: ") + error.c_str(), 1);
-        return false;
-      }
-
-      debugMessage(String("JsonDocument requires ") + doc.memoryUsage() + " bytes",2);
-
-      // owmAirQuality.lon = (float) doc["coord"]["lon"];
-      // owmAirQuality.lat = (float) doc["coord"]["lat"];
-      JsonObject list_0 = doc["list"][0];
-      owmAirQuality.aqi = list_0["main"]["aqi"];
-      JsonObject list_0_components = list_0["components"];
-      // owmAirQuality.co = (float) list_0_components["co"];
-      // owmAirQuality.no = (float) list_0_components["no"];
-      // owmAirQuality.no2 = (float) list_0_components["no2"];
-      // owmAirQuality.o3 = (float) list_0_components["o3"];
-      // owmAirQuality.so2 = (float) list_0_components["so2"];
-      owmAirQuality.pm25 = (float)list_0_components["pm2_5"];
-      // owmAirQuality.pm10 = (float) list_0_components["pm10"];
-      // owmAirQuality.nh3 = (float) list_0_components["nh3"];
-      debugMessage(String("OWM PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
-      return true;
-    }
-    else {
-      debugMessage("No network for OWM AQI update connection",1);
+    HTTPClient http;
+    if (!http.begin(serverPath)) {
+      debugMessage("OWM Air Pollution connection failed",1);
       return false;
     }
+
+    uint16_t httpResponseCode = http.GET();
+    if (httpResponseCode != HTTP_CODE_OK) {
+      debugMessage("OWM AirPollution HTTP GET error code: " + httpResponseCode,1);
+      http.end();
+      return false;
+    }
+
+    // Filter: only parse what we need (saves RAM)
+    JsonDocument filter;
+    filter["list"][0]["main"]["aqi"] = true;
+    filter["list"][0]["components"]["pm2_5"] = true;
+
+    JsonDocument doc;
+    const DeserializationError err = deserializeJson(
+      doc,
+      http.getStream(),
+      DeserializationOption::Filter(filter)
+    );
+
+    http.end();
+
+    // owmAirQuality.lon = (float) doc["coord"]["lon"];
+    // owmAirQuality.lat = (float) doc["coord"]["lat"];
+    owmAirQuality.aqi  = doc["list"][0]["main"]["aqi"] | 0;
+    // owmAirQuality.co = (float) list_0_components["co"];
+    // owmAirQuality.no = (float) list_0_components["no"];
+    // owmAirQuality.no2 = (float) list_0_components["no2"];
+    // owmAirQuality.o3 = (float) list_0_components["o3"];
+    // owmAirQuality.so2 = (float) list_0_components["so2"];
+    owmAirQuality.pm25 = doc["list"][0]["components"]["pm2_5"] | NAN;
+    // owmAirQuality.pm10 = (float) list_0_components["pm10"];
+    // owmAirQuality.nh3 = (float) list_0_components["nh3"];
+    debugMessage(String("OWM Air Pollution PM2.5 is ") + owmAirQuality.pm25 + "μg/m3, AQI is " + owmAirQuality.aqi + " of 5",1);
+    return true;
   #endif
 }
 
-// String OWMtoMeteoconIcon(String icon)
-// // Maps OWM icon data to the appropropriate Meteocon font character
-// // https://www.alessioatzeni.com/meteocons/#:~:text=Meteocons%20is%20a%20set%20of,free%20and%20always%20will%20be.
-// {
-//   if (icon == "01d")  // 01d = sunny = Meteocon "B"
-//     return "B";
-//   if (icon == "01n")  // 01n = clear night = Meteocon "C"
-//     return "C";
-//   if (icon == "02d")  // 02d = partially sunny = Meteocon "H"
-//     return "H";
-//   if (icon == "02n")  // 02n = partially clear night = Meteocon "4"
-//     return "4";
-//   if (icon == "03d")  // 03d = clouds = Meteocon "N"
-//     return "N";
-//   if (icon == "03n")  // 03n = clouds night = Meteocon "5"
-//     return "5";
-//   if (icon == "04d")  // 04d = broken clouds = Meteocon "Y"
-//     return "Y";
-//   if (icon == "04n")  // 04n = broken night clouds = Meteocon "%"
-//     return "%";
-//   if (icon == "09d")  // 09d = rain = Meteocon "R"
-//     return "R";
-//   if (icon == "09n")  // 09n = night rain = Meteocon "8"
-//     return "8";
-//   if (icon == "10d")  // 10d = light rain = Meteocon "Q"
-//     return "Q";
-//   if (icon == "10n")  // 10n = night light rain = Meteocon "7"
-//     return "7";
-//   if (icon == "11d")  // 11d = thunderstorm = Meteocon "P"
-//     return "P";
-//   if (icon == "11n")  // 11n = night thunderstorm = Meteocon "6"
-//     return "6";
-//   if (icon == "13d")  // 13d = snow = Meteocon "W"
-//     return "W";
-//   if (icon == "13n")  // 13n = night snow = Meteocon "#"
-//     return "#";
-//   if ((icon == "50d") || (icon == "50n"))  // 50d = mist = Meteocon "M"
-//     return "M";
-//   // Nothing matched
-//   debugMessage("OWM icon not matched to Meteocon, why?", 1);
-//   return ")";
-// }
+char OWMtoMeteoconIcon(const char* icon)
+// Description: Maps OWM icon data to the appropropriate Meteocon font character
+// Parameters:  OWM icon string, OWM uses: 01,02,03,04,09,10,11,13,50 plus day/night suffix d/n
+// Returns: NA (void)
+// Improvement: ?
+// Notes: Meteocon fonts: https://demo.alessioatzeni.com/meteocons/
+{
+  if (!icon || icon[0] == '\0' || icon[1] == '\0' || icon[2] == '\0') {
+      debugMessage("OWM icon invalid", 1);
+      return ')';
+    }
+
+  const char a = icon[0];
+  const char b = icon[1];
+  const bool night = (icon[2] == 'n');
+
+  if (a == '0') {
+    switch (b) {
+      case '1': return night ? 'C' : 'B';
+      case '2': return night ? '4' : 'H';
+      case '3': return night ? '5' : 'N';
+      case '4': return night ? '%' : 'Y';
+      case '9': return night ? '8' : 'R';
+    }
+  } else if (a == '1') {
+    switch (b) {
+      case '0': return night ? '7' : 'Q';
+      case '1': return night ? '6' : 'P';
+      case '3': return night ? '#' : 'W';
+    }
+  } else if (a == '5' && b == '0') {
+    return 'M';
+  }
+
+  debugMessage("OWM icon not matched to Meteocon, why?", 1);
+  return '?'; // error handling for calling function
+}
 
 void processSamples(uint8_t numSamples)
 {
