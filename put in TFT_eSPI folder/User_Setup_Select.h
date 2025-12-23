@@ -34,19 +34,19 @@
 //#define FNK0103S_4P0_320x480_ST7796  
 
 #ifdef FNK0086A_2P8_240x320_ST7789
-#include <../TFT_eSPI_Setups/FNK0086A_2.8_240x320_ST7789.h>
+#include "/TFT_eSPI_Setups/FNK0086A_2.8_240x320_ST7789.h"
 #elif defined FNK0102A_1P14_135x240_ST7789
-#include <../TFT_eSPI_Setups/FNK0102A_1.14_135x240_ST7789.h>
+#include "TFT_eSPI_Setups/FNK0102A_1.14_135x240_ST7789.h"
 #elif defined FNK0103B_2P8_240x320_ST7789
-#include <../TFT_eSPI_Setups/FNK0103B_2.8_240x320_ST7789.h>
+#include "TFT_eSPI_Setups/FNK0103B_2.8_240x320_ST7789.h"
 #elif defined FNK0103F_2P8_240x320_ILI9341
-#include <../TFT_eSPI_Setups/FNK0103F_2.8_240x320_ILI9341.h>
+#include "TFT_eSPI_Setups/FNK0103F_2.8_240x320_ILI9341.h"
 #elif defined FNK0103L_3P2_240x320_ST7789
-#include <../TFT_eSPI_Setups/FNK0103L_3.2_240x320_ST7789.h>
+#include "TFT_eSPI_Setups/FNK0103L_3.2_240x320_ST7789.h"
 #elif defined FNK0103N_3P5_320x480_ST7796
-#include <../TFT_eSPI_Setups/FNK0103N_3.5_320x480_ST7796.h>
+#include "TFT_eSPI_Setups/FNK0103N_3.5_320x480_ST7796.h"
 #elif defined FNK0103S_4P0_320x480_ST7796
-#include <../TFT_eSPI_Setups/FNK0103S_4.0_320x480_ST7796.h>
+#include "TFT_eSPI_Setups/FNK0103S_4.0_320x480_ST7796.h"
 #endif
 
 //#include <User_Setups/Setup1_ILI9341.h>  // Setup file for ESP8266 configured for my ILI9341
