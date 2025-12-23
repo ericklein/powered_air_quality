@@ -1,5 +1,5 @@
 # Powered Air Quality
-![Hero Shot](readme/PAQ_components.jpg)
+AI: Add hero show with new enclosure :)
 ## Purpose
 Powered Air Quality, aka PAQ, samples, displays, and if connected to WiFi, logs the following air characteristics:
 - Temperature (fahrenheit)
@@ -22,11 +22,38 @@ PAQ has a number of sibling projects that share many common hardware and code at
 - [RCO2](https://github.com/ericklein/rco2) is a small, portable version of Air Quality that only samples and displays air quality levels.
 - [Badge](https://github.com/ericklein/badge) is RCO2 in a badge form factor capable of displaying additional information beyond air quality levels.
 ## Features
-![UI](readme/PAQ_UI.jpg)
-AI : ADD DOCUMENTATION
+NOTE: All screens are engineering art, not final design :)
+
+PAQ exposes air characteristics through a number of screens. When the device is idle, it displays the CO2 ppm level as moving text to protect the screen (eg. screensaver mode)
+![PAQ screensaver picture](readme/screen_saver.png)
+
+If the screen is touched while in screensaver mode, it will display the main menu. Touching any of the options takes the user to the corresponding component information screen.
+
+The main menu varies if the device is configured with a SEN66, which can detect NOx levels
+![PAQ SEN66 main menu picture](readme/screen_main_sen66.png)
+
+or with the combination of an SCD40 and SEN54, which can not detech NOx levels.
+![PAQ SCD40 main menu picture](readme/screen_main_scd40.png)
+
+If CO2 is selected from the main menu, it will display a screen highlighting the current CO2 level in ppm and US standard color code level, plus a graph of most recent values. Tapping anywhere on the screen will return to the main menu.
+![PAQ co2 screen picture](readme/screen_CO2.png)
+
+If VOC is selected from the main menu, it will display a screen highlighting the current VOC level in ppm and US standard color code level, plus a graph of most recent values. Tapping anywhere on the screen will return to the main menu.
+![PAQ VOC screen picture](readme/screen_VOC.png)
+
+If PM25 is selected from the main menu, it will display a screen highlighting the current indoor and outdoor PM25 level in ppm and US standard color code level, plus the current outdoor US AQI level. It will also display a red or green database icon if the device is succeeding at logging data to network endpoints. Tapping anywhere on the screen will return to the main menu.
+![PAQ PM25 screen picture](readme/screen_PM25.png)
+
+If NOx is selected from the main menu, it will display a screen highlighting the current NOx level in ppm and US standard color code level. Tapping anywhere on the screen will return to the main menu.
+![PAQ SEN66 NOx screen picture](readme/screen_NOX.png)
+
+If temp/humidity is selected from the main menu, it will display a screen highlighting the current indoor and outdoor temperature in Fahrenheit and humdidity. It will also display the current WiFi connectivity level in the upper right of the screen. Tapping anywhere on the screen will return to the main menu.
+![PAQ temp/humidity screen picture](readme/screen_temp.png)
 ## Target configuration
 - Set parameter configuration using config.h
-- Private configuration settings including WiFi SSID/password and network endpoint credentials are contained in a `secrets.h` file that is not included in this repo.  Instead you'll find the file `secrets_template.h`, which should be copied to `secrets.h` and then edited to supply the right access credentials and configuration values to match your deployment environment.
+- Private configuration settings including network endpoint credentials are contained in a `secrets.h` file that is not included in this repo.  Instead you'll find the file `secrets_template.h`, which should be copied to `secrets.h` and then edited to supply the right access credentials and configuration values to match your deployment environment.
+- Copy the contents of the "put in TFT_eSPI folder" into the "TFT_eSPI" folder found the Arduino library folder.
+- If the device can not connect to a WiFi access point, it will bring up a screen directing you to configure the device via a browser portal window. Entering the configuration data in this portal will then reboot the device and connect to the entered WiFi AP.
 ## Bill of Materials (BOM)
 ### MCU
 - [CYD (Cheap Yellow Display)])(https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display/tree/main). This is an inexpensive ESP32 prototype board with a built-in screen.

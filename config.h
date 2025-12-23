@@ -54,13 +54,13 @@ const uint32_t OWMIntervalMS = 1800000;
 #endif
 const uint8_t reportFailureThreshold = 3; // number of times reporting has to fail before UI reflects issue
 
-// Display
-const uint8_t screenRotation = 3; // rotation 3 orients 0,0 with usb connector on left side
+// UI
 enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX};
 
 // screen layout assists in pixels
 const uint8_t xMargins = 5;
 const uint8_t yMargins = 5;
+const uint8_t cornerRoundRadius = 4;
 const uint8_t wifiBarWidth = 3;
 const uint8_t wifiBarHeightIncrement = 3;
 const uint8_t wifiBarSpacing = 5;
@@ -83,24 +83,22 @@ const uint16_t warningColor[4] = {
 // hardware
 const String hardwareDeviceType = "AirQuality";
 
-// Simulation boundary values
+// sensors
+// simulation boundary values
 #ifdef HARDWARE_SIMULATE
-  const uint16_t sensorTempMinF =       1400; // divided by 100.0 to give floats
-  const uint16_t sensorTempMaxF =       14000;
-  const uint16_t sensorHumidityMin =    0; // RH%, divided by 100.0 to give float
-  const uint16_t sensorHumidityMax =    10000;
+  const uint16_t sensorTempMinF =       14; // -10C per datasheet
+  const uint16_t sensorTempMaxF =       140; // 60C per datasheet
+  const uint16_t sensorHumidityMin =    0; // RH% per datasheet
+  const uint16_t sensorHumidityMax =    100;
 
   const uint8_t OWMAQIMin = 1;  // https://openweathermap.org/api/air-pollution
   const uint8_t OWMAQIMax = 5;
 
-  const uint16_t OWMPM25Min = 0;  // will be divided by 100.0 to give float
-  const uint32_t OWMPM25Max = 10000; // will be divided by 100.0 to give float
+  const uint16_t OWMPM25Min = 0;
+  const uint16_t OWMPM25Max = 100; 
 
   const uint8_t networkRSSIMin = 30;
   const uint8_t networkRSSIMax = 90;
-
-  const uint16_t sensorPMMin = 0;
-  const uint16_t sensorPMMax = 1000;
 #endif
 
 // tempF value threshholds
@@ -118,11 +116,14 @@ const uint16_t sensorCO2Poor =  1200;
 const uint16_t sensorCO2Bad =   1600;
 const uint16_t sensorCO2Max =   2000;
 const uint8_t co2SensorReadFailureLimit = 20;
+const uint8_t sensorCO2VariabilityRange = 30;
 
 // Particulates (pm1, pm2.5, pm4, pm10) value thresholds
+const uint16_t sensorPMMin =  0;
 const uint16_t sensorPMFair = 25;
 const uint16_t sensorPMPoor = 50;
-const uint16_t sensorPMBad = 150;
+const uint16_t sensorPMBad =  150;
+const uint16_t sensorPMMax =  1000;
 
 // VOC (volatile organic compounds) index value thresholds
 const uint8_t   sensorVOCMin =  0;
@@ -142,24 +143,28 @@ const uint32_t hardwareErrorSleepTimeμS = 10000000;  // sleep time if hardware 
 const uint8_t hardwareWipeButton = 0; // boot button on most ESP32 boards
 const uint16_t timeResetButtonHoldMS = 10000; // Long-press duration to wipe config
 
-// CYD display pinout
-#define TFT_BACKLIGHT 21
-#define TFT_CS 15
-#define TFT_DC 2
-#define TFT_RST -1
-
-// CYD touchscreen pinout
+// touchscreen pins
 #define XPT2046_IRQ 36
 #define XPT2046_MOSI 32
 #define XPT2046_MISO 39
 #define XPT2046_CLK 25
 #define XPT2046_CS 33
-// used to calibrate touchscreen
-const uint16_t touchscreenMinX = 450;
-const uint16_t touchscreenMaxX = 3700;
-const uint16_t touchscreenMinY = 450;
-const uint16_t touchscreenMaxY = 3700;
 
-// CYD i2c pin configuration, used in Wire.begin()
+// touchscreen calibration
+const uint16_t touchscreenMinX = 200;
+const uint16_t touchscreenMaxX = 3700;
+const uint16_t touchscreenMinY = 240;
+const uint16_t touchscreenMaxY = 3800;
+
+// CYD variations
+// standard CYD (2.8" TFT, micro-USB)
+// i2c pins
 #define CYD_SDA 22
 #define CYD_SCL 27
+const uint8_t screenRotation = 3; // CYD 2.8; horizontal orientation with USB port on left side
+
+// 3.2" TFT, usb-c CYD (Freenode FNK0103L_3P2)
+// i2c pins
+// #define CYD_SDA 32
+// #define CYD_SCL 25
+// const uint8_t screenRotation = 1; // CYD 3.2; horizontal orientation with USB port on right side
