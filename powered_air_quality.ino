@@ -5,12 +5,12 @@
   See README.md for target information
 */
 
-#include "config.h"           // hardware and internet configuration parameters
-#include "powered_air_quality.h"
-#include "secrets.h"          // private credentials for network, MQTT
-#include "measure.h"          // Utility class for easy handling of aggregate sensor data
+#include "config.h"               // hardware and internet configuration parameters
+#include "powered_air_quality.h"  // global data structures
+#include "secrets.h"              // private credentials for network, MQTT
+#include "measure.h"              // Utility class for easy handling of aggregate sensor data
 #include "data.h"
-#include <SPI.h>              // TFT_eSPI and XPT2046_Touchscreen
+#include <SPI.h>                  // TFT_eSPI and XPT2046_Touchscreen
 
 #ifndef HARDWARE_SIMULATE
 // environment sensors
@@ -31,7 +31,7 @@
   #endif // SENSOR_SEN54SCD40
 
   #include <HTTPClient.h>
-  #include <ArduinoJson.h>      // Needed by OWM retrieval routines
+  #include <ArduinoJson.h>      // https://github.com/bblanchon/ArduinoJson, used by OWM retrieval routines
   #include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager
   #include <Preferences.h>      // read-write to ESP32 persistent storage
 
