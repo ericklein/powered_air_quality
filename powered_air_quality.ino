@@ -360,7 +360,6 @@ void screenTempHumidity()
   uint16_t text1Width;  // For text size calculation
 
   // screen layout assists in pixels
-  const uint16_t yStatusRegion = display.height()/8;
   const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
   // temp & humidity
   const uint16_t xTempModifier = 15;
@@ -372,21 +371,7 @@ void screenTempHumidity()
   // clear screen
   display.fillScreen(TFT_BLACK);
 
-  // status region
-  display.fillRect(0,0,display.width(),yStatusRegion,TFT_DARKGREY);
-  // split indoor v. outside
-  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_WHITE);
-  // screen helpers in status region
-  // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
-  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
-  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), yMargins);
-  // labels
-  display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(TFT_WHITE);
-  display.setCursor(xMargins, ((display.height()/8)-7));
-  display.print("Indoor");
-  display.setCursor(xOutdoorMargin, ((display.height()/8)-7));
-  display.print("Outdoor");
+  screenHelperIndoorOutdoorStatusRegion();
 
   // Indoor
   // Indoor temp
@@ -418,7 +403,7 @@ void screenTempHumidity()
   // do we have OWM Current data to display?
   if (owmCurrentData.tempF != 10000) {
     // Outside temp
-    if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
+    if ((owmCurrentData.tempF < sensorTempFComfortMin) || (owmCurrentData.tempF > sensorTempFComfortMax))
       display.setTextColor(TFT_YELLOW);
     else
       display.setTextColor(TFT_WHITE);
@@ -429,7 +414,7 @@ void screenTempHumidity()
 
     // Outside humidity
     display.setFreeFont(&FreeSans12pt7b);
-    if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
+    if ((owmCurrentData.humidity < sensorHumidityComfortMin) || (owmCurrentData.humidity > sensorHumidityComfortMax))
       display.setTextColor(TFT_YELLOW);
     else
       display.setTextColor(TFT_WHITE);
@@ -449,8 +434,7 @@ void screenPM25()
 // Improvement: 
 {
   // screen layout assists in pixels
-  const uint16_t yStatusRegion = display.height()/8;
-  const uint16_t xOutdoorMargin = ((display.width() / 2) + 10);
+  const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
   // temp & humidity
   const uint16_t yPollution = 210;
   // pm25 rings
@@ -467,21 +451,7 @@ void screenPM25()
   // clear screen
   display.fillScreen(TFT_BLACK);
 
-  // status region
-  display.fillRect(0,0,display.width(),yStatusRegion,TFT_DARKGREY);
-  // split indoor v. outside
-  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_WHITE);
-  // screen helpers in status region
-  // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
-  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
-  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), yMargins);
-  // labels
-  display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(TFT_WHITE);
-  display.setCursor(xMargins, ((display.height()/8)-7));
-  display.print("Indoor");
-  display.setCursor(xOutdoorMargin, ((display.height()/8)-7));
-  display.print("Outdoor");
+  screenHelperIndoorOutdoorStatusRegion();
 
   // Indoor PM2.5 ring
   display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
@@ -797,8 +767,8 @@ void screenSaver()
   text1Width = display.textWidth(String(sensorData.ambientCO2[graphPoints-1]));
   text1Height = display.fontHeight();
 
-  // Pick a random location that'll show up
-  display.setCursor(random(xMargins,display.width()-xMargins-text1Width), random(yMargins + text1Height, display.height() - yMargins));
+  // Display CO2 value in random, valid location
+  display.setCursor(random(xMargins,display.width()-xMargins-text1Width), random(yMargins, display.height() - yMargins - text1Height));
   display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
 
   debugMessage("screenSaver() end",1);
@@ -856,7 +826,7 @@ void screenNOX()
   const uint8_t legendHeight = 20;
   const uint8_t legendWidth = 10;
   const uint16_t xLegend = (display.width() - xMargins - legendWidth);
-  const uint16_t yLegend = ((display.height() / 2 ) - (legendHeight * 2));
+  const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*legendHeight)));
   const uint16_t circleRadius = 100;
   const uint16_t xVOCCircle = (display.width() / 2);
   const uint16_t yVOCCircle = (display.height() / 2);
@@ -869,16 +839,16 @@ void screenNOX()
   display.fillScreen(TFT_BLACK);
   display.setFreeFont(&FreeSans18pt7b);
 
-  // VOC color circle
+  // NOx color circle
   display.fillSmoothCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[noxRange(sensorData.noxIndex)]);
   display.fillSmoothCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,TFT_BLACK);
 
-  // VOC color legend
+  // legend for NOx color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
     display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
   }
 
-  // VOC value and label (displayed inside circle)
+  // NOx value and label (displayed inside circle)
   display.setTextColor(warningColor[vocRange(sensorData.noxIndex)]);  // Use highlight color look-up table
   display.setCursor(xVOCCircle-20,yVOCCircle);
   display.print(int(sensorData.noxIndex+.5));
@@ -932,23 +902,28 @@ void screenCO2()
 }
 
 void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
-// helper function for screenXXX() routines that draws WiFi signal strength
+// Description: helper function for screenXXX() routines drawing WiFi RSSI strength
+// Parameters: 
+// Output : NA
+// Improvement : error handling for initialX, initialY, and overall width and height
+//  dedicated icon type for no WiFi?
 {
-  if (hardwareData.rssi != 0) {
-    // Convert RSSI values to a 5 bar visual indicator
-    // >90 means no signal
-    uint8_t barCount = constrain((6 - ((hardwareData.rssi / 10) - 3)), 0, 5);
-    if (barCount > 0) {
-      // <50 rssi value = 5 bars, each +10 rssi value range = one less bar
-      // draw bars to represent WiFi strength
-      for (uint8_t loop = 1; loop <= barCount; loop++) {
-        display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_WHITE);
-      }
-      debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
-    } else {
-      // you could do a visual representation of no WiFi strength here
-      debugMessage("RSSI too low, not displayed on screen", 1);
+  // convert RSSI values to a 5 bar visual indicator
+  // hardware.rssi = 0 or >90 means no signal
+  uint8_t barCount = (hardwareData.rssi != 0)  ? constrain((6 - ((hardwareData.rssi / 10) - 3)), 0, 5) : 0;
+  if (barCount > 0) {
+    // <50 rssi value = draw 5 bars, each +10 rssi draw one less bar
+    for (uint8_t loop = 1; loop <= barCount; loop++) {
+      display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_WHITE);
     }
+    debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
+  } 
+  else {
+    // draw bars in red to represent no WiFi signal
+    for (uint8_t loop = 1; loop <= 5; loop++) {
+      display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_RED);
+    }
+    debugMessage("No WiFi or RSSI too low", 1);
   }
 }
 
@@ -1075,6 +1050,32 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     yp = y;
   }
   debugMessage("screenHelperGraph() end",1);
+}
+
+void screenHelperIndoorOutdoorStatusRegion()
+// Description: helper function for screenXXX() routines to draw the status region frame for indoor/outdoor information
+// Parameters: NA
+// Output : NA
+// Improvement : NA
+{
+  // screen layout assists in pixels
+  const uint16_t yStatusRegion = display.height()/8;
+  const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
+
+  display.fillRect(0,0,display.width(),yStatusRegion,TFT_DARKGREY);
+  // split indoor v. outside
+  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_DARKGREY);
+  // screen helpers in status region
+  // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
+  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
+  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), yMargins);
+  // labels
+  display.setFreeFont(&FreeSans12pt7b);
+  display.setTextColor(TFT_WHITE);
+  display.setCursor(xMargins, ((display.height()/8)-7));
+  display.print("Indoor");
+  display.setCursor(xOutdoorMargin, ((display.height()/8)-7));
+  display.print("Outdoor");
 }
 
 // Hardware simulation routines
