@@ -73,7 +73,7 @@ TFT_eSPI display = TFT_eSPI();
 #include "Fonts/meteocons24pt7b.h"
 #include "glyphs.h"
 
-// // touchscreen
+// touchscreen
 #include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
 SPIClass touchscreenSPI = SPIClass(VSPI);
 XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
@@ -168,7 +168,7 @@ void setup() {
       delay(7000);
     #endif
   #else
-    // truly random numbers for simulation calls
+    // generate truely random numbers
     randomSeed(analogRead(0));
     networkSimulate();
   #endif
@@ -360,11 +360,6 @@ void screenTempHumidity()
   uint16_t text1Width;  // For text size calculation
 
   // screen layout assists in pixels
-  const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
-  // temp & humidity
-  const uint16_t xTempModifier = 15;
-  const uint16_t xHumidityModifier = 60;
-  const uint16_t yTempHumdidity = (display.height()*0.9);
 
   debugMessage("screenTempHumidity() start",2);
 
@@ -373,33 +368,27 @@ void screenTempHumidity()
 
   screenHelperIndoorOutdoorStatusRegion();
 
+  display.setFreeFont(&FreeSans24pt7b);
+  display.setTextDatum(MC_DATUM);
+
   // Indoor
   // Indoor temp
-  display.setFreeFont(&FreeSans12pt7b);
   if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
     display.setTextColor(TFT_YELLOW);
   else
     display.setTextColor(TFT_WHITE);
-  display.setCursor(xMargins + xTempModifier, yTempHumdidity);
-  display.print(String((uint8_t)(sensorData.ambientTemperatureF + .5)));
-  //display.drawBitmap(xMargins + xTempModifier + 35, yTempHumdidity, bitmapTempFSmall, 20, 28, TFT_WHITE);
-  display.setFreeFont(&meteocons12pt7b);
-  display.print("+");
+  display.drawString(String((uint8_t)(sensorData.ambientTemperatureF + .5)), (display.width()/4), (display.height()*3/8));
+  display.drawBitmap((display.width()/4 + 30), ((display.height()*3/8) - 14), bitmapTempFSmall, 20, 28, TFT_WHITE);
 
   // Indoor humidity
-  display.setFreeFont(&FreeSans12pt7b);
   if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
     display.setTextColor(TFT_YELLOW);
   else
     display.setTextColor(TFT_GREEN);
-  display.setCursor(xMargins + xTempModifier + xHumidityModifier, yTempHumdidity);
-  display.print(String((uint8_t)(sensorData.ambientHumidity + 0.5)));
-  // IMPROVEMENT: original icon ratio was 5:7?
-  // IMPROVEMENT: move this into meteoicons so it can be inline text
-  display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
+  display.drawString(String((uint8_t)(sensorData.ambientHumidity + 0.5)), (display.width()/4), (display.height()*5/8));
+  display.drawBitmap((display.width()/4 + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
 
   // Outside
-
   // do we have OWM Current data to display?
   if (owmCurrentData.tempF != 10000) {
     // Outside temp
@@ -407,22 +396,28 @@ void screenTempHumidity()
       display.setTextColor(TFT_YELLOW);
     else
       display.setTextColor(TFT_WHITE);
-    display.setCursor(xOutdoorMargin + xTempModifier, yTempHumdidity);
-    display.print(String((uint8_t)(owmCurrentData.tempF + 0.5)));
-    display.setFreeFont(&meteocons12pt7b);
-    display.print("+");
+    display.drawString(String((uint8_t)(owmCurrentData.tempF + 0.5)), (display.width()*3/4), (display.height()*3/8));
+    display.drawBitmap(((display.width()*3/4) + 30), ((display.height()*3/8) - 14), bitmapTempFSmall, 20, 28, TFT_WHITE);
 
     // Outside humidity
-    display.setFreeFont(&FreeSans12pt7b);
     if ((owmCurrentData.humidity < sensorHumidityComfortMin) || (owmCurrentData.humidity > sensorHumidityComfortMax))
       display.setTextColor(TFT_YELLOW);
     else
       display.setTextColor(TFT_WHITE);
-    display.setCursor(xOutdoorMargin + xTempModifier + xHumidityModifier, yTempHumdidity);
-    display.print(String((uint8_t)(owmCurrentData.humidity + 0.5)));
-    // IMPROVEMENT: original icon ratio was 5:7?
-    // IMPROVEMENT: move this into meteoicons so it can be inline text
-    display.drawBitmap(xOutdoorMargin + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
+    display.drawString(String((uint8_t)(owmCurrentData.humidity + 0.5)), (display.width()*3/4), (display.height()*5/8));
+    display.drawBitmap(((display.width()*3/4) + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
+  }
+
+  //weather icon
+  char weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
+  // if getMeteoIcon doesn't have a matching symbol, skip display
+  if (weatherIcon != '?') {
+    // display icon
+    display.setFreeFont(&meteocons24pt7b);
+    display.setTextColor(TFT_WHITE);
+    display.drawString(String(weatherIcon), ((display.width()*3/4)-12), (display.height()*7/8));
+    // display.setCursor(((display.width()*3/4)-12), (display.height()*7/8));
+    // display.print(weatherIcon);
   }
   debugMessage("screenTempHumidity() end", 2);
 }
@@ -450,6 +445,8 @@ void screenPM25()
 
   // clear screen
   display.fillScreen(TFT_BLACK);
+
+  display.setTextDatum(TL_DATUM);
 
   screenHelperIndoorOutdoorStatusRegion();
 
@@ -593,43 +590,38 @@ bool screenAlert(String messageText)
 // Description: Display error message centered on screen, using different font sizes and/or splitting to fit on screen
 // Parameters: String containing error message text
 // Output: NA (void)
-// Improvement: ?
+// Improvement: Break the long font string to word blocks that fit in two lines
 {
   bool success = false;
-  uint16_t text1Width, text1Height;
 
   debugMessage("screenAlert start",1);
 
   display.setTextColor(TFT_WHITE);
   display.fillScreen(TFT_BLACK);
+  display.setTextDatum(MC_DATUM);
 
   debugMessage(String("screenAlert text is '") + messageText + "'",2);
 
   // does message fit on one line with large font?
   display.setFreeFont(&FreeSans24pt7b);
-  text1Width = display.textWidth(messageText);
-  text1Height = display.fontHeight();
-  debugMessage(String("Message at font size ") + text1Height + " is " + text1Width + " pixels wide",2);
-  if (text1Width <= (display.width()-(display.width()/2-(text1Width/2)))) {
-    // fits with large font, display
-    display.setCursor(((display.width()/2)-(text1Width/2)),((display.height()/2)+(text1Height/2)));
-    display.print(messageText);
+  if (display.textWidth(messageText) <= (display.width() + (xMargins*2))) {
+    // fits with large font
+    display.drawString(messageText, (display.width()/2), (display.height()/2));
     success = true;
   }
   else {
     // does message fit on two lines with large font?
-    debugMessage(String("large font is ") + abs(display.width()-text1Width) + " pixels too long, trying 2 lines", 1);
+    debugMessage(String("large font is ") + abs(display.width()-display.textWidth(messageText)) + " pixels too long, trying 2 lines", 1);
     // does the string break into two pieces based on a space character?
     uint8_t spaceLocation;
+    uint16_t text1Width, text2Width;
     String messageTextPartOne, messageTextPartTwo;
-    uint16_t text2Width;
 
     spaceLocation = messageText.indexOf(' ');
     if (spaceLocation) {
       // has a space character, measure two lines
       messageTextPartOne = messageText.substring(0,spaceLocation);
       messageTextPartTwo = messageText.substring(spaceLocation+1);
-      // we can use the previous height calculation
       text1Width = display.textWidth(messageTextPartOne);
       text2Width = display.textWidth(messageTextPartTwo);
       debugMessage(String("Message part one with large font is ") + text1Width + " pixels wide",2);
@@ -638,12 +630,10 @@ bool screenAlert(String messageText)
     else {
       debugMessage("there is no space in message to break message into 2 lines",2);
     }
-    if (spaceLocation && (text1Width <= (display.width()-(display.width()/2-(text1Width/2)))) && (text2Width <= (display.width()-(display.width()/2-(text2Width/2))))) {
-        // fits on two lines, display
-        display.setCursor(((display.width()/2)-(text1Width/2)),(display.height()/2+text1Height/2)-25);
-        display.print(messageTextPartOne);
-        display.setCursor(((display.width()/2)-(text2Width/2)),(display.height()/2+text1Height/2)+25);
-        display.print(messageTextPartTwo);
+    if ((text1Width <= (display.width() + (xMargins*2))) && (text2Width <= (display.width() + (xMargins*2)))) {
+        // fits on two lines
+        display.drawString(messageTextPartOne, (display.width()/2), ((display.height()/2)-25));
+        display.drawString(messageTextPartTwo, (display.width()/2), ((display.height()/2)+25));
         success = true;
     }
     else {
@@ -651,23 +641,16 @@ bool screenAlert(String messageText)
       debugMessage("couldn't break text into 2 lines or one line is too long, trying medium text",1);
 
       display.setFreeFont(&FreeSans18pt7b);
-      text1Width = display.textWidth(messageText);
-      text1Height = display.fontHeight();
-      debugMessage(String("Message at font size ") + text1Height + " is " + text1Width + " pixels wide",2);
-      if (text1Width <= (display.width()-(display.width()/2-(text1Width/2)))) {
+      if (display.textWidth(messageText) <= (display.width() + (xMargins*2))) {
         // fits with small size
-        display.setCursor(display.width()/2-text1Width/2,display.height()/2+text1Height/2);
-        display.print(messageText);
+        display.drawString(messageText, (display.width()/2), (display.height()/2));
         success = true;
       }
       else {
         // doesn't fit with medium font, display as truncated, small text
-        debugMessage(String("medium font is ") + abs(display.width()-text1Width) + " pixels too long, displaying small and truncated", 1);
+        debugMessage(String("medium font is ") + abs(display.width() - display.textWidth(messageText)) + " pixels too long, displaying small, truncated text", 1);
         display.setFreeFont(&FreeSans12pt7b);
-        text1Width = display.textWidth(messageText);
-        text1Height = display.fontHeight();
-        display.setCursor(display.width()/2-text1Width/2,display.height()/2+text1Height/2);
-        display.print(messageText);
+        display.drawString(messageText, (display.width()/2), (display.height()/2));
       }
     }
   }
@@ -755,22 +738,19 @@ void screenSaver()
 // Returns: NA (void)
 // Improvement: ?
 {
-  // screen assists
-  uint16_t text1Width, text1Height;
-
   debugMessage("screenSaver() start",1);
 
   display.fillScreen(TFT_BLACK);
+
   display.setFreeFont(&FreeSans24pt7b);
+  display.setTextDatum(TL_DATUM);
   display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
 
-  text1Width = display.textWidth(String(sensorData.ambientCO2[graphPoints-1]));
-  text1Height = display.fontHeight();
+  uint16_t textWidth = display.textWidth(String(sensorData.ambientCO2[graphPoints-1]));
 
   // Display CO2 value in random, valid location
-  display.setCursor(random(xMargins,display.width()-xMargins-text1Width), random(yMargins, display.height() - yMargins - text1Height));
-  display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
-
+  display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints-1])), random(xMargins,display.width()-xMargins-textWidth), random(yMargins, display.height() - yMargins - display.fontHeight()));
+  
   debugMessage("screenSaver() end",1);
 }
 
@@ -905,7 +885,7 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
 // Description: helper function for screenXXX() routines drawing WiFi RSSI strength
 // Parameters: 
 // Output : NA
-// Improvement : error handling for initialX, initialY, and overall width and height
+// Improvement : initialX, initialY, and overall width and height bounding for screen edge + x/y margins
 //  dedicated icon type for no WiFi?
 {
   // convert RSSI values to a 5 bar visual indicator
@@ -931,7 +911,7 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
 // Description: helper function for screenXXX() routines that displays an icon relaying success of network endpoint writes
 // Parameters: initial x and y coordinate to draw from
 // Output : NA
-// Improvement : NA
+// Improvement : initialX, initialY, and overall width and height bounding for screen edge + x/y margins
 // 
 {
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
@@ -1059,23 +1039,25 @@ void screenHelperIndoorOutdoorStatusRegion()
 // Improvement : NA
 {
   // screen layout assists in pixels
-  const uint16_t yStatusRegion = display.height()/8;
-  const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
+  const uint8_t   yStatusRegion = display.height()/8;
+  const uint16_t  xOutdoorMargin = ((display.width() / 2) + xMargins);
+  const uint8_t   yStatusRegionFloor = yStatusRegion - 7;  
+  const uint8_t   helperXSpacing = 15;
 
   display.fillRect(0,0,display.width(),yStatusRegion,TFT_DARKGREY);
   // split indoor v. outside
   display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_DARKGREY);
   // screen helpers in status region
   // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
-  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
-  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), yMargins);
+  // screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
+  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), yStatusRegionFloor, wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
+  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-helperXSpacing), (yStatusRegionFloor-15));
   // labels
   display.setFreeFont(&FreeSans12pt7b);
   display.setTextColor(TFT_WHITE);
-  display.setCursor(xMargins, ((display.height()/8)-7));
-  display.print("Indoor");
-  display.setCursor(xOutdoorMargin, ((display.height()/8)-7));
-  display.print("Outdoor");
+  display.setTextDatum(L_BASELINE);
+  display.drawString("Indoor", xMargins, yStatusRegionFloor);
+  display.drawString("Outside", xOutdoorMargin, yStatusRegionFloor);
 }
 
 // Hardware simulation routines

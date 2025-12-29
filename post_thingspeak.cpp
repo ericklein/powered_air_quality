@@ -21,7 +21,7 @@
 
   bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float nox, float aqi)
   {  
-    int httpcode;
+    uint16_t httpcode;
     WiFiClient ts_client;  
 
     // Initialize ThingSpeak
@@ -42,10 +42,14 @@
 
     // Batch write all the field updates to ThingSpeak and check HTTP return code
     httpcode = ThingSpeak.writeFields(THINGS_CHANID,THINGS_APIKEY);
-    debugMessage("ThingSpeak update, return code: " + String(httpcode),1);
 
-    // HTTP return code 200 means success, otherwise some problem occurred
-    if(httpcode == 200) return true;
-    else return false;
+    if (httpcode == 200) {
+      debugMessage("ThingSpeak update successful",1);
+      return true;
+    }
+    else {
+      debugMessage("ThingSpeak update issue, return code: " + String(httpcode),1);
+      return false;
+    }
   }
 #endif
