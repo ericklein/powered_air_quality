@@ -36,6 +36,7 @@
   #include <Preferences.h>      // read-write to ESP32 persistent storage
 
   WiFiClient client;   // WiFi Managers loads WiFi.h, which is used by OWM and MQTT
+  WiFiManager wfm;
   Preferences nvConfig;
 
   #ifdef THINGSPEAK
@@ -97,7 +98,6 @@ OpenWeatherMapAirQuality owmAirQuality;
 Measure totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
 
 uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
-uint32_t timeResetPressStartMS = 0; // IMPROVEMENT: Move this as static to CheckResetLongPress()
 bool saveWFMConfig = false;
 enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
 
@@ -120,26 +120,28 @@ void setup() {
   display.fillScreen(TFT_BLACK);
   screenAlert("Initializing");
 
+  // generate truely random numbers
+  randomSeed(esp_random());
+
   // initialize touchscreen
   touchscreenSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS); // setup the VSPI to use CYD touchscreen pins
   touchscreen.begin(touchscreenSPI);
   touchscreen.setRotation(screenRotation);
 
   // initialize button
-  pinMode(hardwareWipeButton, INPUT_PULLUP);
+  pinMode(hardwareButton, INPUT_PULLUP);
 
   #ifndef HARDWARE_SIMULATE
-    // load before sensorInit() to get altitude data
+    // load before sensorInit() to get altitude data for sensor setup
     loadNVConfig();
   #endif
 
-  // *** Initialize sensors and other connected/onboard devices ***
+  // initialize sensor(s)
   if( !sensorInit()) {
     debugMessage("setup(): sensor initialization failure",1);
     screenAlert("Sensor failure, rebooting");
     delay(5000);
-    // This error often occurs right after a firmware flash and reset.
-    // Hardware deep sleep typically resolves it, so quickly cycle the hardware
+    // This error often occurs after firmware flash and reset, hardware deep sleep typically resolves it
     deviceDeepSleep(hardwareErrorSleepTimeμS);
   }
 
@@ -168,8 +170,6 @@ void setup() {
       delay(7000);
     #endif
   #else
-    // generate truely random numbers
-    randomSeed(analogRead(0));
     networkSimulate();
   #endif
 }
@@ -181,6 +181,11 @@ void loop() {
   static uint32_t timeNextNetworkRetryMS  = 0;
   static uint32_t timeLastOWMUpdateMS     = -(OWMIntervalMS); // forces immediate sample in loop()
   uint16_t calibratedX, calibratedY;
+
+  // 
+  if (wfm.getWebPortalActive()) {
+    wfm.process();
+  }
 
   // is it time to read the sensor?
   if ((millis() - timeLastSampleMS) >= sensorSampleIntervalMS) {
@@ -271,7 +276,7 @@ void loop() {
 
   #ifndef HARDWARE_SIMULATE
     // is there a long press on the reset button to wipe all configuration data?
-    checkResetLongPress();  // Always watching for long-press to wipe
+    checkButtonPress();  // Always watching for long-press to wipe
 
     // is it time to check the WiFi connection before network endpoint write or OWM update?
     if (WiFi.status() != WL_CONNECTED) {
@@ -734,7 +739,6 @@ void screenNOX()
 
   debugMessage("screenNOX() start",1);
 
-
   screenHelperComponentSetup("NOx");
 
   display.setFreeFont(&FreeSans18pt7b);
@@ -1103,45 +1107,47 @@ void retainVOC(float voc)
   // Connect to WiFi network using WiFiManager
   {
     bool connected = false;
-    String parameterText;
 
     debugMessage("openWiFiManager begin",2);
 
-    WiFiManager wfm;
+    // set WiFiManager parameters
+    wfm.setHostname(endpointPath.deviceID.c_str());
+    wfm.setSaveConfigCallback(saveConfigCallback);
+    // wfm.setConnectTimeout(180); // how long to try to connect for before continuing
+    wfm.setConfigPortalTimeout(180); // auto close configportal after n seconds
+    // wifi scan settings
+    // wm.setRemoveDuplicateAPs(false); // do not remove duplicate ap names (true)
+    // wm.setMinimumSignalQuality(20);  // set min RSSI (percentage) to show in scans, null = 8%
+    // wm.setShowInfoErase(false);      // do not show erase button on info page
+    // wm.setScanDispPerc(true);       // show RSSI as percentage not graph icons
+    #ifndef DEBUG
+      wfm.setDebugOutput(false);
+    #endif
 
     // try and use stored credentials
     WiFi.begin();
 
-    uint32_t start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < timeNetworkConnectTimeoutMS) {
+    uint32_t wifiStartConnectMS = millis();
+    while ((WiFi.status() != WL_CONNECTED) && (millis() - wifiStartConnectMS < timeNetworkConnectTimeoutMS)) {
       delay(500);
     }
 
     if (WiFi.status() == WL_CONNECTED) {
       connected = true;
-      hardwareData.rssi = abs(WiFi.RSSI());
-      debugMessage(String("openWiFiManager end; connected via stored credentials to " + WiFi.SSID() + ", ") + hardwareData.rssi + " dBm RSSI", 1);
-    } 
+    }
     else {
-      // no stored credentials or failed connect, use WiFiManager
-      debugMessage("No stored credentials or failed connect, switching to WiFi Manager",1);
-      parameterText = hardwareDeviceType + " setup";
+      // no stored credentials or failed connect, use WiFiManager AP portal for WiFi setup
+      debugMessage("No stored credentials or failed connect, switching to WiFiManager",1);
+      String parameterText = hardwareDeviceType + " setup";
 
       screenAlert(String("goto WiFi AP '") + parameterText + "'");
 
-      wfm.setSaveConfigCallback(saveConfigCallback);
-      wfm.setHostname(endpointPath.deviceID.c_str());
-      #ifndef DEBUG
-        wfm.setDebugOutput(false);
-      #endif
-      wfm.setConnectTimeout(180);
-
       wfm.setTitle("Ola friend!");
       // hint text (optional)
-      //WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
+      WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
       
-      //order determines on-screen order
-      // wfm.addParameter(&hint_text);
+      // order determines on-screen order
+      wfm.addParameter(&hint_text);
 
       // collect common parameters in AP portal mode
       WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude","",9);
@@ -1235,30 +1241,59 @@ void retainVOC(float voc)
           saveNVConfig();
           saveWFMConfig = false;
         }
-        connected = true;
-        hardwareData.rssi = abs(WiFi.RSSI());
-        debugMessage(String("openWiFiManager end; connected to " + WiFi.SSID() + ", ") + hardwareData.rssi + " dBm RSSI", 1);
       }
     }
+    if (connected) {
+      hardwareData.rssi = abs(WiFi.RSSI());
+      debugMessage(String("connected to " + WiFi.SSID() + ", ") + WiFi.localIP().toString() + ", " + hardwareData.rssi + " dBm RSSI", 1);
+    }
+    debugMessage(String("openWiFiManager() end"), 2);
     return (connected);
   }
 
-  void checkResetLongPress() {
-  uint8_t buttonState = digitalRead(hardwareWipeButton);
+  void checkButtonPress() {
+    static uint32_t pressStartMS = 0;
+    static bool portalTriggered = false;
 
-  if (buttonState == LOW) {
-    debugMessage(String("button pressed for ") + ((millis() - timeResetPressStartMS)/1000) + " seconds",2);
-    if (timeResetPressStartMS == 0)
-      timeResetPressStartMS = millis();
-    if (millis() - timeResetPressStartMS >= timeResetButtonHoldMS)
-      wipePrefsAndReboot();
-  }
-  else {
-    if (timeResetPressStartMS != 0) {
-      debugMessage("button released",2);
-      timeResetPressStartMS = 0; // reset button press timer
+    const uint8_t buttonState = digitalRead(hardwareButton);
+    const uint32_t now = millis();
+
+    if (buttonState == LOW) {
+      if (pressStartMS == 0) {
+        pressStartMS = now;
+        portalTriggered = false;
+      }
+
+      const uint32_t heldMS = now - pressStartMS;
+      debugMessage(String("button pressed for ") + (heldMS / 1000) + " seconds", 2);
+
+      // Once portal is triggered for this press, do NOT allow escalation to reset
+      if (!portalTriggered) {
+        if (heldMS >= timeDeviceResetHoldMS) {
+          wipePrefsAndReboot(); // typically does not return
+          return;
+        }
+
+        if (heldMS >= timeStartPortalHoldMS) {
+          portalTriggered = true;
+          startWebPortal();
+        }
+      }
+    } 
+    else {
+      if (pressStartMS != 0) {
+        debugMessage("button released", 2);
+        pressStartMS = 0;
+        portalTriggered = false;
+      }
     }
   }
+
+  void startWebPortal()
+  {
+    screenAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration");
+    wfm.startWebPortal();
+    screenUpdate(screenCurrent);
   }
 
   void wipePrefsAndReboot() 

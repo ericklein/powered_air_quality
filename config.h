@@ -140,8 +140,9 @@ const uint16_t noxBad = 300;
 const uint32_t hardwareErrorSleepTimeμS = 10000000;  // sleep time if hardware error occurs
 
 // button
-const uint8_t hardwareWipeButton = 0; // boot button on most ESP32 boards
-const uint16_t timeResetButtonHoldMS = 10000; // Long-press duration to wipe config
+const uint8_t hardwareButton = 0; // boot button on most ESP32 boards
+const uint16_t timeStartPortalHoldMS = 5000;  // long-press duration to start config portal
+const uint16_t timeDeviceResetHoldMS = 10000; // Long-press duration to wipe config
 
 // touchscreen pins
 #define XPT2046_IRQ 36
