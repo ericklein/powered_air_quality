@@ -29,6 +29,16 @@
   };
   extern hdweData hardwareData;
 
+  // Sensor data type indicators, e.g., used to handle different comfort zones for
+  // different measurements in graphing
+  #define UNK_DATA  0  // Unknown or undeclared (general) data
+  #define CO2_DATA  1  // Carbon Dioxide data
+  #define PM_DATA   2  // Particulate Matter (esp. PM2.5) data
+  #define VOC_DATA  3  // Volatile Organic Compounds (VOC) Index data -- Sensirion specific
+  #define NOX_DATA  4  // NOx (oxidizing gasses) Index data -- Sensirion SEN66 specific
+  #define TEMP_DATA 5  // Temperature data 
+  #define HUM_DATA  6  // Humidity data
+
   // OpenWeatherMap Current data
   struct OpenWeatherMapCurrentData {
     // float lon;              // "lon": 8.54

@@ -806,7 +806,7 @@ void screenVOC()
   display.setCursor(xLabel, yLabel);
   display.print(uint16_t(sensorData.vocIndex[graphPoints-1]));
 
-  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)), sensorData.vocIndex, "Recent values");
+  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)), sensorData.vocIndex, VOC_DATA, "Recent values");
 
   // legend for CO2 color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
@@ -891,7 +891,7 @@ void screenCO2()
   display.setCursor(xLabel, yLabel);
   display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
 
-  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)), sensorData.ambientCO2, "Recent values");
+  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)), sensorData.ambientCO2, CO2_DATA, "Recent values");
 
   // legend for CO2 color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
@@ -943,9 +943,9 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
   #endif
 }
 
-void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, const float *values, String xLabel)
-// Description : Draw a graph of recent (CO2) values from right (most recent) to left. -1 values not graphed.
-// Parameters: starting graph position (x,y), width and height of graph, x axis description
+void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, const float *values, uint8_t datatype, String xLabel)
+// Description : Draw a graph of recent sensor values from right (most recent) to left. -1 values not graphed.
+// Parameters: starting graph position (x,y), width and height of graph, sensor data array, data type identifier, x axis description
 // Return : none
 // Improvement : This function assumes the use of the default Adafruit GFX font and its rendering direction (down, right)
 //  determine minimum size and block width and height smaller than that  
@@ -967,20 +967,17 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   display.setFreeFont();
   display.setTextColor(TFT_WHITE);
 
-  switch (screenCurrent) {
-    case sCO2:
-      minValue = sensorCO2Max;
-      maxValue = sensorCO2Min;
-      break;
-    case sVOC:
-      minValue = sensorVOCMax;
-      maxValue = sensorVOCMin;
-      break;  
-}
-  // scan the array for min/max
+  // Scan the array for min/max. Need to skip data values of -1 as they
+  // indicate no sensor reading stored in that retained data location
   for(loop=0;loop<graphPoints;loop++) {
     if(values[loop] == -1) continue;   // Skip "empty" slots
-    nodata = false;  // At least one data point
+    if(nodata == true) {
+      // This is our first valid data point. Initialize min/max
+      minValue = values[loop];
+      maxValue = values[loop];
+      nodata = false;
+      continue;
+    }
     if(values[loop] < minValue) minValue = values[loop];
     if(values[loop] > maxValue) maxValue = values[loop];
   }
@@ -990,7 +987,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   if (nodata)
     xLabel = "Awaiting samples";
   else {
-    // since we have data, pad min and max CO2 to add room and be multiples of 50 (for nicer axis labels)
+    // since we have data, pad min and max to add room and be multiples of 50 (for nicer axis labels)
     minValue = (uint16_t(minValue)/50)*50;
     maxValue = ((uint16_t(maxValue)/50)+1)*50;
   }
@@ -1023,7 +1020,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
 
   // Plot however many data points we have both with filled circles at each
   // point and lines connecting the points.  Color the filled circles with the
-  // appropriate CO2 warning level color.
+  // appropriate warning level color for the type of data being graphed.
   deltaX = ((xWidth-graphLineX) - 10) / (graphPoints-1);  // X distance between points, 10 pixel padding for Y axis
   xp = graphLineX;
   yp = graphLineY;
@@ -1032,11 +1029,11 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     x = graphLineX + 10 + (loop*deltaX);  // Include 10 pixel padding for Y axis
     y = graphLineY - (((values[loop] - minValue)/(maxValue-minValue)) * (graphLineY-initialY));
     debugMessage(String("Array ") + loop + " y value is " + y,2);
-    if (screenCurrent == sCO2)
-      display.fillSmoothCircle(x,y,4,warningColor[co2Range(sensorData.ambientCO2[loop])]);
-    else
-      if (screenCurrent == sVOC)
-        display.fillSmoothCircle(x,y,4,warningColor[vocRange(sensorData.vocIndex[loop])]);
+
+    // Draw a filled circle to represent the data value, using the warning color scheme appropriate for
+    // the specified sensor data type.
+    display.fillSmoothCircle(x,y,4,getWarningColor(datatype,values[loop]) );
+
     if(firstpoint) {
       // If this is the first drawn point then don't try to draw a line
       firstpoint = false;
@@ -1051,6 +1048,25 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   }
   debugMessage("screenHelperGraph() end",1);
 }
+
+// Determine the right warning color to use for an arbitrary sensor data value given
+// the type of data in question.
+uint16_t getWarningColor(uint8_t datatype, float datavalue)
+{
+  switch(datatype) {
+    case CO2_DATA:
+      return(warningColor[co2Range(datavalue)]);
+    case VOC_DATA:
+      return(warningColor[vocRange(datavalue)]);
+    case NOX_DATA:
+      return(warningColor[noxRange(datavalue)]);
+    case PM_DATA:
+      return(warningColor[pm25Range(datavalue)]);
+    default:
+      return(TFT_WHITE);
+  }
+}
+
 
 void screenHelperIndoorOutdoorStatusRegion()
 // Description: helper function for screenXXX() routines to draw the status region frame for indoor/outdoor information

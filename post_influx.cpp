@@ -87,7 +87,7 @@
       dbclient.flushBuffer();  // Clear pending writes
     }
     else {
-      debugMessage("Could not connect to influxdb server",1);
+      debugMessage(String("Could not connect to influxdb server: ") + dbclient.getServerUrl(),1);
     }
     return (success);
   }
