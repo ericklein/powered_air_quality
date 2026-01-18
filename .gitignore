@@ -1,5 +1,6 @@
 data/
 private/
+build/
 secrets.h
 *.sublime-project
 *.sublime-workspace

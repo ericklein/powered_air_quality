@@ -36,6 +36,7 @@
   #include <Preferences.h>      // read-write to ESP32 persistent storage
 
   WiFiClient client;   // WiFi Managers loads WiFi.h, which is used by OWM and MQTT
+  WiFiManager wfm;
   Preferences nvConfig;
 
   #ifdef THINGSPEAK
@@ -73,7 +74,7 @@ TFT_eSPI display = TFT_eSPI();
 #include "Fonts/meteocons24pt7b.h"
 #include "glyphs.h"
 
-// // touchscreen
+// touchscreen
 #include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
 SPIClass touchscreenSPI = SPIClass(VSPI);
 XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
@@ -97,7 +98,6 @@ OpenWeatherMapAirQuality owmAirQuality;
 Measure totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
 
 uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
-uint32_t timeResetPressStartMS = 0; // IMPROVEMENT: Move this as static to CheckResetLongPress()
 bool saveWFMConfig = false;
 enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
 
@@ -118,7 +118,11 @@ void setup() {
   display.setRotation(screenRotation);
   display.setTextWrap(false);
   display.fillScreen(TFT_BLACK);
-  screenAlert("Initializing");
+  display.setFreeFont(&FreeSans24pt7b);
+  screenHelperAlert("Initializing",TFT_WHITE,TFT_BLACK,TFT_WHITE);
+
+  // generate truely random numbers
+  randomSeed(esp_random());
 
   // initialize touchscreen
   touchscreenSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS); // setup the VSPI to use CYD touchscreen pins
@@ -126,20 +130,19 @@ void setup() {
   touchscreen.setRotation(screenRotation);
 
   // initialize button
-  pinMode(hardwareWipeButton, INPUT_PULLUP);
+  pinMode(hardwareButton, INPUT_PULLUP);
 
   #ifndef HARDWARE_SIMULATE
-    // load before sensorInit() to get altitude data
+    // load before sensorInit() to get altitude data for sensor setup
     loadNVConfig();
   #endif
 
-  // *** Initialize sensors and other connected/onboard devices ***
+  // initialize sensor(s)
   if( !sensorInit()) {
     debugMessage("setup(): sensor initialization failure",1);
-    screenAlert("Sensor failure, rebooting");
+    screenHelperAlert("Sensor failure, rebooting",TFT_WHITE,TFT_BLACK,TFT_WHITE);
     delay(5000);
-    // This error often occurs right after a firmware flash and reset.
-    // Hardware deep sleep typically resolves it, so quickly cycle the hardware
+    // This error often occurs after firmware flash and reset, hardware deep sleep typically resolves it
     deviceDeepSleep(hardwareErrorSleepTimeμS);
   }
 
@@ -168,8 +171,6 @@ void setup() {
       delay(7000);
     #endif
   #else
-    // truly random numbers for simulation calls
-    randomSeed(analogRead(0));
     networkSimulate();
   #endif
 }
@@ -227,8 +228,8 @@ void loop() {
       case sMain : {
         // get raw 12bit touchscreen x,y and then calibrate to screen size
         TS_Point p = touchscreen.getPoint();
-        uint16_t calibratedX = map(p.x, touchscreenMinX, touchscreenMaxX, 1, display.width());
-        uint16_t calibratedY = map(p.y, touchscreenMinY, touchscreenMaxY, 1, display.height());
+        calibratedX = map(p.x, touchscreenMinX, touchscreenMaxX, 1, display.width());
+        calibratedY = map(p.y, touchscreenMinY, touchscreenMaxY, 1, display.height());
         // alternate conversion
         // uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
         // uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
@@ -271,7 +272,12 @@ void loop() {
 
   #ifndef HARDWARE_SIMULATE
     // is there a long press on the reset button to wipe all configuration data?
-    checkResetLongPress();  // Always watching for long-press to wipe
+    checkButtonPress();  // Always watching for long-press to wipe
+
+    // give process time to WiFiManager web portal if active
+    if (wfm.getWebPortalActive()) {
+      wfm.process();
+    }
 
     // is it time to check the WiFi connection before network endpoint write or OWM update?
     if (WiFi.status() != WL_CONNECTED) {
@@ -299,13 +305,13 @@ void loop() {
   if ((millis() - timeLastOWMUpdateMS) >= OWMIntervalMS) {
     // update local weather data
     if (!OWMCurrentWeatherRead()) {
-      owmCurrentData.tempF = 10000;
+      owmCurrentData.tempF = 255;
       debugMessage("OWM weather read failed!",1);
     }
     
     // update local air quality data
     if (!OWMAirPollutionRead()) {
-      owmAirQuality.aqi = 10000;
+      owmAirQuality.aqi = 255;
       debugMessage("OWM AQI read failed!",1);
     }
     timeLastOWMUpdateMS = millis();
@@ -314,7 +320,6 @@ void loop() {
   // is it time to write to the network endpoints?
   if ((millis() - timeLastReportMS) >= reportIntervalMS) {
     processSamples(numSamples);
-    numSamples = 0;
     timeLastReportMS = millis();
   }
 }
@@ -351,352 +356,135 @@ void screenUpdate(uint8_t screenCurrent)
   }
 }
 
-void screenTempHumidity() 
-// Description: Displays indoor and outdoor temperature and humidity
-// Parameters:
-// Output: NA (void)
-// Improvement: 
-{
-  uint16_t text1Width;  // For text size calculation
+/**
+ * @brief Draw a centered rounded-rectangle "bubble" containing a one- or two-line message.
+ *
+ * The message is split using pixel width measurements and word boundaries. If the message
+ * is too long, truncation is applied at the end of the overall message (ellipsis on line 2
+ * only, or on line 1 if it must be single-line). The rounded rectangle and text are constrained
+ * to stay within the display and within a horizontal safe region defined by @p xMargins.
+ *
+ * Vertical centering behavior:
+ * - If two lines are drawn, the vertical gap between the lines is centered on the screen.
+ * - If one line is drawn, the text itself is centered on the screen.
+ *
+ * @param messageText Message to render inside the bubble.
+ * @param textColor   Text color.
+ * @param fillColor   Bubble fill color (also used as text background color).
+ * @param borderColor Bubble outline color.
+ * @param xMargins    Horizontal safe margin in pixels applied to both left and right edges.
+ *
+ * @note Set the desired font and text size on @p display before calling this function.
+ */
+void screenHelperAlert(
+  const String &messageText,
+  uint16_t textColor,
+  uint16_t fillColor,
+  uint16_t borderColor
+) {
+  display.setTextColor(textColor, fillColor);
+  display.setTextPadding(0);
 
-  // screen layout assists in pixels
-  const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
-  // temp & humidity
-  const uint16_t xTempModifier = 15;
-  const uint16_t xHumidityModifier = 60;
-  const uint16_t yTempHumdidity = (display.height()*0.9);
+  const int16_t screenW = (int16_t)display.width();
+  const int16_t screenH = (int16_t)display.height();
+  const int16_t centerY = screenH / 2;
 
-  debugMessage("screenTempHumidity() start",2);
+  const int16_t safeLeft  = (int16_t)xMargins;
+  const int16_t safeRight = (int16_t)(screenW - 1 - (int16_t)xMargins);
+  const int16_t safeW     = safeRight - safeLeft + 1;
+  if (safeW <= 0) return;
 
-  // clear screen
-  display.fillScreen(TFT_BLACK);
+  const uint16_t lineHeight = (uint16_t)display.fontHeight();
 
-  screenHelperIndoorOutdoorStatusRegion();
+  uint8_t lineSpacing = (uint8_t)(lineHeight / 4);
+  if (lineSpacing < 2)  lineSpacing = 2;
+  if (lineSpacing > 10) lineSpacing = 10;
 
-  // Indoor
-  // Indoor temp
-  display.setFreeFont(&FreeSans12pt7b);
-  if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
-    display.setTextColor(TFT_YELLOW);
-  else
-    display.setTextColor(TFT_WHITE);
-  display.setCursor(xMargins + xTempModifier, yTempHumdidity);
-  display.print(String((uint8_t)(sensorData.ambientTemperatureF + .5)));
-  //display.drawBitmap(xMargins + xTempModifier + 35, yTempHumdidity, bitmapTempFSmall, 20, 28, TFT_WHITE);
-  display.setFreeFont(&meteocons12pt7b);
-  display.print("+");
+  uint8_t padX = (uint8_t)(lineHeight / 3);
+  uint8_t padY = (uint8_t)(lineHeight / 4);
+  if (padX < 6) padX = 6;
+  if (padY < 4) padY = 4;
 
-  // Indoor humidity
-  display.setFreeFont(&FreeSans12pt7b);
-  if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
-    display.setTextColor(TFT_YELLOW);
-  else
-    display.setTextColor(TFT_GREEN);
-  display.setCursor(xMargins + xTempModifier + xHumidityModifier, yTempHumdidity);
-  display.print(String((uint8_t)(sensorData.ambientHumidity + 0.5)));
-  // IMPROVEMENT: original icon ratio was 5:7?
-  // IMPROVEMENT: move this into meteoicons so it can be inline text
-  display.drawBitmap(xMargins + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
+  uint8_t radius = (uint8_t)(lineHeight / 3);
+  if (radius < 6)  radius = 6;
+  if (radius > 18) radius = 18;
 
-  // Outside
+  const int16_t innerW_signed = safeW - (int16_t)(2 * padX);
+  const uint16_t innerW = (innerW_signed > 0) ? (uint16_t)innerW_signed : 0;
+  if (innerW == 0) return;
 
-  // do we have OWM Current data to display?
-  if (owmCurrentData.tempF != 10000) {
-    // Outside temp
-    if ((owmCurrentData.tempF < sensorTempFComfortMin) || (owmCurrentData.tempF > sensorTempFComfortMax))
-      display.setTextColor(TFT_YELLOW);
-    else
-      display.setTextColor(TFT_WHITE);
-    display.setCursor(xOutdoorMargin + xTempModifier, yTempHumdidity);
-    display.print(String((uint8_t)(owmCurrentData.tempF + 0.5)));
-    display.setFreeFont(&meteocons12pt7b);
-    display.print("+");
+  String line1, line2;
+  textSplitTwoLines(messageText, line1, line2, innerW);
 
-    // Outside humidity
-    display.setFreeFont(&FreeSans12pt7b);
-    if ((owmCurrentData.humidity < sensorHumidityComfortMin) || (owmCurrentData.humidity > sensorHumidityComfortMax))
-      display.setTextColor(TFT_YELLOW);
-    else
-      display.setTextColor(TFT_WHITE);
-    display.setCursor(xOutdoorMargin + xTempModifier + xHumidityModifier, yTempHumdidity);
-    display.print(String((uint8_t)(owmCurrentData.humidity + 0.5)));
-    // IMPROVEMENT: original icon ratio was 5:7?
-    // IMPROVEMENT: move this into meteoicons so it can be inline text
-    display.drawBitmap(xOutdoorMargin + xTempModifier + xHumidityModifier + 35, yTempHumdidity - 21, bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
-  }
-  debugMessage("screenTempHumidity() end", 2);
-}
+  const bool twoLines = (line2.length() > 0);
 
-void screenPM25() 
-// Description: Displays indoor and outdoor PM25, outdoor air pollution index
-// Parameters:
-// Output: NA (void)
-// Improvement: 
-{
-  // screen layout assists in pixels
-  const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
-  // temp & humidity
-  const uint16_t yPollution = 210;
-  // pm25 rings
-  const uint16_t xIndoorPMCircle = (display.width() / 4);
-  const uint16_t xOutdoorPMCircle = ((display.width() / 4) * 3);
-  const uint16_t yPMCircles = 110;
-  const uint16_t circleRadius = 65;
-  // inside the pm25 rings
-  const uint16_t xIndoorCircleText = (xIndoorPMCircle - 18);
-  const uint16_t xOutdoorCircleText = (xOutdoorPMCircle - 18);
+  const int16_t w1 = (int16_t)display.textWidth(line1);
+  const int16_t w2 = twoLines ? (int16_t)display.textWidth(line2) : 0;
+  const int16_t textW = (w2 > w1) ? w2 : w1;
 
-  debugMessage("screenPM25() start",2);
+  const int16_t textH = twoLines
+    ? (int16_t)(2 * (int16_t)lineHeight + (int16_t)lineSpacing)
+    : (int16_t)lineHeight;
 
-  // clear screen
-  display.fillScreen(TFT_BLACK);
+  int16_t rectW = textW + (int16_t)padX * 2;
+  int16_t rectH = textH + (int16_t)padY * 2;
 
-  screenHelperIndoorOutdoorStatusRegion();
+  if (rectW > safeW)   rectW = safeW;
+  if (rectH > screenH) rectH = screenH;
 
-  // Indoor PM2.5 ring
-  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
-  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
-
-  // Indoor pm25 value and label inside the circle
-  display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(warningColor[pm25Range(sensorData.pm25)]);  // Use highlight color look-up table
-  display.setCursor(xIndoorCircleText,yPMCircles);
-  display.print(sensorData.pm25);
-  // label
-  display.setTextColor(TFT_WHITE);
-  display.setCursor(xIndoorCircleText,yPMCircles+23);
-  display.setFreeFont(&FreeSans9pt7b);
-  display.print("PM25");
-  
-  // Outside
-  // do we have OWM Air Quality data to display?
-  if (owmAirQuality.aqi != 10000) {
-    // Outside PM2.5
-    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
-    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
-
-    // outdoor pm25 value and label inside the circle
-    display.setFreeFont(&FreeSans12pt7b);
-    display.setTextColor(warningColor[pm25Range(owmAirQuality.pm25)]);  // Use highlight color look-up table
-    display.setCursor(xOutdoorCircleText, yPMCircles);
-    display.print(owmAirQuality.pm25);
-    //label
-    display.setTextColor(TFT_WHITE);
-    display.setCursor(xOutdoorCircleText,yPMCircles + 23);
-    display.setFreeFont(&FreeSans9pt7b);
-    display.print("PM25");
+  int16_t yTextTop;
+  if (!twoLines) {
+    yTextTop = centerY - (textH / 2);
+  } else {
+    const int16_t halfGapTop = (int16_t)(lineSpacing / 2);
+    yTextTop = centerY - halfGapTop - (int16_t)lineHeight;
   }
 
-  // outside AQI
-  display.setCursor(xOutdoorMargin, yPollution);
-  display.print(OWMPollutionLabel[(owmAirQuality.aqi)]);
-  display.setCursor(xOutdoorMargin, yPollution + 15);
-  display.print("air pollution");
-  debugMessage("screenPM25() end", 2);
+  int16_t rectX = safeLeft + (safeW - rectW) / 2;
+  int16_t rectY = yTextTop - (int16_t)padY;
+
+  const int16_t maxRectX = safeLeft + safeW - rectW;
+  if (rectX < safeLeft) rectX = safeLeft;
+  if (rectX > maxRectX) rectX = maxRectX;
+
+  if (rectY < 0) rectY = 0;
+  if (rectY + rectH > screenH) rectY = screenH - rectH;
+
+  const int16_t rectCenterX = rectX + rectW / 2;
+
+  display.fillRoundRect(rectX, rectY, rectW, rectH, radius, fillColor);
+  display.drawRoundRect(rectX, rectY, rectW, rectH, radius, borderColor);
+
+  display.setTextDatum(TC_DATUM);
+  const int16_t textTopY = rectY + (int16_t)padY;
+
+  display.drawString(line1, rectCenterX, textTopY);
+  if (twoLines) {
+    display.drawString(line2, rectCenterX,
+                   textTopY + (int16_t)lineHeight + (int16_t)lineSpacing);
+  }
 }
 
-// void screenAggregateData()
-// // Displays minimum, average, and maximum values for primary sensor values
-// // using a table-style layout (with labels)
-// {
-//   const uint16_t xValueColumn =  10;
-//   const uint16_t xMinColumn   = 115;
-//   const uint16_t xAvgColumn   = 185;
-//   const uint16_t xMaxColumn   = 255;
-//   const uint16_t yHeaderRow   =  10;
-//   const uint16_t yPM25Row     =  40;
-//   const uint16_t yAQIRow      =  70;
-//   const uint16_t yCO2Row      = 100;
-//   const uint16_t yVOCRow      = 130;
-//   const uint16_t yNOXRow      = 170;
-//   const uint16_t yTempFRow    = 200;
-//   const uint16_t yHumidityRow = 220;
-
-//   debugMessage("screenAggregateData() start",2);
-
-//   // clear screen and initialize properties
-//   display.fillScreen(TFT_BLACK);
-//   display.setFreeFont();  // Revert to built-in font
-//   display.setTextSize(2);
-//   display.setTextColor(TFT_WHITE);
-
-//   // Display column heaings
-//   display.setTextColor(TFT_BLUE);
-//   display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
-//   display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,TFT_BLUE);
-//   display.setTextColor(TFT_WHITE);
-
-//   // Display a unique unit ID based on the high-order 16 bits of the
-//   // ESP32 MAC address (as the header for the data name column)
-//   display.setCursor(0,yHeaderRow);
-//   display.print(deviceGetID("AQ"));
-
-//   // Display column headers
-//   display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
-//   display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
-
-//   // Display row headings
-//   display.setCursor(xValueColumn, yPM25Row); display.print("PM25");
-//   display.setCursor(xValueColumn, yAQIRow); display.print("AQI");
-//   display.setCursor(xValueColumn, yCO2Row); display.print("CO2");
-//   display.setCursor(xValueColumn, yVOCRow); display.print("VOC");
-//   display.setCursor(xValueColumn, yNOXRow); display.print("NOx");
-//   display.setCursor(xValueColumn, yTempFRow); display.print(" F");
-//   display.setCursor(xValueColumn, yHumidityRow); display.print("%RH");
-
-//   // PM2.5
-//   display.setCursor(xMinColumn,yPM25Row); display.print(totalPM25.getMin(),1);
-//   display.setCursor(xAvgColumn,yPM25Row); display.print(totalPM25.getAverage(),1);
-//   display.setCursor(xMaxColumn,yPM25Row); display.print(totalPM25.getMax(),1);
-
-//   // AQI
-//   display.setCursor(xMinColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMin()),1);
-//   display.setCursor(xAvgColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getAverage()),1);
-//   display.setCursor(xMaxColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMax()),1);
-
-//   // CO2 color coded
-//   display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
-//   display.setCursor(xMinColumn,yCO2Row); display.print(totalCO2.getMin(),0);
-//   display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);
-//   display.setCursor(xAvgColumn,yCO2Row); display.print(totalCO2.getAverage(),0);
-//   display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);
-//   display.setCursor(xMaxColumn,yCO2Row); display.print(totalCO2.getMax(),0);
-//   display.setTextColor(TFT_WHITE);  // Restore text color
-
-//   //VOC index
-//   display.setCursor(xMinColumn,yVOCRow); display.print(totalVOCIndex.getMin(),0);
-//   display.setCursor(xAvgColumn,yVOCRow); display.print(totalVOCIndex.getAverage(),0);
-//   display.setCursor(xMaxColumn,yVOCRow); display.print(totalVOCIndex.getMax(),0);
-
-//   // NOx index
-//   display.setCursor(xMinColumn,yNOXRow); display.print(totalNOxIndex.getMin(),1);
-//   display.setCursor(xAvgColumn,yNOXRow); display.print(totalNOxIndex.getAverage(),1);
-//   display.setCursor(xMaxColumn,yNOXRow); display.print(totalNOxIndex.getMax(),1);
-
-//   // temperature
-//   display.setCursor(xMinColumn,yTempFRow); display.print(totalTemperatureF.getMin(),1);
-//   display.setCursor(xAvgColumn,yTempFRow); display.print(totalTemperatureF.getAverage(),1);
-//   display.setCursor(xMaxColumn,yTempFRow); display.print(totalTemperatureF.getMax(),1);
-
-//   // humidity
-//   display.setCursor(xMinColumn,yHumidityRow); display.print(totalHumidity.getMin(),0);
-//   display.setCursor(xAvgColumn,yHumidityRow); display.print(totalHumidity.getAverage(),0);
-//   display.setCursor(xMaxColumn,yHumidityRow); display.print(totalHumidity.getMax(),0);
-
-//   // return to default text size
-//   display.setTextSize(1);
-
-//   debugMessage("screenAggregateData() end",2);
-// }
-
-bool screenAlert(String messageText)
-// Description: Display error message centered on screen, using different font sizes and/or splitting to fit on screen
-// Parameters: String containing error message text
-// Output: NA (void)
+void screenSaver()
+// Description: Display current CO2 reading at a random location (e.g. "screen saver")
+// Parameters:  NA
+// Returns: NA (void)
 // Improvement: ?
 {
-  bool success = false;
-  uint16_t text1Width, text1Height;
+  debugMessage("screenSaver() start",1);
 
-  debugMessage("screenAlert start",1);
-
-  display.setTextColor(TFT_WHITE);
   display.fillScreen(TFT_BLACK);
 
-  debugMessage(String("screenAlert text is '") + messageText + "'",2);
-
-  // does message fit on one line with large font?
   display.setFreeFont(&FreeSans24pt7b);
-  text1Width = display.textWidth(messageText);
-  text1Height = display.fontHeight();
-  debugMessage(String("Message at font size ") + text1Height + " is " + text1Width + " pixels wide",2);
-  if (text1Width <= (display.width()-(display.width()/2-(text1Width/2)))) {
-    // fits with large font, display
-    display.setCursor(((display.width()/2)-(text1Width/2)),((display.height()/2)+(text1Height/2)));
-    display.print(messageText);
-    success = true;
-  }
-  else {
-    // does message fit on two lines with large font?
-    debugMessage(String("large font is ") + abs(display.width()-text1Width) + " pixels too long, trying 2 lines", 1);
-    // does the string break into two pieces based on a space character?
-    uint8_t spaceLocation;
-    String messageTextPartOne, messageTextPartTwo;
-    uint16_t text2Width;
+  display.setTextDatum(TL_DATUM);
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
 
-    spaceLocation = messageText.indexOf(' ');
-    if (spaceLocation) {
-      // has a space character, measure two lines
-      messageTextPartOne = messageText.substring(0,spaceLocation);
-      messageTextPartTwo = messageText.substring(spaceLocation+1);
-      // we can use the previous height calculation
-      text1Width = display.textWidth(messageTextPartOne);
-      text2Width = display.textWidth(messageTextPartTwo);
-      debugMessage(String("Message part one with large font is ") + text1Width + " pixels wide",2);
-      debugMessage(String("Message part two with large font is ") + text2Width + " pixels wide",2);
-    }
-    else {
-      debugMessage("there is no space in message to break message into 2 lines",2);
-    }
-    if (spaceLocation && (text1Width <= (display.width()-(display.width()/2-(text1Width/2)))) && (text2Width <= (display.width()-(display.width()/2-(text2Width/2))))) {
-        // fits on two lines, display
-        display.setCursor(((display.width()/2)-(text1Width/2)),(display.height()/2+text1Height/2)-25);
-        display.print(messageTextPartOne);
-        display.setCursor(((display.width()/2)-(text2Width/2)),(display.height()/2+text1Height/2)+25);
-        display.print(messageTextPartTwo);
-        success = true;
-    }
-    else {
-      // does message fit on one line with medium sized text?
-      debugMessage("couldn't break text into 2 lines or one line is too long, trying medium text",1);
+  uint16_t textWidth = display.textWidth(String(sensorData.ambientCO2[graphPoints-1]));
 
-      display.setFreeFont(&FreeSans18pt7b);
-      text1Width = display.textWidth(messageText);
-      text1Height = display.fontHeight();
-      debugMessage(String("Message at font size ") + text1Height + " is " + text1Width + " pixels wide",2);
-      if (text1Width <= (display.width()-(display.width()/2-(text1Width/2)))) {
-        // fits with small size
-        display.setCursor(display.width()/2-text1Width/2,display.height()/2+text1Height/2);
-        display.print(messageText);
-        success = true;
-      }
-      else {
-        // doesn't fit with medium font, display as truncated, small text
-        debugMessage(String("medium font is ") + abs(display.width()-text1Width) + " pixels too long, displaying small and truncated", 1);
-        display.setFreeFont(&FreeSans12pt7b);
-        text1Width = display.textWidth(messageText);
-        text1Height = display.fontHeight();
-        display.setCursor(display.width()/2-text1Width/2,display.height()/2+text1Height/2);
-        display.print(messageText);
-      }
-    }
-  }
-  debugMessage("screenAlert end",1);
-  return success;
-}
-
-void retainCO2(float co2)
-// Description: add new element, FIFO, to CO2 array
-// Parameters:  new CO2 value from sensor
-// Returns: NA (void)
-// Improvement: ?
-{
-  for(uint8_t loop=1;loop<graphPoints;loop++) {
-    sensorData.ambientCO2[loop-1] = sensorData.ambientCO2[loop];
-  }
-  sensorData.ambientCO2[graphPoints-1] = co2;
-}
-
-void retainVOC(float voc)
-// Description: add new element, FIFO, to VOC array
-// Parameters:  new VOC index value from sensor
-// Returns: NA (void)
-// Improvement: not merged with retainCO2 because reads are in independent functions
-{
-  for(uint8_t loop=1;loop<graphPoints;loop++) {
-    sensorData.vocIndex[loop-1] = sensorData.vocIndex[loop];
-  }
-  sensorData.vocIndex[graphPoints-1] = voc;
+  // Display CO2 value in random, valid location
+  display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints-1])), random(xMargins,display.width()-xMargins-textWidth), random(yMargins, display.height() - yMargins - display.fontHeight()));
+  
+  debugMessage("screenSaver() end",1);
 }
 
 void screenMain()
@@ -749,29 +537,154 @@ void screenMain()
   debugMessage("screenMain end",1);
 }
 
-void screenSaver()
-// Description: Display current CO2 reading at a random location (e.g. "screen saver")
-// Parameters:  NA
-// Returns: NA (void)
-// Improvement: ?
+void screenTempHumidity() 
+// Description: Displays indoor and outdoor temperature and humidity
+// Parameters:
+// Output: NA (void)
+// Improvement: 
 {
-  // screen assists
-  uint16_t text1Width, text1Height;
+  // screen layout assists in pixels
+  const uint8_t yStatusRegion = display.height()/8;
 
-  debugMessage("screenSaver() start",1);
+  debugMessage("screenTempHumidity() start",2);
 
-  display.fillScreen(TFT_BLACK);
+  screenHelperComponentSetup("Temp/Humidity");
+  // split indoor v. outside
+  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_DARKGREY);
+
+  display.setTextDatum(MC_DATUM);
+
+  // labels
+  display.setFreeFont(&FreeSans12pt7b);
+  display.setTextColor(TFT_WHITE);
+  display.drawString("Indoor", display.width()/4, display.height()/6);
+  display.drawString("Outside", (display.width()*3/4), display.height()/6);
+
   display.setFreeFont(&FreeSans24pt7b);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
 
-  text1Width = display.textWidth(String(sensorData.ambientCO2[graphPoints-1]));
-  text1Height = display.fontHeight();
+  // Indoor
+  // Indoor temp
+  if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
+    display.setTextColor(TFT_YELLOW);
+  else
+    display.setTextColor(TFT_WHITE);
+  display.drawString(String((uint8_t)(sensorData.ambientTemperatureF + .5)), (display.width()/4), (display.height()*3/8));
+  display.drawBitmap((display.width()/4 + 30), ((display.height()*3/8) - 14), bitmapTempFSmall, 20, 28, TFT_WHITE);
 
-  // Display CO2 value in random, valid location
-  display.setCursor(random(xMargins,display.width()-xMargins-text1Width), random(yMargins, display.height() - yMargins - text1Height));
-  display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
+  // Indoor humidity
+  if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
+    display.setTextColor(TFT_YELLOW);
+  else
+    display.setTextColor(TFT_GREEN);
+  display.drawString(String((uint8_t)(sensorData.ambientHumidity + 0.5)), (display.width()/4), (display.height()*5/8));
+  display.drawBitmap((display.width()/4 + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
 
-  debugMessage("screenSaver() end",1);
+  // Outside
+  // do we have OWM Current data to display?
+  if (owmCurrentData.tempF != 255) {
+    // Outside temp
+    if ((owmCurrentData.tempF < sensorTempFComfortMin) || (owmCurrentData.tempF > sensorTempFComfortMax))
+      display.setTextColor(TFT_YELLOW);
+    else
+      display.setTextColor(TFT_WHITE);
+    display.drawString(String((uint8_t)(owmCurrentData.tempF + 0.5)), (display.width()*3/4), (display.height()*3/8));
+    display.drawBitmap(((display.width()*3/4) + 30), ((display.height()*3/8) - 14), bitmapTempFSmall, 20, 28, TFT_WHITE);
+
+    // Outside humidity
+    if ((owmCurrentData.humidity < sensorHumidityComfortMin) || (owmCurrentData.humidity > sensorHumidityComfortMax))
+      display.setTextColor(TFT_YELLOW);
+    else
+      display.setTextColor(TFT_WHITE);
+    display.drawString(String((uint8_t)(owmCurrentData.humidity + 0.5)), (display.width()*3/4), (display.height()*5/8));
+    display.drawBitmap(((display.width()*3/4) + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
+  }
+
+  //weather icon
+  char weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
+  // if getMeteoIcon doesn't have a matching symbol, skip display
+  if (weatherIcon != '?') {
+    // display icon
+    display.setFreeFont(&meteocons24pt7b);
+    display.setTextColor(TFT_WHITE);
+    display.drawString(String(weatherIcon), ((display.width()*3/4)-12), (display.height()*7/8));
+  }
+  debugMessage("screenTempHumidity() end", 2);
+}
+
+void screenPM25() 
+// Description: Displays indoor and outdoor PM25, outdoor air pollution index
+// Parameters:
+// Output: NA (void)
+// Improvement: 
+{
+  // screen layout assists in pixels
+  const uint8_t   yStatusRegion = display.height()/8;
+  const uint16_t  xOutdoorMargin = ((display.width() / 2) + xMargins);
+  // temp & humidity
+  const uint16_t  yPollution = 210;
+  // pm25 rings
+  const uint16_t  xIndoorPMCircle = (display.width() / 4);
+  const uint16_t  xOutdoorPMCircle = (display.width()*3/4);
+  const uint16_t  yPMCircles = 123;
+  const uint16_t  circleRadius = 65;
+  // inside the pm25 rings
+  const uint16_t  xIndoorCircleText = (xIndoorPMCircle - 18);
+  const uint16_t  xOutdoorCircleText = (xOutdoorPMCircle - 18);
+
+  debugMessage("screenPM25() start",2);
+
+  screenHelperComponentSetup("PM2.5");
+  // split indoor v. outside
+  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_DARKGREY);
+
+  display.setTextDatum(MC_DATUM);
+
+  // labels
+  display.setFreeFont(&FreeSans12pt7b);
+  display.setTextColor(TFT_WHITE);
+  display.drawString("Indoor", display.width()/4, display.height()/6);
+  display.drawString("Outside", (display.width()*3/4), display.height()/6);
+
+  // Indoor PM2.5 ring
+  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
+  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
+
+  // Indoor pm25 value and label inside the circle
+  display.setFreeFont(&FreeSans12pt7b);
+  display.setTextColor(warningColor[pm25Range(sensorData.pm25)]);  // Use highlight color look-up table
+  display.setCursor(xIndoorCircleText,yPMCircles);
+  display.print(sensorData.pm25);
+  // label
+  display.setTextColor(TFT_WHITE);
+  display.setCursor(xIndoorCircleText,yPMCircles+23);
+  display.setFreeFont(&FreeSans9pt7b);
+  display.print("PM25");
+  
+  // Outside
+  // do we have OWM Air Quality data to display?
+  if (owmAirQuality.aqi != 255) {
+    // Outside PM2.5
+    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
+    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
+
+    // outdoor pm25 value and label inside the circle
+    display.setFreeFont(&FreeSans12pt7b);
+    display.setTextColor(warningColor[pm25Range(owmAirQuality.pm25)]);  // Use highlight color look-up table
+    display.setCursor(xOutdoorCircleText, yPMCircles);
+    display.print(owmAirQuality.pm25);
+    //label
+    display.setTextColor(TFT_WHITE);
+    display.setCursor(xOutdoorCircleText,yPMCircles + 23);
+    display.setFreeFont(&FreeSans9pt7b);
+    display.print("PM25");
+  }
+
+  // outside AQI
+  display.setCursor(xOutdoorMargin, yPollution);
+  display.print(OWMPollutionLabel[(owmAirQuality.aqi)]);
+  display.setCursor(xOutdoorMargin, yPollution + 15);
+  display.print("air pollution");
+  debugMessage("screenPM25() end", 2);
 }
 
 void screenVOC()
@@ -781,32 +694,24 @@ void screenVOC()
 // Improvement: ?
 {
   // screen layout assists in pixels
-  const uint8_t legendHeight = 20;
-  const uint8_t legendWidth = 10;
-  const uint16_t borderWidth = 15;
-  const uint16_t borderHeight = 15;
-  const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
-  const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*legendHeight)));
-  const uint16_t xLabel = display.width()/2;
-  const uint16_t yLabel = yMargins + borderHeight + 30;
+  const uint8_t legendHeight =  20;
+  const uint8_t legendWidth =   10;
+  const uint16_t xLegend =      display.width() - xMargins - 5 - legendWidth;
+  const uint16_t yLegend =      ((display.height()/3) + (uint8_t(3.5*legendHeight)));
+  const uint16_t yValue =       display.width()/6;
 
   debugMessage("screenVOC() start",1);
 
-  display.setFreeFont(&FreeSans18pt7b);
-  display.setTextColor(TFT_WHITE);
+  screenHelperComponentSetup("VOC");
 
-  // fill screen with VOC value color
-  display.fillScreen(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
-  display.fillSmoothRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),cornerRoundRadius,TFT_BLACK);
+  display.setFreeFont(&FreeSans24pt7b);
+  display.setTextDatum(MC_DATUM);
 
-  // value and label
-  display.setCursor(borderWidth + 20,yLabel);
-  display.print("VOC");
+  // VOC numeric value
   display.setTextColor(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);  // Use highlight color look-up table
-  display.setCursor(xLabel, yLabel);
-  display.print(uint16_t(sensorData.vocIndex[graphPoints-1]));
+  display.drawString(String(uint16_t(sensorData.vocIndex[graphPoints-1])), (display.width()/2), yValue);
 
-  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)), sensorData.vocIndex, "Recent values");
+  screenHelperGraph(xMargins, display.height()/3, (display.width()-(2*xMargins)-legendWidth-10),((display.height()*2/3)-yMargins), sensorData.vocIndex, "Recent values");
 
   // legend for CO2 color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
@@ -814,6 +719,39 @@ void screenVOC()
   }
 
   debugMessage("screenVOC() end",1);
+}
+
+void screenCO2()
+// Description: Display CO2 information (ppm, color grade, graph)
+// Parameters:  NA
+// Returns: NA (void)
+// Improvement: ?
+{
+  // screen layout assists in pixels
+  const uint8_t legendHeight =  20;
+  const uint8_t legendWidth =   10;
+  const uint16_t xLegend =      display.width() - xMargins - 5 - legendWidth;
+  const uint16_t yLegend =      ((display.height()/3) + (uint8_t(3.5*legendHeight)));
+  const uint16_t yValue =       display.width()/6;
+
+  debugMessage("screenCO2() start",1);
+
+  screenHelperComponentSetup("CO2");
+
+  display.setFreeFont(&FreeSans24pt7b);
+  display.setTextDatum(MC_DATUM);
+
+  // CO2 numeric value
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+  display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints-1])), (display.width()/2), yValue);
+
+  screenHelperGraph(xMargins, display.height()/3, (display.width()-(2*xMargins)-legendWidth-10),((display.height()*2/3)-yMargins), sensorData.ambientCO2, "Recent values");
+
+  // legend for CO2 color wheel
+  for(uint8_t loop = 0; loop < 4; loop++){
+    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
+  }
+  debugMessage("screenCO2() end",1);
 }
 
 void screenNOX()
@@ -835,8 +773,8 @@ void screenNOX()
 
   debugMessage("screenNOX() start",1);
 
-  // clear screen
-  display.fillScreen(TFT_BLACK);
+  screenHelperComponentSetup("NOx");
+
   display.setFreeFont(&FreeSans18pt7b);
 
   // NOx color circle
@@ -859,53 +797,11 @@ void screenNOX()
   debugMessage("screenNOX() end",1);
 }
 
-void screenCO2()
-// Description: Display CO2 information (ppm, color grade, graph)
-// Parameters:  NA
-// Returns: NA (void)
-// Improvement: ?
-{
-  // screen layout assists in pixels
-  const uint8_t legendHeight = 20;
-  const uint8_t legendWidth = 10;
-  const uint16_t borderWidth = 15;
-  const uint16_t borderHeight = 15;
-  const uint16_t xLegend = display.width() - borderWidth - 5 - legendWidth;
-  const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*legendHeight)));
-  const uint16_t xLabel = display.width()/2;
-  const uint16_t yLabel = yMargins + borderHeight + 30;
-
-  debugMessage("screenCO2() start",1);
-
-  display.setFreeFont(&FreeSans18pt7b);
-  display.setTextColor(TFT_WHITE);
-
-  // fill screen with CO2 value color
-  display.fillScreen(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  display.fillSmoothRoundRect(borderWidth, borderHeight,display.width()-(2*borderWidth),display.height()-(2*borderHeight),cornerRoundRadius,TFT_BLACK);
-
-  // value and label
-  display.setCursor(borderWidth + 20,yLabel);
-  display.print("CO2");
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);  // Use highlight color look-up table
-  display.setCursor(xLabel, yLabel);
-  display.print(uint16_t(sensorData.ambientCO2[graphPoints-1]));
-
-  screenHelperGraph(borderWidth + 5, display.height()/3, (display.width()-(2*borderWidth + 10)),((display.height()*2/3)-(borderHeight + 5)), sensorData.ambientCO2, "Recent values");
-
-  // legend for CO2 color wheel
-  for(uint8_t loop = 0; loop < 4; loop++){
-    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
-  }
-
-  debugMessage("screenCO2() end",1);
-}
-
 void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
 // Description: helper function for screenXXX() routines drawing WiFi RSSI strength
 // Parameters: 
 // Output : NA
-// Improvement : error handling for initialX, initialY, and overall width and height
+// Improvement : initialX, initialY, and overall width and height bounding for screen edge + x/y margins
 //  dedicated icon type for no WiFi?
 {
   // convert RSSI values to a 5 bar visual indicator
@@ -931,7 +827,7 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
 // Description: helper function for screenXXX() routines that displays an icon relaying success of network endpoint writes
 // Parameters: initial x and y coordinate to draw from
 // Output : NA
-// Improvement : NA
+// Improvement : initialX, initialY, and overall width and height bounding for screen edge + x/y margins
 // 
 {
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
@@ -1052,30 +948,56 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   debugMessage("screenHelperGraph() end",1);
 }
 
-void screenHelperIndoorOutdoorStatusRegion()
-// Description: helper function for screenXXX() routines to draw the status region frame for indoor/outdoor information
+void screenHelperComponentSetup(String header)
+// Description: helper function for screenXXX() routines to draw the status region frame
 // Parameters: NA
 // Output : NA
 // Improvement : NA
 {
   // screen layout assists in pixels
-  const uint16_t yStatusRegion = display.height()/8;
-  const uint16_t xOutdoorMargin = ((display.width() / 2) + xMargins);
+  const uint8_t   yStatusRegion = display.height()/8;
+  const uint8_t   yStatusRegionFloor = yStatusRegion - 7;  
+  const uint8_t   helperXSpacing = 15;
 
+  debugMessage("screenHelperStatusBar() start",1);
+
+  display.fillScreen(TFT_BLACK);
   display.fillRect(0,0,display.width(),yStatusRegion,TFT_DARKGREY);
-  // split indoor v. outside
-  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_DARKGREY);
   // screen helpers in status region
-  // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
-  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (yMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
-  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), yMargins);
-  // labels
+  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), yStatusRegionFloor, wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
+  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-helperXSpacing), (yStatusRegionFloor-15));
+
+  //label
   display.setFreeFont(&FreeSans12pt7b);
   display.setTextColor(TFT_WHITE);
-  display.setCursor(xMargins, ((display.height()/8)-7));
-  display.print("Indoor");
-  display.setCursor(xOutdoorMargin, ((display.height()/8)-7));
-  display.print("Outdoor");
+  display.setTextDatum(L_BASELINE);
+  display.drawString(header, ((display.width()/2)-(display.textWidth(header)/2)), yStatusRegionFloor);
+
+  debugMessage("screenHelperStatusBar() end",1);
+}
+
+void retainCO2(float co2)
+// Description: add new element, FIFO, to CO2 array
+// Parameters:  new CO2 value from sensor
+// Returns: NA (void)
+// Improvement: ?
+{
+  for(uint8_t loop=1;loop<graphPoints;loop++) {
+    sensorData.ambientCO2[loop-1] = sensorData.ambientCO2[loop];
+  }
+  sensorData.ambientCO2[graphPoints-1] = co2;
+}
+
+void retainVOC(float voc)
+// Description: add new element, FIFO, to VOC array
+// Parameters:  new VOC index value from sensor
+// Returns: NA (void)
+// Improvement: not merged with retainCO2 because reads are in independent functions
+{
+  for(uint8_t loop=1;loop<graphPoints;loop++) {
+    sensorData.vocIndex[loop-1] = sensorData.vocIndex[loop];
+  }
+  sensorData.vocIndex[graphPoints-1] = voc;
 }
 
 // Hardware simulation routines
@@ -1089,7 +1011,7 @@ void screenHelperIndoorOutdoorStatusRegion()
     owmCurrentData.cityName = "Pleasantville";
     owmCurrentData.tempF = randomFloatRange(sensorTempMinF, sensorTempMaxF);
     owmCurrentData.humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-    owmCurrentData.icon = "09d";
+    strncpy(owmCurrentData.icon, "09d", sizeof(owmCurrentData.icon));
     debugMessage(String("SIMULATED OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
   }
 
@@ -1219,45 +1141,48 @@ void screenHelperIndoorOutdoorStatusRegion()
   // Connect to WiFi network using WiFiManager
   {
     bool connected = false;
-    String parameterText;
 
     debugMessage("openWiFiManager begin",2);
 
-    WiFiManager wfm;
+    // set WiFiManager parameters
+    wfm.setHostname(endpointPath.deviceID.c_str());
+    wfm.setSaveConfigCallback(saveConfigCallback);
+    // wfm.setConnectTimeout(180); // how long to try to connect for before continuing
+    wfm.setConfigPortalTimeout(180); // auto close configportal after n seconds
+    // wifi scan settings
+    // wm.setRemoveDuplicateAPs(false); // do not remove duplicate ap names (true)
+    // wm.setMinimumSignalQuality(20);  // set min RSSI (percentage) to show in scans, null = 8%
+    // wm.setShowInfoErase(false);      // do not show erase button on info page
+    // wm.setScanDispPerc(true);       // show RSSI as percentage not graph icons
+    #ifndef DEBUG
+      wfm.setDebugOutput(false);
+    #endif
 
     // try and use stored credentials
     WiFi.begin();
 
-    uint32_t start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < timeNetworkConnectTimeoutMS) {
+    uint32_t wifiStartConnectMS = millis();
+    while ((WiFi.status() != WL_CONNECTED) && (millis() - wifiStartConnectMS < timeNetworkConnectTimeoutMS)) {
       delay(500);
     }
 
     if (WiFi.status() == WL_CONNECTED) {
       connected = true;
-      hardwareData.rssi = abs(WiFi.RSSI());
-      debugMessage(String("openWiFiManager end; connected via stored credentials to " + WiFi.SSID() + ", ") + hardwareData.rssi + " dBm RSSI", 1);
-    } 
+    }
     else {
-      // no stored credentials or failed connect, use WiFiManager
-      debugMessage("No stored credentials or failed connect, switching to WiFi Manager",1);
-      parameterText = hardwareDeviceType + " setup";
+      // no stored credentials or failed connect, use WiFiManager AP portal for WiFi setup
+      debugMessage("No stored credentials or failed connect, switching to WiFiManager",1);
+      String parameterText = hardwareDeviceType + " setup";
 
-      screenAlert(String("goto WiFi AP '") + parameterText + "'");
-
-      wfm.setSaveConfigCallback(saveConfigCallback);
-      wfm.setHostname(endpointPath.deviceID.c_str());
-      #ifndef DEBUG
-        wfm.setDebugOutput(false);
-      #endif
-      wfm.setConnectTimeout(180);
+      display.setFreeFont(&FreeSans18pt7b);
+      screenHelperAlert(String("goto WiFi AP '") + parameterText + "'",TFT_WHITE,TFT_BLACK,TFT_WHITE);
 
       wfm.setTitle("Ola friend!");
       // hint text (optional)
-      //WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
+      WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
       
-      //order determines on-screen order
-      // wfm.addParameter(&hint_text);
+      // order determines on-screen order
+      wfm.addParameter(&hint_text);
 
       // collect common parameters in AP portal mode
       WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude","",9);
@@ -1351,30 +1276,60 @@ void screenHelperIndoorOutdoorStatusRegion()
           saveNVConfig();
           saveWFMConfig = false;
         }
-        connected = true;
-        hardwareData.rssi = abs(WiFi.RSSI());
-        debugMessage(String("openWiFiManager end; connected to " + WiFi.SSID() + ", ") + hardwareData.rssi + " dBm RSSI", 1);
       }
     }
+    if (connected) {
+      hardwareData.rssi = abs(WiFi.RSSI());
+      debugMessage(String("connected to " + WiFi.SSID() + ", ") + WiFi.localIP().toString() + ", " + hardwareData.rssi + " dBm RSSI", 1);
+    }
+    debugMessage(String("openWiFiManager() end"), 2);
     return (connected);
   }
 
-  void checkResetLongPress() {
-  uint8_t buttonState = digitalRead(hardwareWipeButton);
+  void checkButtonPress() {
+    static uint32_t pressStartMS = 0;
+    static bool portalTriggered = false;
 
-  if (buttonState == LOW) {
-    debugMessage(String("button pressed for ") + ((millis() - timeResetPressStartMS)/1000) + " seconds",2);
-    if (timeResetPressStartMS == 0)
-      timeResetPressStartMS = millis();
-    if (millis() - timeResetPressStartMS >= timeResetButtonHoldMS)
-      wipePrefsAndReboot();
-  }
-  else {
-    if (timeResetPressStartMS != 0) {
-      debugMessage("button released",2);
-      timeResetPressStartMS = 0; // reset button press timer
+    const uint8_t buttonState = digitalRead(hardwareButton);
+    const uint32_t now = millis();
+
+    if (buttonState == LOW) {
+      if (pressStartMS == 0) {
+        pressStartMS = now;
+        portalTriggered = false;
+      }
+
+      const uint32_t heldMS = now - pressStartMS;
+      debugMessage(String("button pressed for ") + (heldMS / 1000) + " seconds", 2);
+
+      // Once portal is triggered for this press, do NOT allow escalation to reset
+      if (!portalTriggered) {
+        if (heldMS >= timeDeviceResetHoldMS) {
+          wipePrefsAndReboot(); // typically does not return
+          return;
+        }
+
+        if (heldMS >= timeStartPortalHoldMS) {
+          portalTriggered = true;
+          startWebPortal();
+        }
+      }
+    } 
+    else {
+      if (pressStartMS != 0) {
+        debugMessage("button released", 2);
+        pressStartMS = 0;
+        portalTriggered = false;
+      }
     }
   }
+
+  void startWebPortal()
+  {
+    display.setFreeFont(&FreeSans18pt7b);
+    screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_WHITE);
+    wfm.startWebPortal();
+    screenUpdate(screenCurrent);
   }
 
   void wipePrefsAndReboot() 
@@ -1588,13 +1543,18 @@ bool OWMAirPollutionRead()
     filter["list"][0]["components"]["pm2_5"] = true;
 
     JsonDocument doc;
-    const DeserializationError err = deserializeJson(
+    const DeserializationError error = deserializeJson(
       doc,
       http.getStream(),
       DeserializationOption::Filter(filter)
     );
 
     http.end();
+
+    if (error) {
+      debugMessage(String("deserializeJson failed with error message: ") + error.c_str(), 1);
+      return false;
+    }
 
     // owmAirQuality.lon = (float) doc["coord"]["lon"];
     // owmAirQuality.lat = (float) doc["coord"]["lat"];
@@ -1612,12 +1572,29 @@ bool OWMAirPollutionRead()
   #endif
 }
 
+/**
+ * @brief Maps an OpenWeatherMap (OWM) icon code to a Meteocon font character.
+ *
+ * Converts the OWM icon identifier (e.g. "01d", "10n") into the corresponding
+ * character used by the Meteocon icon font set.
+ *
+ * OWM icon codes consist of:
+ *  - Two digits identifying the weather condition (01, 02, 03, 04, 09, 10, 11, 13, 50)
+ *  - A day/night suffix ('d' or 'n')
+ *
+ * @param icon Null-terminated C string containing the OWM icon code.
+ *
+ * @return Meteocon font character corresponding to the OWM icon.
+ *         Returns ')' if the input is invalid, or '?' if no matching icon
+ *         mapping is found.
+ *
+ * @note Meteocon font reference:
+ *       https://demo.alessioatzeni.com/meteocons/
+ *
+ * @warning The caller must ensure that @p icon points to a string of at least
+ *          three characters plus a null terminator.
+ */
 char OWMtoMeteoconIcon(const char* icon)
-// Description: Maps OWM icon data to the appropropriate Meteocon font character
-// Parameters:  OWM icon string, OWM uses: 01,02,03,04,09,10,11,13,50 plus day/night suffix d/n
-// Returns: NA (void)
-// Improvement: ?
-// Notes: Meteocon fonts: https://demo.alessioatzeni.com/meteocons/
 {
   if (!icon || icon[0] == '\0' || icon[1] == '\0' || icon[2] == '\0') {
       debugMessage("OWM icon invalid", 1);
@@ -1650,7 +1627,31 @@ char OWMtoMeteoconIcon(const char* icon)
   return '?'; // error handling for calling function
 }
 
-void processSamples(uint8_t numSamples)
+/**
+ * @brief Process and report accumulated sensor samples.
+ *
+ * Computes averaged sensor values from accumulated sample buffers and reports
+ * them to enabled network endpoints (ThingSpeak, InfluxDB, MQTT, Home Assistant),
+ * depending on compile-time configuration and network availability.
+ *
+ * If no samples are available, the function exits without performing any
+ * reporting.
+ *
+ * After processing, all accumulated sample buffers are cleared and the
+ * sample counter is reset to zero to prepare for the next sampling interval.
+ *
+ * @param[in,out] numSamples Reference to the number of samples accumulated
+ *                           during the current reporting interval. A value
+ *                           greater than zero indicates that samples are
+ *                           available for processing. This value is reset
+ *                           to zero after processing.
+ *
+ * @note Network reporting is skipped if WiFi is not connected.
+ * @note Endpoint support is controlled via compile-time flags
+ *       (THINGSPEAK, INFLUX, MQTT, HASSIO_MQTT).
+ * @note The sample counter is reset regardless of whether reporting succeeds.
+ */
+void processSamples(uint8_t& numSamples)
 {
   debugMessage(String("processSamples() start"),2);
 
@@ -1732,6 +1733,7 @@ void processSamples(uint8_t numSamples)
   else {
     debugMessage("No samples to process this cycle",1);
   }
+  numSamples = 0;
   debugMessage(String("processSamples() end"),2);
 }
 
@@ -1794,7 +1796,7 @@ bool sensorRead()
 
     if (!sensorCO2Read())
     {
-      screenAlert("CO2 read fail");
+      screenHelperAlert("CO2 read fail", TFT_WHITE,TFT_BLACK,TFT_WHITE);
       debugMessage("CO2 sensor read failed",1);
       status = false;
     }
@@ -2121,6 +2123,140 @@ void deviceDeepSleep(uint32_t deepSleepTime)
   esp_sleep_enable_timer_wakeup(deepSleepTime);
   debugMessage(String("deviceDeepSleep() end: ESP32 deep sleep for ") + (deepSleepTime/1000000) + " seconds",1);
   esp_deep_sleep_start();
+}
+
+/**
+ * @brief Truncate a string to fit within a maximum pixel width by appending an ellipsis.
+ *
+ * Uses the currently active TFT_eSPI font/text settings to measure rendered pixel width.
+ * If the string exceeds @p maxWidthPixels, it is truncated and "..." is appended.
+ *
+ * @param s    Input string to be truncated if necessary.
+ * @param maxWidthPixels Maximum allowed rendered pixel width (pixels).
+ *
+ * @return A string guaranteed to render at <= @p maxWidthPixels pixels (or empty if even "..." won't fit).
+ */
+static String ellipsizeToWidth(const String &s, uint16_t maxWidthPixels) {
+  if ((uint16_t)display.textWidth(s) <= maxWidthPixels) return s;
+
+  String text = s;
+  text.trim();
+
+  const String ell = "...";
+  const uint16_t ellWidth = (uint16_t)display.textWidth(ell);
+  if (ellWidth > maxWidthPixels) return "";
+
+  int16_t lo = 0;
+  int16_t hi = (int16_t)text.length();
+  int16_t best = 0;
+
+  while (lo <= hi) {
+    int16_t mid = (int16_t)((lo + hi) / 2);
+    String candidate = text.substring(0, mid);
+    candidate.trim();
+
+    uint16_t w = (uint16_t)display.textWidth(candidate);
+    if ((uint16_t)(w + ellWidth) <= maxWidthPixels) {
+      best = mid;
+      lo = (int16_t)(mid + 1);
+    } 
+    else {
+        hi = (int16_t)(mid - 1);
+    }
+  }
+
+  String result = text.substring(0, best);
+  result.trim();
+
+  // Avoid awkward trailing punctuation before "..."
+  while (result.length() > 0) {
+    char c = result[result.length() - 1];
+    if (c == ' ' || c == '.' || c == ',' || c == ':' || c == ';' || c == '-') 
+      result.remove(result.length() - 1);
+    else 
+      break;
+  }
+
+  return result + ell;
+}
+
+/**
+ * @brief Split a message into one or two lines using pixel width and word boundaries.
+ *
+ * Attempts to split on a single space such that line 1 fits without truncation and
+ * any truncation (ellipsis) represents the end of the overall message (i.e., is applied
+ * to line 2 only). If no word-boundary split can produce a non-truncated line 1, the
+ * function falls back to a single-line ellipsized result.
+ *
+ * @param s           Input message to split.
+ * @param line1       Output: first line of text.
+ * @param line2       Output: second line of text (empty if not used).
+ * @param maxWidthPixels    Maximum allowed rendered pixel width for each line (pixels).
+ *
+ * @note This function relies on the current TFT_eSPI font/text settings for measurements.
+ */
+void textSplitTwoLines(
+  const String &s,
+  String &line1,
+  String &line2,
+  uint16_t maxWidthPixels
+) {
+
+  if (s.length() == 0 || maxWidthPixels == 0) {
+    line1 = "";
+    line2 = "";
+    return;
+  }
+
+  if ((uint16_t)display.textWidth(s) <= maxWidthPixels) {
+    line1 = s;
+    line2 = "";
+    return;
+  }
+
+  String text = s;
+  text.trim();
+
+  const uint16_t len = (uint16_t)text.length();
+
+  int16_t bestSplit = -1;
+  uint16_t bestLine1Width = 0;
+  uint32_t bestOverflowScore = 0xFFFFFFFFUL; // initally guaranteed to be > than any real overflow score 
+
+  for (uint16_t loop = 1; loop + 1 < len; loop++) {
+    if (text[loop] != ' ') continue;
+    if (text[loop - 1] == ' ' || text[loop + 1] == ' ') continue;
+
+    String a = text.substring(0, loop);   a.trim();
+    String b = text.substring(loop + 1);  b.trim();
+
+    const uint16_t widthA = (uint16_t)display.textWidth(a);
+    if (widthA > maxWidthPixels) continue; // line1 must fit WITHOUT ellipsis
+
+    const uint16_t widthB = (uint16_t)display.textWidth(b);
+    const uint16_t overflow2 = (widthB > maxWidthPixels) ? (uint16_t)(widthB - maxWidthPixels) : 0;
+
+    const uint32_t score = (uint32_t)overflow2;
+
+    if (widthA > bestLine1Width || (widthA == bestLine1Width && score < bestOverflowScore)) {
+      bestLine1Width = widthA;
+      bestOverflowScore = score;
+      bestSplit = (int16_t)loop;
+    }
+  }
+
+  if (bestSplit >= 0) {
+    line1 = text.substring(0, (uint16_t)bestSplit);        line1.trim();
+    line2 = text.substring((uint16_t)bestSplit + 1);       line2.trim();
+
+    if ((uint16_t)display.textWidth(line2) > maxWidthPixels) {
+      line2 = ellipsizeToWidth(line2, maxWidthPixels);
+    }
+    return;
+  }
+
+  line1 = ellipsizeToWidth(text, maxWidthPixels);
+  line2 = "";
 }
 
 // Range and math functions

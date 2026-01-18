@@ -25,12 +25,13 @@
 // Only ONE line below should be uncommented to define your setup.  Add extra lines and files as needed.
 //#include <User_Setup.h>           // Default setup is root library folder
 
+
 //#define FNK0086A_2P8_240x320_ST7789 
 //#define FNK0102A_1P14_135x240_ST7789 
-// #define FNK0103B_2P8_240x320_ST7789  
+//#define FNK0103B_2P8_240x320_ST7789  
 #define FNK0103F_2P8_240x320_ILI9341 
 // #define FNK0103L_3P2_240x320_ST7789  
-// #define FNK0103N_3P5_320x480_ST7796  
+//#define FNK0103N_3P5_320x480_ST7796  
 //#define FNK0103S_4P0_320x480_ST7796  
 
 #ifdef FNK0086A_2P8_240x320_ST7789

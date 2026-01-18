@@ -52,7 +52,7 @@ If temp/humidity is selected from the main menu, it will display a screen highli
 ## Target configuration
 - Set parameter configuration using config.h
 - Private configuration settings including network endpoint credentials are contained in a `secrets.h` file that is not included in this repo.  Instead you'll find the file `secrets_template.h`, which should be copied to `secrets.h` and then edited to supply the right access credentials and configuration values to match your deployment environment.
-- Copy the contents of the "put in TFT_eSPI folder" into the "TFT_eSPI" folder found the Arduino library folder.
+- Copy the contents of the "put in TFT_eSPI folder" into the "TFT_eSPI" folder found in your Arduino library folder.
 - If the device can not connect to a WiFi access point, it will bring up a screen directing you to configure the device via a browser portal window. Entering the configuration data in this portal will then reboot the device and connect to the entered WiFi AP.
 ## Bill of Materials (BOM)
 ### MCU
