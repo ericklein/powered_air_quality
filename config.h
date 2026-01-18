@@ -11,13 +11,13 @@
 
 // Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
-// #define HARDWARE_SIMULATE
+#define HARDWARE_SIMULATE
 
 // Configuration Step 4: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
 // #define INFLUX // Log data to InfluxDB server
-#define THINGSPEAK  // Log data to ThingSpeak
+// #define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration Step 5: Which sensor configuration do we have?  Later generation devices
 // use Sensirion SEN66 sensor which measures CO2, particulates, VOC, NOX, temperature and humidity

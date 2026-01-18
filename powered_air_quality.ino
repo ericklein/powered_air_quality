@@ -118,7 +118,8 @@ void setup() {
   display.setRotation(screenRotation);
   display.setTextWrap(false);
   display.fillScreen(TFT_BLACK);
-  screenAlert("Initializing");
+  display.setFreeFont(&FreeSans24pt7b);
+  screenHelperAlert("Initializing",TFT_WHITE,TFT_BLACK,TFT_WHITE);
 
   // generate truely random numbers
   randomSeed(esp_random());
@@ -139,7 +140,7 @@ void setup() {
   // initialize sensor(s)
   if( !sensorInit()) {
     debugMessage("setup(): sensor initialization failure",1);
-    screenAlert("Sensor failure, rebooting");
+    screenHelperAlert("Sensor failure, rebooting",TFT_WHITE,TFT_BLACK,TFT_WHITE);
     delay(5000);
     // This error often occurs after firmware flash and reset, hardware deep sleep typically resolves it
     deviceDeepSleep(hardwareErrorSleepTimeμS);
@@ -181,11 +182,6 @@ void loop() {
   static uint32_t timeNextNetworkRetryMS  = 0;
   static uint32_t timeLastOWMUpdateMS     = -(OWMIntervalMS); // forces immediate sample in loop()
   uint16_t calibratedX, calibratedY;
-
-  // 
-  if (wfm.getWebPortalActive()) {
-    wfm.process();
-  }
 
   // is it time to read the sensor?
   if ((millis() - timeLastSampleMS) >= sensorSampleIntervalMS) {
@@ -278,6 +274,11 @@ void loop() {
     // is there a long press on the reset button to wipe all configuration data?
     checkButtonPress();  // Always watching for long-press to wipe
 
+    // give process time to WiFiManager web portal if active
+    if (wfm.getWebPortalActive()) {
+      wfm.process();
+    }
+
     // is it time to check the WiFi connection before network endpoint write or OWM update?
     if (WiFi.status() != WL_CONNECTED) {
       if ((long)(millis() - timeNextNetworkRetryMS) >= 0) {
@@ -304,13 +305,13 @@ void loop() {
   if ((millis() - timeLastOWMUpdateMS) >= OWMIntervalMS) {
     // update local weather data
     if (!OWMCurrentWeatherRead()) {
-      owmCurrentData.tempF = 10000;
+      owmCurrentData.tempF = 255;
       debugMessage("OWM weather read failed!",1);
     }
     
     // update local air quality data
     if (!OWMAirPollutionRead()) {
-      owmAirQuality.aqi = 10000;
+      owmAirQuality.aqi = 255;
       debugMessage("OWM AQI read failed!",1);
     }
     timeLastOWMUpdateMS = millis();
@@ -356,76 +357,113 @@ void screenUpdate(uint8_t screenCurrent)
   }
 }
 
-bool screenAlert(String messageText)
-// Description: Display error message centered on screen, using different font sizes and/or splitting to fit on screen
-// Parameters: String containing error message text
-// Output: NA (void)
-// Improvement: Break the long font string to word blocks that fit in two lines
-{
-  bool success = false;
+/**
+ * @brief Draw a centered rounded-rectangle "bubble" containing a one- or two-line message.
+ *
+ * The message is split using pixel width measurements and word boundaries. If the message
+ * is too long, truncation is applied at the end of the overall message (ellipsis on line 2
+ * only, or on line 1 if it must be single-line). The rounded rectangle and text are constrained
+ * to stay within the display and within a horizontal safe region defined by @p xMargins.
+ *
+ * Vertical centering behavior:
+ * - If two lines are drawn, the vertical gap between the lines is centered on the screen.
+ * - If one line is drawn, the text itself is centered on the screen.
+ *
+ * @param messageText Message to render inside the bubble.
+ * @param textColor   Text color.
+ * @param fillColor   Bubble fill color (also used as text background color).
+ * @param borderColor Bubble outline color.
+ * @param xMargins    Horizontal safe margin in pixels applied to both left and right edges.
+ *
+ * @note Set the desired font and text size on @p display before calling this function.
+ */
+void screenHelperAlert(
+  const String &messageText,
+  uint16_t textColor,
+  uint16_t fillColor,
+  uint16_t borderColor
+) {
+  display.setTextColor(textColor, fillColor);
+  display.setTextPadding(0);
 
-  debugMessage("screenAlert start",1);
+  const int16_t screenW = (int16_t)display.width();
+  const int16_t screenH = (int16_t)display.height();
+  const int16_t centerY = screenH / 2;
 
-  display.setTextColor(TFT_WHITE);
-  display.fillScreen(TFT_BLACK);
-  display.setTextDatum(MC_DATUM);
+  const int16_t safeLeft  = (int16_t)xMargins;
+  const int16_t safeRight = (int16_t)(screenW - 1 - (int16_t)xMargins);
+  const int16_t safeW     = safeRight - safeLeft + 1;
+  if (safeW <= 0) return;
 
-  debugMessage(String("screenAlert text is '") + messageText + "'",2);
+  const uint16_t lineHeight = (uint16_t)display.fontHeight();
 
-  // does message fit on one line with large font?
-  display.setFreeFont(&FreeSans24pt7b);
-  if (display.textWidth(messageText) <= (display.width() + (xMargins*2))) {
-    // fits with large font
-    display.drawString(messageText, (display.width()/2), (display.height()/2));
-    success = true;
+  uint8_t lineSpacing = (uint8_t)(lineHeight / 4);
+  if (lineSpacing < 2)  lineSpacing = 2;
+  if (lineSpacing > 10) lineSpacing = 10;
+
+  uint8_t padX = (uint8_t)(lineHeight / 3);
+  uint8_t padY = (uint8_t)(lineHeight / 4);
+  if (padX < 6) padX = 6;
+  if (padY < 4) padY = 4;
+
+  uint8_t radius = (uint8_t)(lineHeight / 3);
+  if (radius < 6)  radius = 6;
+  if (radius > 18) radius = 18;
+
+  const int16_t innerW_signed = safeW - (int16_t)(2 * padX);
+  const uint16_t innerW = (innerW_signed > 0) ? (uint16_t)innerW_signed : 0;
+  if (innerW == 0) return;
+
+  String line1, line2;
+  textSplitTwoLines(messageText, line1, line2, innerW);
+
+  const bool twoLines = (line2.length() > 0);
+
+  const int16_t w1 = (int16_t)display.textWidth(line1);
+  const int16_t w2 = twoLines ? (int16_t)display.textWidth(line2) : 0;
+  const int16_t textW = (w2 > w1) ? w2 : w1;
+
+  const int16_t textH = twoLines
+    ? (int16_t)(2 * (int16_t)lineHeight + (int16_t)lineSpacing)
+    : (int16_t)lineHeight;
+
+  int16_t rectW = textW + (int16_t)padX * 2;
+  int16_t rectH = textH + (int16_t)padY * 2;
+
+  if (rectW > safeW)   rectW = safeW;
+  if (rectH > screenH) rectH = screenH;
+
+  int16_t yTextTop;
+  if (!twoLines) {
+    yTextTop = centerY - (textH / 2);
+  } else {
+    const int16_t halfGapTop = (int16_t)(lineSpacing / 2);
+    yTextTop = centerY - halfGapTop - (int16_t)lineHeight;
   }
-  else {
-    // does message fit on two lines with large font?
-    debugMessage(String("large font is ") + abs(display.width()-display.textWidth(messageText)) + " pixels too long, trying 2 lines", 1);
-    // does the string break into two pieces based on a space character?
-    uint8_t spaceLocation;
-    uint16_t text1Width, text2Width;
-    String messageTextPartOne, messageTextPartTwo;
 
-    spaceLocation = messageText.indexOf(' ');
-    if (spaceLocation) {
-      // has a space character, measure two lines
-      messageTextPartOne = messageText.substring(0,spaceLocation);
-      messageTextPartTwo = messageText.substring(spaceLocation+1);
-      text1Width = display.textWidth(messageTextPartOne);
-      text2Width = display.textWidth(messageTextPartTwo);
-      debugMessage(String("Message part one with large font is ") + text1Width + " pixels wide",2);
-      debugMessage(String("Message part two with large font is ") + text2Width + " pixels wide",2);
-    }
-    else {
-      debugMessage("there is no space in message to break message into 2 lines",2);
-    }
-    if ((text1Width <= (display.width() + (xMargins*2))) && (text2Width <= (display.width() + (xMargins*2)))) {
-        // fits on two lines
-        display.drawString(messageTextPartOne, (display.width()/2), ((display.height()/2)-25));
-        display.drawString(messageTextPartTwo, (display.width()/2), ((display.height()/2)+25));
-        success = true;
-    }
-    else {
-      // does message fit on one line with medium sized text?
-      debugMessage("couldn't break text into 2 lines or one line is too long, trying medium text",1);
+  int16_t rectX = safeLeft + (safeW - rectW) / 2;
+  int16_t rectY = yTextTop - (int16_t)padY;
 
-      display.setFreeFont(&FreeSans18pt7b);
-      if (display.textWidth(messageText) <= (display.width() + (xMargins*2))) {
-        // fits with small size
-        display.drawString(messageText, (display.width()/2), (display.height()/2));
-        success = true;
-      }
-      else {
-        // doesn't fit with medium font, display as truncated, small text
-        debugMessage(String("medium font is ") + abs(display.width() - display.textWidth(messageText)) + " pixels too long, displaying small, truncated text", 1);
-        display.setFreeFont(&FreeSans12pt7b);
-        display.drawString(messageText, (display.width()/2), (display.height()/2));
-      }
-    }
+  const int16_t maxRectX = safeLeft + safeW - rectW;
+  if (rectX < safeLeft) rectX = safeLeft;
+  if (rectX > maxRectX) rectX = maxRectX;
+
+  if (rectY < 0) rectY = 0;
+  if (rectY + rectH > screenH) rectY = screenH - rectH;
+
+  const int16_t rectCenterX = rectX + rectW / 2;
+
+  display.fillRoundRect(rectX, rectY, rectW, rectH, radius, fillColor);
+  display.drawRoundRect(rectX, rectY, rectW, rectH, radius, borderColor);
+
+  display.setTextDatum(TC_DATUM);
+  const int16_t textTopY = rectY + (int16_t)padY;
+
+  display.drawString(line1, rectCenterX, textTopY);
+  if (twoLines) {
+    display.drawString(line2, rectCenterX,
+                   textTopY + (int16_t)lineHeight + (int16_t)lineSpacing);
   }
-  debugMessage("screenAlert end",1);
-  return success;
 }
 
 void screenSaver()
@@ -547,7 +585,7 @@ void screenTempHumidity()
 
   // Outside
   // do we have OWM Current data to display?
-  if (owmCurrentData.tempF != 10000) {
+  if (owmCurrentData.tempF != 255) {
     // Outside temp
     if ((owmCurrentData.tempF < sensorTempFComfortMin) || (owmCurrentData.tempF > sensorTempFComfortMax))
       display.setTextColor(TFT_YELLOW);
@@ -628,7 +666,7 @@ void screenPM25()
   
   // Outside
   // do we have OWM Air Quality data to display?
-  if (owmAirQuality.aqi != 10000) {
+  if (owmAirQuality.aqi != 255) {
     // Outside PM2.5
     display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
     display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
@@ -977,7 +1015,7 @@ void retainVOC(float voc)
     owmCurrentData.cityName = "Pleasantville";
     owmCurrentData.tempF = randomFloatRange(sensorTempMinF, sensorTempMaxF);
     owmCurrentData.humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-    owmCurrentData.icon = "09d";
+    strncpy(owmCurrentData.icon, "09d", sizeof(owmCurrentData.icon));
     debugMessage(String("SIMULATED OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
   }
 
@@ -1140,7 +1178,8 @@ void retainVOC(float voc)
       debugMessage("No stored credentials or failed connect, switching to WiFiManager",1);
       String parameterText = hardwareDeviceType + " setup";
 
-      screenAlert(String("goto WiFi AP '") + parameterText + "'");
+      display.setFreeFont(&FreeSans18pt7b);
+      screenHelperAlert(String("goto WiFi AP '") + parameterText + "'",TFT_WHITE,TFT_BLACK,TFT_WHITE);
 
       wfm.setTitle("Ola friend!");
       // hint text (optional)
@@ -1291,7 +1330,8 @@ void retainVOC(float voc)
 
   void startWebPortal()
   {
-    screenAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration");
+    display.setFreeFont(&FreeSans18pt7b);
+    screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_WHITE);
     wfm.startWebPortal();
     screenUpdate(screenCurrent);
   }
@@ -1713,7 +1753,7 @@ bool sensorRead()
 
     if (!sensorCO2Read())
     {
-      screenAlert("CO2 read fail");
+      screenHelperAlert("CO2 read fail", TFT_WHITE,TFT_BLACK,TFT_WHITE);
       debugMessage("CO2 sensor read failed",1);
       status = false;
     }
@@ -2040,6 +2080,140 @@ void deviceDeepSleep(uint32_t deepSleepTime)
   esp_sleep_enable_timer_wakeup(deepSleepTime);
   debugMessage(String("deviceDeepSleep() end: ESP32 deep sleep for ") + (deepSleepTime/1000000) + " seconds",1);
   esp_deep_sleep_start();
+}
+
+/**
+ * @brief Truncate a string to fit within a maximum pixel width by appending an ellipsis.
+ *
+ * Uses the currently active TFT_eSPI font/text settings to measure rendered pixel width.
+ * If the string exceeds @p maxWidthPixels, it is truncated and "..." is appended.
+ *
+ * @param s    Input string to be truncated if necessary.
+ * @param maxWidthPixels Maximum allowed rendered pixel width (pixels).
+ *
+ * @return A string guaranteed to render at <= @p maxWidthPixels pixels (or empty if even "..." won't fit).
+ */
+static String ellipsizeToWidth(const String &s, uint16_t maxWidthPixels) {
+  if ((uint16_t)display.textWidth(s) <= maxWidthPixels) return s;
+
+  String text = s;
+  text.trim();
+
+  const String ell = "...";
+  const uint16_t ellWidth = (uint16_t)display.textWidth(ell);
+  if (ellWidth > maxWidthPixels) return "";
+
+  int16_t lo = 0;
+  int16_t hi = (int16_t)text.length();
+  int16_t best = 0;
+
+  while (lo <= hi) {
+    int16_t mid = (int16_t)((lo + hi) / 2);
+    String candidate = text.substring(0, mid);
+    candidate.trim();
+
+    uint16_t w = (uint16_t)display.textWidth(candidate);
+    if ((uint16_t)(w + ellWidth) <= maxWidthPixels) {
+      best = mid;
+      lo = (int16_t)(mid + 1);
+    } 
+    else {
+        hi = (int16_t)(mid - 1);
+    }
+  }
+
+  String result = text.substring(0, best);
+  result.trim();
+
+  // Avoid awkward trailing punctuation before "..."
+  while (result.length() > 0) {
+    char c = result[result.length() - 1];
+    if (c == ' ' || c == '.' || c == ',' || c == ':' || c == ';' || c == '-') 
+      result.remove(result.length() - 1);
+    else 
+      break;
+  }
+
+  return result + ell;
+}
+
+/**
+ * @brief Split a message into one or two lines using pixel width and word boundaries.
+ *
+ * Attempts to split on a single space such that line 1 fits without truncation and
+ * any truncation (ellipsis) represents the end of the overall message (i.e., is applied
+ * to line 2 only). If no word-boundary split can produce a non-truncated line 1, the
+ * function falls back to a single-line ellipsized result.
+ *
+ * @param s           Input message to split.
+ * @param line1       Output: first line of text.
+ * @param line2       Output: second line of text (empty if not used).
+ * @param maxWidthPixels    Maximum allowed rendered pixel width for each line (pixels).
+ *
+ * @note This function relies on the current TFT_eSPI font/text settings for measurements.
+ */
+void textSplitTwoLines(
+  const String &s,
+  String &line1,
+  String &line2,
+  uint16_t maxWidthPixels
+) {
+
+  if (s.length() == 0 || maxWidthPixels == 0) {
+    line1 = "";
+    line2 = "";
+    return;
+  }
+
+  if ((uint16_t)display.textWidth(s) <= maxWidthPixels) {
+    line1 = s;
+    line2 = "";
+    return;
+  }
+
+  String text = s;
+  text.trim();
+
+  const uint16_t len = (uint16_t)text.length();
+
+  int16_t bestSplit = -1;
+  uint16_t bestLine1Width = 0;
+  uint32_t bestOverflowScore = 0xFFFFFFFFUL; // initally guaranteed to be > than any real overflow score 
+
+  for (uint16_t loop = 1; loop + 1 < len; loop++) {
+    if (text[loop] != ' ') continue;
+    if (text[loop - 1] == ' ' || text[loop + 1] == ' ') continue;
+
+    String a = text.substring(0, loop);   a.trim();
+    String b = text.substring(loop + 1);  b.trim();
+
+    const uint16_t widthA = (uint16_t)display.textWidth(a);
+    if (widthA > maxWidthPixels) continue; // line1 must fit WITHOUT ellipsis
+
+    const uint16_t widthB = (uint16_t)display.textWidth(b);
+    const uint16_t overflow2 = (widthB > maxWidthPixels) ? (uint16_t)(widthB - maxWidthPixels) : 0;
+
+    const uint32_t score = (uint32_t)overflow2;
+
+    if (widthA > bestLine1Width || (widthA == bestLine1Width && score < bestOverflowScore)) {
+      bestLine1Width = widthA;
+      bestOverflowScore = score;
+      bestSplit = (int16_t)loop;
+    }
+  }
+
+  if (bestSplit >= 0) {
+    line1 = text.substring(0, (uint16_t)bestSplit);        line1.trim();
+    line2 = text.substring((uint16_t)bestSplit + 1);       line2.trim();
+
+    if ((uint16_t)display.textWidth(line2) > maxWidthPixels) {
+      line2 = ellipsizeToWidth(line2, maxWidthPixels);
+    }
+    return;
+  }
+
+  line1 = ellipsizeToWidth(text, maxWidthPixels);
+  line2 = "";
 }
 
 // Range and math functions
