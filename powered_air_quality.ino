@@ -228,8 +228,8 @@ void loop() {
       case sMain : {
         // get raw 12bit touchscreen x,y and then calibrate to screen size
         TS_Point p = touchscreen.getPoint();
-        uint16_t calibratedX = map(p.x, touchscreenMinX, touchscreenMaxX, 1, display.width());
-        uint16_t calibratedY = map(p.y, touchscreenMinY, touchscreenMaxY, 1, display.height());
+        calibratedX = map(p.x, touchscreenMinX, touchscreenMaxX, 1, display.width());
+        calibratedY = map(p.y, touchscreenMinY, touchscreenMaxY, 1, display.height());
         // alternate conversion
         // uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
         // uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
@@ -320,7 +320,6 @@ void loop() {
   // is it time to write to the network endpoints?
   if ((millis() - timeLastReportMS) >= reportIntervalMS) {
     processSamples(numSamples);
-    numSamples = 0;
     timeLastReportMS = millis();
   }
 }
@@ -544,11 +543,8 @@ void screenTempHumidity()
 // Output: NA (void)
 // Improvement: 
 {
-  uint16_t text1Width;  // For text size calculation
-
   // screen layout assists in pixels
   const uint8_t yStatusRegion = display.height()/8;
-  const uint16_t xOutdoorMargin = ((display.width()/2) + xMargins);
 
   debugMessage("screenTempHumidity() start",2);
 
@@ -1547,13 +1543,18 @@ bool OWMAirPollutionRead()
     filter["list"][0]["components"]["pm2_5"] = true;
 
     JsonDocument doc;
-    const DeserializationError err = deserializeJson(
+    const DeserializationError error = deserializeJson(
       doc,
       http.getStream(),
       DeserializationOption::Filter(filter)
     );
 
     http.end();
+
+    if (error) {
+      debugMessage(String("deserializeJson failed with error message: ") + error.c_str(), 1);
+      return false;
+    }
 
     // owmAirQuality.lon = (float) doc["coord"]["lon"];
     // owmAirQuality.lat = (float) doc["coord"]["lat"];
@@ -1571,12 +1572,29 @@ bool OWMAirPollutionRead()
   #endif
 }
 
+/**
+ * @brief Maps an OpenWeatherMap (OWM) icon code to a Meteocon font character.
+ *
+ * Converts the OWM icon identifier (e.g. "01d", "10n") into the corresponding
+ * character used by the Meteocon icon font set.
+ *
+ * OWM icon codes consist of:
+ *  - Two digits identifying the weather condition (01, 02, 03, 04, 09, 10, 11, 13, 50)
+ *  - A day/night suffix ('d' or 'n')
+ *
+ * @param icon Null-terminated C string containing the OWM icon code.
+ *
+ * @return Meteocon font character corresponding to the OWM icon.
+ *         Returns ')' if the input is invalid, or '?' if no matching icon
+ *         mapping is found.
+ *
+ * @note Meteocon font reference:
+ *       https://demo.alessioatzeni.com/meteocons/
+ *
+ * @warning The caller must ensure that @p icon points to a string of at least
+ *          three characters plus a null terminator.
+ */
 char OWMtoMeteoconIcon(const char* icon)
-// Description: Maps OWM icon data to the appropropriate Meteocon font character
-// Parameters:  OWM icon string, OWM uses: 01,02,03,04,09,10,11,13,50 plus day/night suffix d/n
-// Returns: NA (void)
-// Improvement: ?
-// Notes: Meteocon fonts: https://demo.alessioatzeni.com/meteocons/
 {
   if (!icon || icon[0] == '\0' || icon[1] == '\0' || icon[2] == '\0') {
       debugMessage("OWM icon invalid", 1);
@@ -1609,7 +1627,31 @@ char OWMtoMeteoconIcon(const char* icon)
   return '?'; // error handling for calling function
 }
 
-void processSamples(uint8_t numSamples)
+/**
+ * @brief Process and report accumulated sensor samples.
+ *
+ * Computes averaged sensor values from accumulated sample buffers and reports
+ * them to enabled network endpoints (ThingSpeak, InfluxDB, MQTT, Home Assistant),
+ * depending on compile-time configuration and network availability.
+ *
+ * If no samples are available, the function exits without performing any
+ * reporting.
+ *
+ * After processing, all accumulated sample buffers are cleared and the
+ * sample counter is reset to zero to prepare for the next sampling interval.
+ *
+ * @param[in,out] numSamples Reference to the number of samples accumulated
+ *                           during the current reporting interval. A value
+ *                           greater than zero indicates that samples are
+ *                           available for processing. This value is reset
+ *                           to zero after processing.
+ *
+ * @note Network reporting is skipped if WiFi is not connected.
+ * @note Endpoint support is controlled via compile-time flags
+ *       (THINGSPEAK, INFLUX, MQTT, HASSIO_MQTT).
+ * @note The sample counter is reset regardless of whether reporting succeeds.
+ */
+void processSamples(uint8_t& numSamples)
 {
   debugMessage(String("processSamples() start"),2);
 
@@ -1691,6 +1733,7 @@ void processSamples(uint8_t numSamples)
   else {
     debugMessage("No samples to process this cycle",1);
   }
+  numSamples = 0;
   debugMessage(String("processSamples() end"),2);
 }
 
