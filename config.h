@@ -7,7 +7,7 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 2
+#define DEBUG 2
 
 // Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -31,28 +31,12 @@
 
 // Configuration variables that are less likely to require changes
 
-// Internet and network endpoints
-const uint32_t timeNetworkConnectTimeoutMS = 10000;
-const uint32_t timeNetworkRetryIntervalMS = 30000;
-const uint32_t timeMQTTKeepAliveIntervalMS = 10000; // ping MQTT broker to keep alive
-
 // Open Weather Map (OWM)
 const String OWMServer = "http://api.openweathermap.org/data/2.5/";
 const String OWMWeatherPath =  "weather?";
 const String OWMAQMPath = "air_pollution?";
 // OWM Air Pollution scale from https://openweathermap.org/api/air-pollution
 const String OWMPollutionLabel[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
-const uint32_t OWMIntervalMS = 1800000;
-
-// sampling and reporting intervals
-#ifdef DEBUG
-  const uint32_t sensorSampleIntervalMS = 30000;  // time between samples
-  const uint32_t reportIntervalMS = 90000;        // time between reports
-#else
-  const uint32_t sensorSampleIntervalMS = 60000;
-  const uint32_t reportIntervalMS = 900000;
-#endif
-const uint8_t reportFailureThreshold = 3; // number of times reporting has to fail before UI reflects issue
 
 // UI
 enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX};
@@ -64,11 +48,14 @@ const uint8_t cornerRoundRadius = 4;
 const uint8_t wifiBarWidth = 3;
 const uint8_t wifiBarHeightIncrement = 3;
 const uint8_t wifiBarSpacing = 5;
+const uint8_t legendHeight =  20;
+const uint8_t legendWidth =   10;
+
+const uint8_t screenRotation = 3; // CYD 2.8; horizontal orientation with USB port on left side
+// const uint8_t screenRotation = 1; // CYD 3.2; horizontal orientation with USB port on right side
 
 // How many data samples are retained for graphing
 const uint8_t graphPoints = 10;
-
-const uint32_t screenSaverIntervalMS = 300000; // switch to screen saver if no input after this period
 
 // warnings
 // const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
@@ -137,19 +124,29 @@ const uint16_t noxFair = 49;
 const uint16_t noxPoor = 150;
 const uint16_t noxBad = 300;
 
-const uint32_t hardwareErrorSleepTimeμS = 10000000;  // sleep time if hardware error occurs
+// timers
+// Internet and network endpoints
+const uint32_t timeNetworkTimeoutMS = 10000; // how long to attempt network connects before failing
+const uint32_t timeNetworkKeepAliveMS = 30000;
+const uint32_t timeMQTTKeepAliveMS = 10000; // ping MQTT broker to keep alive
+const uint32_t timeOWMKeepAliveMS = 1800000;
 
+const uint32_t timeHardwareSleepTimeμS = 10000000;  // sleep time if hardware error occurs
 // button
-const uint8_t hardwareButton = 0; // boot button on most ESP32 boards
 const uint16_t timeStartPortalHoldMS = 5000;  // long-press duration to start config portal
 const uint16_t timeDeviceResetHoldMS = 10000; // Long-press duration to wipe config
 
-// touchscreen pins
-#define XPT2046_IRQ 36
-#define XPT2046_MOSI 32
-#define XPT2046_MISO 39
-#define XPT2046_CLK 25
-#define XPT2046_CS 33
+const uint32_t timeScreenSaverStartMS = 300000; // switch to screen saver if no input after this period
+
+// sampling and reporting intervals
+#ifdef DEBUG
+  const uint32_t timeSensorSampleMS = 30000;  // time between samples
+  const uint32_t timeReportMS = 90000;        // time between reports
+#else
+  const uint32_t timeSensorSampleMS = 60000;
+  const uint32_t timeReportMS = 900000;
+#endif
+const uint8_t reportFailureThreshold = 3; // report attempt failures before UI alert starts
 
 // touchscreen calibration
 const uint16_t touchscreenMinX = 200;
@@ -158,14 +155,22 @@ const uint16_t touchscreenMinY = 240;
 const uint16_t touchscreenMaxY = 3800;
 
 // CYD variations
-// standard CYD (2.8" TFT, micro-USB)
-// i2c pins
-#define CYD_SDA 22
-#define CYD_SCL 27
-const uint8_t screenRotation = 3; // CYD 2.8; horizontal orientation with USB port on left side
+// CYD ESP32-2432S028R (2.8" TFT, micro-USB)
+static constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
+static constexpr uint8_t pinSDA = 22;
+static constexpr uint8_t pinSCL = 27;
+static constexpr uint8_t pinLedRed = 4;
+static constexpr uint8_t pinLedGreen = 16;
+static constexpr uint8_t pinLedBlue = 17;
+static constexpr uint8_t pinXPT2046_IRQ = 36;
+static constexpr uint8_t pinXPT2046_MOSI = 32;
+static constexpr uint8_t pinXPT2046_MISO = 39;
+static constexpr uint8_t pinXPT2046_CLK = 25;
+static constexpr uint8_t pinXPT2046_CS = 33;
+static constexpr uint32_t PWM_FREQ = 5000; // Hz
+static constexpr uint8_t  PWM_BITS = 8;    // 0..255
+static constexpr uint16_t MAX_DUTY = (1u << PWM_BITS) - 1u;
 
-// 3.2" TFT, usb-c CYD (Freenode FNK0103L_3P2)
-// i2c pins
-// #define CYD_SDA 32
-// #define CYD_SCL 25
-// const uint8_t screenRotation = 1; // CYD 3.2; horizontal orientation with USB port on right side
+// CYD Freenode FNK0103L_3P2 (3.2" TFT, usb-c)
+// static constexpr uint8_t CYD_SDA = 32;
+// static constexpr uint8_t CYD_SCL = 25;

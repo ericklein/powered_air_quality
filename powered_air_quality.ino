@@ -77,7 +77,7 @@ TFT_eSPI display = TFT_eSPI();
 // touchscreen
 #include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
 SPIClass touchscreenSPI = SPIClass(VSPI);
-XPT2046_Touchscreen touchscreen(XPT2046_CS,XPT2046_IRQ);
+XPT2046_Touchscreen touchscreen(pinXPT2046_CS,pinXPT2046_IRQ);
 
 // global variables
 
@@ -108,9 +108,9 @@ void setup() {
     // wait for serial port connection
     while (!Serial);
     // Display key configuration parameters
-    debugMessage(String("Starting Powered Air Quality with ") + (sensorSampleIntervalMS/1000) + String(" second sample interval"),1);
+    debugMessage(String("Starting Powered Air Quality with ") + (timeSensorSampleMS/1000) + String(" second sample interval"),1);
     #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
-      debugMessage(String("Report interval is ") + (reportIntervalMS/60000) + " minutes",1);
+      debugMessage(String("Report interval is ") + (timeReportMS/60000) + " minutes",1);
     #endif
   #endif
 
@@ -125,12 +125,19 @@ void setup() {
   randomSeed(esp_random());
 
   // initialize touchscreen
-  touchscreenSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS); // setup the VSPI to use CYD touchscreen pins
+  touchscreenSPI.begin(pinXPT2046_CLK, pinXPT2046_MISO, pinXPT2046_MOSI, pinXPT2046_CS); // setup the VSPI to use CYD touchscreen pins
   touchscreen.begin(touchscreenSPI);
   touchscreen.setRotation(screenRotation);
 
-  // initialize button
-  pinMode(hardwareButton, INPUT_PULLUP);
+  // initialize GPIO
+  pinMode(pinButton, INPUT_PULLUP);
+
+  ledcAttach(pinLedRed, PWM_FREQ, PWM_BITS);
+  ledcAttach(pinLedGreen, PWM_FREQ, PWM_BITS);
+  ledcAttach(pinLedBlue, PWM_FREQ, PWM_BITS);
+
+  // turn off onboard LED
+  setRGB(0x0000); // black = off
 
   #ifndef HARDWARE_SIMULATE
     // load before sensorInit() to get altitude data for sensor setup
@@ -143,7 +150,7 @@ void setup() {
     screenHelperAlert("Sensor failure, rebooting",TFT_WHITE,TFT_BLACK,TFT_WHITE);
     delay(5000);
     // This error often occurs after firmware flash and reset, hardware deep sleep typically resolves it
-    deviceDeepSleep(hardwareErrorSleepTimeμS);
+    deviceDeepSleep(timeHardwareSleepTimeμS);
   }
 
   // initialize sensor value arrays
@@ -177,14 +184,14 @@ void setup() {
 
 void loop() {
   static uint8_t numSamples               = 0;  // Number of sensor readings over reporting interval
-  static uint32_t timeLastSampleMS        = -(sensorSampleIntervalMS); // forces immediate sample in loop() 
+  static uint32_t timeLastSampleMS        = -(timeSensorSampleMS); // forces immediate sample in loop() 
   static uint32_t timeLastInputMS         = millis();  // timestamp for last user input (screensaver)
   static uint32_t timeNextNetworkRetryMS  = 0;
-  static uint32_t timeLastOWMUpdateMS     = -(OWMIntervalMS); // forces immediate sample in loop()
+  static uint32_t timeLastOWMUpdateMS     = -(timeOWMKeepAliveMS); // forces immediate sample in loop()
   uint16_t calibratedX, calibratedY;
 
   // is it time to read the sensor?
-  if ((millis() - timeLastSampleMS) >= sensorSampleIntervalMS) {
+  if ((millis() - timeLastSampleMS) >= timeSensorSampleMS) {
     // Read sensor(s) to obtain all environmental values
     if (sensorRead()) {
       // add to the running totals
@@ -264,7 +271,7 @@ void loop() {
   }
 
   // is it time to enable the screensaver AND we're not in screen saver mode already?
-  if ((screenCurrent != sSaver) && ((millis() - timeLastInputMS) > screenSaverIntervalMS)) {
+  if ((screenCurrent != sSaver) && ((millis() - timeLastInputMS) > timeScreenSaverStartMS)) {
     screenCurrent = sSaver;
     debugMessage(String("Screen saver engaged"),1);
     screenUpdate(screenCurrent);
@@ -283,14 +290,14 @@ void loop() {
     if (WiFi.status() != WL_CONNECTED) {
       if ((long)(millis() - timeNextNetworkRetryMS) >= 0) {
         WiFi.reconnect();
-        timeNextNetworkRetryMS = millis() + timeNetworkRetryIntervalMS;
+        timeNextNetworkRetryMS = millis() + timeNetworkKeepAliveMS;
       }
     }
 
     // is it time for MQTT keep alive or reconnect?
     #ifdef MQTT
       if (mqtt.connected()) {
-        if (millis() - timeLastMQTTPingMS > timeMQTTKeepAliveIntervalMS) {
+        if (millis() - timeLastMQTTPingMS > timeMQTTKeepAliveMS) {
           mqtt.loop();
           timeLastMQTTPingMS = millis();
         }
@@ -302,7 +309,7 @@ void loop() {
   #endif
 
   // is it time to update OWM data?
-  if ((millis() - timeLastOWMUpdateMS) >= OWMIntervalMS) {
+  if ((millis() - timeLastOWMUpdateMS) >= timeOWMKeepAliveMS) {
     // update local weather data
     if (!OWMCurrentWeatherRead()) {
       owmCurrentData.tempF = 255;
@@ -318,7 +325,7 @@ void loop() {
   }
 
   // is it time to write to the network endpoints?
-  if ((millis() - timeLastReportMS) >= reportIntervalMS) {
+  if ((millis() - timeLastReportMS) >= timeReportMS) {
     processSamples(numSamples);
     timeLastReportMS = millis();
   }
@@ -694,8 +701,6 @@ void screenVOC()
 // Improvement: ?
 {
   // screen layout assists in pixels
-  const uint8_t legendHeight =  20;
-  const uint8_t legendWidth =   10;
   const uint16_t xLegend =      display.width() - xMargins - 5 - legendWidth;
   const uint16_t yLegend =      ((display.height()/3) + (uint8_t(3.5*legendHeight)));
   const uint16_t yValue =       display.width()/6;
@@ -704,10 +709,9 @@ void screenVOC()
 
   screenHelperComponentSetup("VOC");
 
+  // VOC numeric value
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
-
-  // VOC numeric value
   display.setTextColor(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);  // Use highlight color look-up table
   display.drawString(String(uint16_t(sensorData.vocIndex[graphPoints-1])), (display.width()/2), yValue);
 
@@ -718,41 +722,63 @@ void screenVOC()
     display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
   }
 
+  // Update RGB LED based on VOC severity
+  setRGB(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
+
   debugMessage("screenVOC() end",1);
 }
 
+/**
+ * @brief Displays CO₂ concentration information on the screen.
+ *
+ * Renders the current CO₂ reading (in ppm), applies a color-coded
+ * severity grade, updates the RGB status LED, and draws a historical
+ * graph of recent CO₂ values.
+ *
+ * The screen layout includes:
+ *  - A large numeric CO₂ value (ppm)
+ *  - Color-coded severity indication
+ *  - A scrolling graph of recent CO₂ measurements
+ *  - A vertical color legend matching the warning scale
+ *
+ * @note This function relies on global display state, sensor data,
+ *       and layout constants (e.g. `display`, `sensorData`,
+ *       `xMargins`, `yMargins`, `graphPoints`).
+ *
+ * @warning Assumes `sensorData.ambientCO2` contains at least
+ *          `graphPoints` valid samples.
+ */
 void screenCO2()
-// Description: Display CO2 information (ppm, color grade, graph)
-// Parameters:  NA
-// Returns: NA (void)
-// Improvement: ?
 {
   // screen layout assists in pixels
-  const uint8_t legendHeight =  20;
-  const uint8_t legendWidth =   10;
-  const uint16_t xLegend =      display.width() - xMargins - 5 - legendWidth;
-  const uint16_t yLegend =      ((display.height()/3) + (uint8_t(3.5*legendHeight)));
-  const uint16_t yValue =       display.width()/6;
+  const uint16_t xLegend     =  display.width() - xMargins - 5 - legendWidth;
+  const uint16_t yLegend     =  ((display.height() / 3) + (uint8_t(3.5 * legendHeight)));
+  const uint16_t yValue      =  display.width() / 6;
 
-  debugMessage("screenCO2() start",1);
+  debugMessage("screenCO2() start", 1);
 
   screenHelperComponentSetup("CO2");
 
+  // CO₂ numeric value
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
+  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]);
+  display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints - 1])),(display.width() / 2),yValue);
 
-  // CO2 numeric value
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints-1])), (display.width()/2), yValue);
+  // recent CO₂ graph
+  screenHelperGraph(xMargins, display.height() / 3, (display.width() - (2 * xMargins) - legendWidth - 10), ((display.height() * 2 / 3) - yMargins), sensorData.ambientCO2, "Recent values");
 
-  screenHelperGraph(xMargins, display.height()/3, (display.width()-(2*xMargins)-legendWidth-10),((display.height()*2/3)-yMargins), sensorData.ambientCO2, "Recent values");
-
-  // legend for CO2 color wheel
-  for(uint8_t loop = 0; loop < 4; loop++){
-    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
+  // CO₂ severity color legend
+  for (uint8_t loop = 0; loop < 4; loop++) {
+    display.fillRect(xLegend, (yLegend - (loop * legendHeight)), legendWidth, legendHeight, warningColor[loop]);
   }
-  debugMessage("screenCO2() end",1);
+
+  // Update RGB LED based on CO₂ severity
+  setRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]);
+
+  debugMessage("screenCO2() end", 1);
 }
+
 
 void screenNOX()
 // Description: Display NOx index information (ppm, color grade, graph)
@@ -761,15 +787,13 @@ void screenNOX()
 // Improvement: ?
 {
   // screen layout assists in pixels
-  const uint8_t legendHeight = 20;
-  const uint8_t legendWidth = 10;
   const uint16_t xLegend = (display.width() - xMargins - legendWidth);
   const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*legendHeight)));
   const uint16_t circleRadius = 100;
-  const uint16_t xVOCCircle = (display.width() / 2);
-  const uint16_t yVOCCircle = (display.height() / 2);
-  const uint16_t xVOCLabel = xVOCCircle - 35;
-  const uint16_t yVOCLabel = yVOCCircle + 35;
+  const uint16_t xNOxCircle = (display.width() / 2);
+  const uint16_t yNOxCircle = (display.height() / 2);
+  const uint16_t xNOxLabel = xNOxCircle - 35;
+  const uint16_t yNOxLabel = yNOxCircle + 35;
 
   debugMessage("screenNOX() start",1);
 
@@ -778,8 +802,8 @@ void screenNOX()
   display.setFreeFont(&FreeSans18pt7b);
 
   // NOx color circle
-  display.fillSmoothCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[noxRange(sensorData.noxIndex)]);
-  display.fillSmoothCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,TFT_BLACK);
+  display.fillSmoothCircle(xNOxCircle,yNOxCircle,circleRadius,warningColor[noxRange(sensorData.noxIndex)]);
+  display.fillSmoothCircle(xNOxCircle,yNOxCircle,circleRadius*0.8,TFT_BLACK);
 
   // legend for NOx color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
@@ -787,12 +811,15 @@ void screenNOX()
   }
 
   // NOx value and label (displayed inside circle)
-  display.setTextColor(warningColor[vocRange(sensorData.noxIndex)]);  // Use highlight color look-up table
-  display.setCursor(xVOCCircle-20,yVOCCircle);
-  display.print(int(sensorData.noxIndex+.5));
+  display.setTextColor(warningColor[noxRange(sensorData.noxIndex)]);  // Use highlight color look-up table
+  display.setCursor(xNOxCircle-20,yNOxCircle);
+  display.print(uint16_t(sensorData.noxIndex+.5));
   display.setTextColor(TFT_WHITE);
-  display.setCursor(xVOCLabel,yVOCLabel);
+  display.setCursor(xNOxLabel,yNOxLabel);
   display.print("NOx");
+
+  // Update RGB LED based on NOx severity
+  setRGB(warningColor[noxRange(sensorData.noxIndex)]);
 
   debugMessage("screenNOX() end",1);
 }
@@ -831,7 +858,7 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
 // 
 {
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-    if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (reportIntervalMS * reportFailureThreshold)))
+    if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (timeReportMS * reportFailureThreshold)))
         // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
         display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_RED);
       else
@@ -1162,7 +1189,7 @@ void retainVOC(float voc)
     WiFi.begin();
 
     uint32_t wifiStartConnectMS = millis();
-    while ((WiFi.status() != WL_CONNECTED) && (millis() - wifiStartConnectMS < timeNetworkConnectTimeoutMS)) {
+    while ((WiFi.status() != WL_CONNECTED) && (millis() - wifiStartConnectMS < timeNetworkTimeoutMS)) {
       delay(500);
     }
 
@@ -1290,7 +1317,7 @@ void retainVOC(float voc)
     static uint32_t pressStartMS = 0;
     static bool portalTriggered = false;
 
-    const uint8_t buttonState = digitalRead(hardwareButton);
+    const uint8_t buttonState = digitalRead(pinButton);
     const uint32_t now = millis();
 
     if (buttonState == LOW) {
@@ -1668,7 +1695,7 @@ void processSamples(uint8_t& numSamples)
         float avgPM25 = totalPM25.getAverage();
         float avgNOX = totalNOxIndex.getAverage();
 
-        debugMessage(String("Averages for the last ") + (reportIntervalMS/60000) + " minutes for endpoint reporting",1);
+        debugMessage(String("Averages for the last ") + (timeReportMS/60000) + " minutes for endpoint reporting",1);
         debugMessage(String("PM2.5: ") + avgPM25 + "ppm, CO2: " + avgCO2 + "ppm, VOC index: " + avgVOC + ", NOx index: " + avgNOX + ", " + 
           avgTemperatureF + "F, humidity: " + avgHumidity + "%", 1);
 
@@ -1815,7 +1842,7 @@ bool sensorRead()
       static char errorMessage[64];
       static int16_t error;
 
-      Wire.begin(CYD_SDA, CYD_SCL);
+      Wire.begin(pinSDA, pinSCL);
       paqSensor.begin(Wire, SEN66_I2C_ADDR_6B);
 
       error = paqSensor.deviceReset();
@@ -1889,7 +1916,7 @@ bool sensorRead()
 
       // Wire.begin();
       // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
-      Wire.begin(CYD_SDA, CYD_SCL);
+      Wire.begin(pinSDA, pinSCL);
       pmSensor.begin(Wire);
 
       error = pmSensor.deviceReset();
@@ -1978,7 +2005,7 @@ bool sensorRead()
       uint16_t error;
 
       // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
-      Wire.begin(CYD_SDA, CYD_SCL);
+      Wire.begin(pinSDA, pinSCL);
       co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
 
       // stop potentially previously started measurement
@@ -2334,6 +2361,49 @@ float randomFloatRange(uint16_t min, uint16_t max) {
   uint16_t randomFixed = random((max-min) *100 + 1);
   // return float with 2 decimal precision
   return randomFixed / 100.0f;
+}
+
+/**
+ * @brief Set the onboard RGB LED color using a 16-bit RGB565 value.
+ *
+ * Converts an RGB565 color (5 bits red, 6 bits green, 5 bits blue) into
+ * 8-bit PWM duty cycles and drives the CYD onboard RGB LED using ESP32
+ * LEDC hardware PWM.
+ *
+ * The ESP32-2432S028R onboard RGB LED is wired as active-LOW, so the
+ * computed PWM values are inverted before being written.
+ *
+ * @param color565
+ *        16-bit RGB565 color value:
+ *        - Bits 15–11: Red   (0–31)
+ *        - Bits 10–5 : Green (0–63)
+ *        - Bits 4–0  : Blue  (0–31)
+ *
+ * @note This function assumes the LEDC PWM channels have already been
+ *       attached to the RGB LED GPIO pins via ledcAttach().
+ *
+ * @note RGB565 → 8-bit expansion uses bit replication for improved
+ *       perceptual brightness mapping.
+ *
+ * @see ledcAttach()
+ * @see ledcWrite()
+ */
+static inline void setRGB(uint16_t color565)
+{
+  // Extract RGB565 components
+  uint8_t r5 = (color565 >> 11) & 0x1F;
+  uint8_t g6 = (color565 >> 5)  & 0x3F;
+  uint8_t b5 =  color565        & 0x1F;
+
+  // Expand to 8-bit (good perceptual spread)
+  uint8_t r8 = (r5 << 3) | (r5 >> 2);
+  uint8_t g8 = (g6 << 2) | (g6 >> 4);
+  uint8_t b8 = (b5 << 3) | (b5 >> 2);
+
+  // Active-LOW onboard RGB LED (ESP32-2432S028R)
+  ledcWrite(pinLedRed, MAX_DUTY - r8);
+  ledcWrite(pinLedGreen, MAX_DUTY - g8);
+  ledcWrite(pinLedBlue, MAX_DUTY - b8);
 }
 
 void debugMessage(String messageText, uint8_t messageLevel)
