@@ -73,8 +73,12 @@ const String hardwareDeviceType = "AirQuality";
 // sensors
 // simulation boundary values
 #ifdef HARDWARE_SIMULATE
-  const uint16_t sensorTempMinF =       14; // -10C per datasheet
-  const uint16_t sensorTempMaxF =       140; // 60C per datasheet
+  const uint16_t sensorTempFMin =       14; // -10C per SCD40, SEN66 datasheet
+  #ifdef SCD40
+    const uint16_t sensorTempFMax =       140; // 60C per datasheet
+  #else
+    const uint16_t sensorTempFMax =       122; // 50C per datasheet
+  #endif
   const uint16_t sensorHumidityMin =    0; // RH% per datasheet
   const uint16_t sensorHumidityMax =    100;
 
@@ -84,8 +88,8 @@ const String hardwareDeviceType = "AirQuality";
   const uint16_t OWMPM25Min = 0;
   const uint16_t OWMPM25Max = 100; 
 
-  const uint8_t networkRSSIMin = 30;
-  const uint8_t networkRSSIMax = 90;
+  const uint8_t networkRSSIMin = 30; // ESP32 abs(WiFi.RSSI()) spec
+  const uint8_t networkRSSIMax = 100;
 #endif
 
 // tempF value threshholds

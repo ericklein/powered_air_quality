@@ -157,6 +157,7 @@ void setup() {
   // initialize variables
   owmCurrentData.tempF = 255.0f; // 255 indicates no data
   owmAirQuality.aqi = 255; // 255 indicates no data
+  hardwareData.rssi = 255; // 255 indicates no WiFi connection
   for(uint8_t loop=0;loop<graphPoints;loop++) {
     sensorData.ambientCO2[loop] = -1.0f;
     sensorData.vocIndex[loop] = -1.0f;
@@ -797,39 +798,40 @@ void screenNOX()
 }
 
 void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
-// Description: helper function for screenXXX() routines drawing WiFi RSSI strength
+// Description: helper function for screenXXX() converting RSSI value into a 5 bar visual indicator
 // Parameters: 
 // Output : NA
 // Improvement : initialX, initialY, and overall width and height bounding for screen edge + x/y margins
 //  dedicated icon type for no WiFi?
 {
-  // convert RSSI values to a 5 bar visual indicator
-  // rssi >90 means no signal
+  debugMessage("screenHelperWiFiStatus() begin",2);
 
-  // attemot to reconnect to WiFi if needed
-  if (WiFi.status() != WL_CONNECTED) {
-    WiFi.reconnect();
-  }
+  hardwareData.rssi = networkRSSIRead();
 
-  if (WiFi.status() == WL_CONNECTED) {
+  if (hardwareData.rssi !=255) {
+    uint8_t barCount;
+    if (hardwareData.rssi < 55) barCount = 5;
+    if (hardwareData.rssi < 67) barCount = 4;
+    if (hardwareData.rssi < 70) barCount = 3;
+    if (hardwareData.rssi < 80) 
+      barCount = 2;
+    else
+      barCount = 1;
 
-    hardwareData.rssi = abs(WiFi.RSSI());
-
-    uint8_t barCount = constrain((6 - ((hardwareData.rssi / 10) - 3)), 0, 5);
-  if (barCount > 0) {
-    // <50 rssi value = draw 5 bars, each +10 rssi draw one less bar
     for (uint8_t loop = 1; loop <= barCount; loop++) {
       display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_WHITE);
     }
     debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
-  } 
+  }
   else {
     // draw bars in red to represent no WiFi signal
     for (uint8_t loop = 1; loop <= 5; loop++) {
       display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_RED);
     }
-    debugMessage("No WiFi or RSSI too low", 1);
+    debugMessage("WiFi signal strength via red bars because no WiFi connection", 1);
   }
+  debugMessage("screenHelperWiFiStatus() end",2);
+ 
 }
 
 void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
@@ -1018,7 +1020,7 @@ void retainVOC(float voc)
   // Improvement : variable city name and weather condition/icon
   {
     owmCurrentData.cityName = "Pleasantville";
-    owmCurrentData.tempF = randomFloatRange(sensorTempMinF, sensorTempMaxF);
+    owmCurrentData.tempF = randomFloatRange(sensorTempFMin, sensorTempFMax);
     owmCurrentData.humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
     strncpy(owmCurrentData.icon, "09d", sizeof(owmCurrentData.icon));
     debugMessage(String("SIMULATED OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
@@ -1035,14 +1037,15 @@ void retainVOC(float voc)
     debugMessage(String("SIMULATED OWM Air Pollution PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
   }
 
-  void networkSimulate()
-  // Description : Simulates successful WiFi connection data
+  uint8_t networkRSSISimulate()
+  // Description : returns simulated WiFi RSSI value from hardware or simulation value
   // Parameters: NA
   // Return : NA
   // Improvement : NA
   { 
-    hardwareData.rssi = random(networkRSSIMin, networkRSSIMax);
-    debugMessage(String("SIMULATED WiFi RSSI: ") + hardwareData.rssi,1);
+    uint8_t rssi = random(networkRSSIMin, networkRSSIMax);
+    debugMessage(String("SIMULATED WiFi RSSI: -") + rssi + "db",1);
+    return(rssi);
   }
 
   void sensorSEN54Simulate()
@@ -1083,7 +1086,7 @@ void retainVOC(float voc)
     }
     switch (currentMode) {
     case 0: // 0 = random values, ignores cycles value
-      simulatedTempF = randomFloatRange(sensorTempMinF,sensorTempMaxF);
+      simulatedTempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
       simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
       simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
       break;    
@@ -1093,7 +1096,7 @@ void retainVOC(float voc)
       }
       if (!cycleCount) {
         // create new base values
-        simulatedTempF = randomFloatRange(sensorTempMinF,sensorTempMaxF);
+        simulatedTempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
         simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
         simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
         cycleCount++;
@@ -1109,7 +1112,7 @@ void retainVOC(float voc)
       }
       break;
     default: // should not occur; random values, ignores cycles value
-      simulatedTempF = randomFloatRange(sensorTempMinF,sensorTempMaxF);
+      simulatedTempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
       simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
       simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
       break;
@@ -1289,8 +1292,8 @@ void retainVOC(float voc)
       }
     }
     if (connected) {
-      hardwareData.rssi = abs(WiFi.RSSI());
-      debugMessage(String("connected to " + WiFi.SSID() + ", ") + WiFi.localIP().toString() + ", " + hardwareData.rssi + " dBm RSSI", 1);
+      hardwareData.rssi = networkRSSIRead();
+      debugMessage(String("connected to " + WiFi.SSID() + ", ") + WiFi.localIP().toString() + ", " + hardwareData.rssi + "dBm RSSI", 1);
     }
     debugMessage(String("openWiFiManager() end"), 2);
     return (connected);
@@ -1729,7 +1732,7 @@ void processSamples(uint8_t& numSamples)
           avgTemperatureF + "F, humidity: " + avgHumidity + "%", 1);
 
         // update RSSI before publishing
-        hardwareData.rssi = abs(WiFi.RSSI());
+        hardwareData.rssi = networkRSSIRead();
         debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
 
         #ifdef THINGSPEAK
@@ -1797,6 +1800,27 @@ void processSamples(uint8_t& numSamples)
   }
   numSamples = 0;
   debugMessage(String("processSamples() end"),2);
+}
+
+uint8_t networkRSSIRead()
+{
+  uint8_t rssi;
+  #ifdef HARDWARE_SIMULATE
+    rssi = networkRSSISimulate();
+  #else
+    // attemot to reconnect to WiFi if needed
+    if (WiFi.status() != WL_CONNECTED) {
+      WiFi.reconnect();
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      rssi = abs(WiFi.RSSI());
+      debugMessage(String("WiFi RSSI: -") + rssi + "db",1);
+    }
+    else
+      rssi = 255; // no network connection
+  #endif
+  return(rssi);
 }
 
 void networkDisconnect()
