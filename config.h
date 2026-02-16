@@ -128,7 +128,6 @@ const uint16_t noxBad = 300;
 // Internet and network endpoints
 const uint32_t timeNetworkTimeoutMS = 10000; // how long to attempt network connects before failing
 const uint32_t timeNetworkKeepAliveMS = 30000;
-const uint32_t timeMQTTKeepAliveMS = 10000; // ping MQTT broker to keep alive
 const uint32_t timeOWMRenewMS = 1800000; // min time between OWM calls
 
 const uint32_t timeHardwareSleepTimeμS = 10000000;  // sleep time if hardware error occurs

@@ -197,11 +197,9 @@ void loop() {
   //  feed alerts cycles
   //  check for touchscreen input
   //  wifi connection check
-  //  mqtt connection check (if needed)
   //  read sensor
   //  update screen saver
   //  check for button press
-  //  OWM update
   //  network endpoint(s) write?
   //  feed web portal cycles
 
@@ -308,19 +306,6 @@ void loop() {
         timeNextNetworkRetryMS = millis() + timeNetworkKeepAliveMS;
       }
     }
-
-    // is it time for MQTT keep alive or reconnect?
-    #ifdef MQTT
-      if (mqtt.connected()) {
-        if (millis() - timeLastMQTTPingMS > timeMQTTKeepAliveMS) {
-          mqtt.loop();
-          timeLastMQTTPingMS = millis();
-        }
-      } 
-      else {
-        mqttConnect();
-      }
-    #endif
   #endif
 
   // is it time to write to the network endpoints?
@@ -1737,34 +1722,38 @@ void processSamples(uint8_t& numSamples)
         #ifdef MQTT
           debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
 
-          // publish device data
-          const char* topic;
+          if(mqttConnect()) {
+            // publish device data
+            const char* topic;
 
-          // publish hardware data
-          topic = generateMQTTTopic(VALUE_KEY_RSSI);
-          mqttPublish(topic, String(hardwareData.rssi));
+            // publish hardware data
+            topic = generateMQTTTopic(VALUE_KEY_RSSI);
+            mqttPublish(topic, String(hardwareData.rssi));
 
-          // publish sensor data
-          topic = generateMQTTTopic(VALUE_KEY_TEMPERATURE);
-          mqttPublish(topic, String(avgTemperatureF));
-          topic = generateMQTTTopic(VALUE_KEY_HUMIDITY);
-          mqttPublish(topic, String(avgHumidity));
-          topic = generateMQTTTopic(VALUE_KEY_PM25);
-          mqttPublish(topic, String(avgPM25));
-          topic = generateMQTTTopic(VALUE_KEY_VOC);
-          mqttPublish(topic, String(avgVOC));
-          topic = generateMQTTTopic(VALUE_KEY_CO2);
-          mqttPublish(topic, String(avgCO2));
-          topic = generateMQTTTopic(VALUE_KEY_NOX);
-          mqttPublish(topic, String(avgNOX));
+            // publish sensor data
+            topic = generateMQTTTopic(VALUE_KEY_TEMPERATURE);
+            mqttPublish(topic, String(avgTemperatureF));
+            topic = generateMQTTTopic(VALUE_KEY_HUMIDITY);
+            mqttPublish(topic, String(avgHumidity));
+            topic = generateMQTTTopic(VALUE_KEY_PM25);
+            mqttPublish(topic, String(avgPM25));
+            topic = generateMQTTTopic(VALUE_KEY_VOC);
+            mqttPublish(topic, String(avgVOC));
+            topic = generateMQTTTopic(VALUE_KEY_CO2);
+            mqttPublish(topic, String(avgCO2));
+            topic = generateMQTTTopic(VALUE_KEY_NOX);
+            mqttPublish(topic, String(avgNOX));
 
-          #ifdef HASSIO_MQTT
-            debugMessage("Establishing MQTT for Home Assistant",1);
-            // Either configure sensors in Home Assistant's configuration.yaml file
-            // directly or attempt to do it via MQTT auto-discovery
-            // hassio_mqtt_setup();  // Config for MQTT auto-discovery
-            hassio_mqtt_publish(avgPM25, avgTemperatureF, avgVOC, avgHumidity);
-          #endif
+            #ifdef HASSIO_MQTT
+              debugMessage("Establishing MQTT for Home Assistant",1);
+              // Either configure sensors in Home Assistant's configuration.yaml file
+              // directly or attempt to do it via MQTT auto-discovery
+              // hassio_mqtt_setup();  // Config for MQTT auto-discovery
+              hassio_mqtt_publish(avgPM25, avgTemperatureF, avgVOC, avgHumidity);
+            #endif
+
+            mqtt.disconnect();
+          }
         #endif
       }
       else {
