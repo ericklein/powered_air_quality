@@ -163,9 +163,7 @@ void setup() {
   }
 
   #ifndef HARDWARE_SIMULATE
-    if (!openWiFiManager()) {
-      hardwareData.rssi = 0;  // 0 = no WiFi
-    }
+    openWiFiManager();
     #ifdef MQTT
       mqttConnect();
     #endif
@@ -196,7 +194,6 @@ void loop() {
   // order of operation
   //  feed alerts cycles
   //  check for touchscreen input
-  //  wifi connection check
   //  read sensor
   //  update screen saver
   //  check for button press
@@ -297,14 +294,6 @@ void loop() {
     // give process time to WiFiManager web portal if active
     if (wfm.getWebPortalActive()) {
       wfm.process();
-    }
-
-    // is it time to check the WiFi connection before network endpoint write or OWM update?
-    if (WiFi.status() != WL_CONNECTED) {
-      if ((long)(millis() - timeNextNetworkRetryMS) >= 0) {
-        WiFi.reconnect();
-        timeNextNetworkRetryMS = millis() + timeNetworkKeepAliveMS;
-      }
     }
   #endif
 
@@ -815,8 +804,18 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
 //  dedicated icon type for no WiFi?
 {
   // convert RSSI values to a 5 bar visual indicator
-  // hardware.rssi = 0 or >90 means no signal
-  uint8_t barCount = (hardwareData.rssi != 0)  ? constrain((6 - ((hardwareData.rssi / 10) - 3)), 0, 5) : 0;
+  // rssi >90 means no signal
+
+  // attemot to reconnect to WiFi if needed
+  if (WiFi.status() != WL_CONNECTED) {
+    WiFi.reconnect();
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+
+    hardwareData.rssi = abs(WiFi.RSSI());
+
+    uint8_t barCount = constrain((6 - ((hardwareData.rssi / 10) - 3)), 0, 5);
   if (barCount > 0) {
     // <50 rssi value = draw 5 bars, each +10 rssi draw one less bar
     for (uint8_t loop = 1; loop <= barCount; loop++) {
@@ -1482,6 +1481,11 @@ bool OWMCurrentWeatherRead()
     // is it time for new OWM data?
     if (millis() - timeLastOWMUpdateMS > timeOWMRenewMS)
     {
+      // attemot to reconnect to WiFi if needed
+      if (WiFi.status() != WL_CONNECTED) {
+        WiFi.reconnect();
+      }
+
       // OWM latitude + longitude is "lat=xx.xxx&lon=-yyy.yyyy"
       static String serverPath = OWMServer + OWMWeatherPath +
         "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&units=imperial&APPID=" + OWMKey;
@@ -1555,54 +1559,67 @@ bool OWMAirPollutionRead()
     OWMAirPollutionSimulate();
     return true;
   #else
-    String serverPath = OWMServer + OWMAQMPath +
+    static int32_t timeLastOWMUpdateMS = -(timeOWMRenewMS); // forces immediate sample at first run
+    
+    // is it time for new OWM data?
+    if (millis() - timeLastOWMUpdateMS > timeOWMRenewMS)
+    {
+      // attemot to reconnect to WiFi if needed
+      if (WiFi.status() != WL_CONNECTED) {
+        WiFi.reconnect();
+      }
+
+    aString serverPath = OWMServer + OWMAQMPath +
      "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&APPID=" + OWMKey;
 
-    HTTPClient http;
-    if (!http.begin(serverPath)) {
-      debugMessage("OWM Air Pollution connection failed",1);
-      return false;
-    }
+      HTTPClient http;
+      if (!http.begin(serverPath)) {
+        debugMessage("OWM Air Pollution connection failed",1);
+        return false;
+      }
 
-    uint16_t httpResponseCode = http.GET();
-    if (httpResponseCode != HTTP_CODE_OK) {
-      debugMessage("OWM AirPollution HTTP GET error code: " + httpResponseCode,1);
+      uint16_t httpResponseCode = http.GET();
+      if (httpResponseCode != HTTP_CODE_OK) {
+        debugMessage("OWM AirPollution HTTP GET error code: " + httpResponseCode,1);
+        http.end();
+        return false;
+      }
+
+      // Filter: only parse what we need (saves RAM)
+      JsonDocument filter;
+      filter["list"][0]["main"]["aqi"] = true;
+      filter["list"][0]["components"]["pm2_5"] = true;
+
+      JsonDocument doc;
+      const DeserializationError error = deserializeJson(
+        doc,
+        http.getStream(),
+        DeserializationOption::Filter(filter)
+      );
+
       http.end();
-      return false;
+
+      if (error) {
+        debugMessage(String("deserializeJson failed with error message: ") + error.c_str(), 1);
+        return false;
+      }
+
+      // owmAirQuality.lon = (float) doc["coord"]["lon"];
+      // owmAirQuality.lat = (float) doc["coord"]["lat"];
+      owmAirQuality.aqi  = doc["list"][0]["main"]["aqi"] | 0;
+      // owmAirQuality.co = (float) list_0_components["co"];
+      // owmAirQuality.no = (float) list_0_components["no"];
+      // owmAirQuality.no2 = (float) list_0_components["no2"];
+      // owmAirQuality.o3 = (float) list_0_components["o3"];
+      // owmAirQuality.so2 = (float) list_0_components["so2"];
+      owmAirQuality.pm25 = doc["list"][0]["components"]["pm2_5"] | NAN;
+      // owmAirQuality.pm10 = (float) list_0_components["pm10"];
+      // owmAirQuality.nh3 = (float) list_0_components["nh3"];
+      debugMessage(String("OWM Air Pollution PM2.5 is ") + owmAirQuality.pm25 + "μg/m3, AQI is " + owmAirQuality.aqi + " of 5",1);
+
+      timeLastOWMUpdateMS = millis();
+      return true;
     }
-
-    // Filter: only parse what we need (saves RAM)
-    JsonDocument filter;
-    filter["list"][0]["main"]["aqi"] = true;
-    filter["list"][0]["components"]["pm2_5"] = true;
-
-    JsonDocument doc;
-    const DeserializationError error = deserializeJson(
-      doc,
-      http.getStream(),
-      DeserializationOption::Filter(filter)
-    );
-
-    http.end();
-
-    if (error) {
-      debugMessage(String("deserializeJson failed with error message: ") + error.c_str(), 1);
-      return false;
-    }
-
-    // owmAirQuality.lon = (float) doc["coord"]["lon"];
-    // owmAirQuality.lat = (float) doc["coord"]["lat"];
-    owmAirQuality.aqi  = doc["list"][0]["main"]["aqi"] | 0;
-    // owmAirQuality.co = (float) list_0_components["co"];
-    // owmAirQuality.no = (float) list_0_components["no"];
-    // owmAirQuality.no2 = (float) list_0_components["no2"];
-    // owmAirQuality.o3 = (float) list_0_components["o3"];
-    // owmAirQuality.so2 = (float) list_0_components["so2"];
-    owmAirQuality.pm25 = doc["list"][0]["components"]["pm2_5"] | NAN;
-    // owmAirQuality.pm10 = (float) list_0_components["pm10"];
-    // owmAirQuality.nh3 = (float) list_0_components["nh3"];
-    debugMessage(String("OWM Air Pollution PM2.5 is ") + owmAirQuality.pm25 + "μg/m3, AQI is " + owmAirQuality.aqi + " of 5",1);
-    return true;
   #endif
 }
 
@@ -1693,6 +1710,11 @@ void processSamples(uint8_t& numSamples)
   if (numSamples) {
     // can we report to network endPoints?
     #ifndef HARDWARE_SIMULATE
+      // attemot to reconnect to WiFi if needed
+      if (WiFi.status() != WL_CONNECTED) {
+        WiFi.reconnect();
+      }
+
       if (WiFi.status() == WL_CONNECTED) {
         // Get averaged sample values from Measure class objects for endPoint reporting
         float avgTemperatureF = totalTemperatureF.getAverage();
@@ -1706,6 +1728,10 @@ void processSamples(uint8_t& numSamples)
         debugMessage(String("PM2.5: ") + avgPM25 + "ppm, CO2: " + avgCO2 + "ppm, VOC index: " + avgVOC + ", NOx index: " + avgNOX + ", " + 
           avgTemperatureF + "F, humidity: " + avgHumidity + "%", 1);
 
+        // update RSSI before publishing
+        hardwareData.rssi = abs(WiFi.RSSI());
+        debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
+
         #ifdef THINGSPEAK
           debugMessage(String("AQI(US): ") + pm25toAQI_US(avgPM25),1);
           if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
@@ -1714,14 +1740,11 @@ void processSamples(uint8_t& numSamples)
         #endif
 
         #ifdef INFLUX
-          debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
           if (!post_influx(avgTemperatureF, avgHumidity, avgCO2 , avgPM25, avgVOC, avgNOX, hardwareData.rssi))
             Serial.println("ERROR: Did not write to influxDB");
         #endif
 
         #ifdef MQTT
-          debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
-
           if(mqttConnect()) {
             // publish device data
             const char* topic;
@@ -1779,7 +1802,6 @@ void processSamples(uint8_t& numSamples)
 void networkDisconnect()
 // Disconnect from WiFi network
 {
-  hardwareData.rssi = 0;
   #ifdef HARDWARE_SIMULATE
     debugMessage("power off: SIMULATED WiFi",1);
     return;
