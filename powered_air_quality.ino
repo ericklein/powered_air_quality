@@ -8,8 +8,10 @@
 #include "config.h"               // hardware and internet configuration parameters
 #include "powered_air_quality.h"  // global data structures
 #include "secrets.h"              // private credentials for network, MQTT
-#include "measure.h"              // Utility class for easy handling of aggregate sensor data
 #include "data.h"
+#include <SensirionI2cSen66.h>
+
+#include <Measure.hpp>              // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
 #include <SPI.h>                  // TFT_eSPI and XPT2046_Touchscreen
 
 #ifndef HARDWARE_SIMULATE
@@ -64,7 +66,7 @@
   #endif
 #endif
 
-// 3.2″ 320x240 color TFT w/resistive touch screen
+// 2.8″ 320x240 color TFT
 #include <TFT_eSPI.h>  // https://github.com/Bodmer/TFT_eSPI
 TFT_eSPI display = TFT_eSPI();
 
@@ -74,7 +76,7 @@ TFT_eSPI display = TFT_eSPI();
 #include "Fonts/meteocons24pt7b.h"
 #include "glyphs.h"
 
-// touchscreen
+// CYD touchscreen
 #include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
 SPIClass touchscreenSPI = SPIClass(VSPI);
 XPT2046_Touchscreen touchscreen(pinXPT2046_CS,pinXPT2046_IRQ);
@@ -135,6 +137,7 @@ void setup() {
   ledcAttach(pinLedRed, PWM_FREQ, PWM_BITS);
   ledcAttach(pinLedGreen, PWM_FREQ, PWM_BITS);
   ledcAttach(pinLedBlue, PWM_FREQ, PWM_BITS);
+  ledcAttach(pinAudio, 2000, 10);
 
   // turn off onboard LED
   setRGB(0x0000); // black = off
@@ -146,17 +149,17 @@ void setup() {
 
   // initialize sensor(s)
   if( !sensorInit()) {
-    debugMessage("setup(): sensor initialization failure",1);
-    screenHelperAlert("Sensor failure, rebooting",TFT_WHITE,TFT_BLACK,TFT_WHITE);
-    delay(5000);
-    // This error often occurs after firmware flash and reset, hardware deep sleep typically resolves it
-    deviceDeepSleep(timeHardwareSleepTimeμS);
+    debugMessage("setup(): sensor initialization failure",1); // error often occurs after firmware flash/reset
+    display.setFreeFont(&FreeSans18pt7b);
+    deviceReboot(6000, "Sensor failure, rebooting");
   }
 
-  // initialize sensor value arrays
+  // initialize variables
+  owmCurrentData.tempF = 255.0f; // 255 indicates no data
+  owmAirQuality.aqi = 255; // 255 indicates no data
   for(uint8_t loop=0;loop<graphPoints;loop++) {
-    sensorData.ambientCO2[loop] = -1;
-    sensorData.vocIndex[loop] = -1;
+    sensorData.ambientCO2[loop] = -1.0f;
+    sensorData.vocIndex[loop] = -1.0f;
   }
 
   #ifndef HARDWARE_SIMULATE
@@ -189,6 +192,18 @@ void loop() {
   static uint32_t timeNextNetworkRetryMS  = 0;
   static uint32_t timeLastOWMUpdateMS     = -(timeOWMKeepAliveMS); // forces immediate sample in loop()
   uint16_t calibratedX, calibratedY;
+
+  // order of operation
+  //  feed alerts cycles
+  //  check for touchscreen input
+  //  wifi connection check
+  //  mqtt connection check (if needed)
+  //  read sensor
+  //  update screen saver
+  //  check for button press
+  //  OWM update
+  //  network endpoint(s) write?
+  //  feed web portal cycles
 
   // is it time to read the sensor?
   if ((millis() - timeLastSampleMS) >= timeSensorSampleMS) {
@@ -278,8 +293,8 @@ void loop() {
   }
 
   #ifndef HARDWARE_SIMULATE
-    // is there a long press on the reset button to wipe all configuration data?
-    checkButtonPress();  // Always watching for long-press to wipe
+    // reset button press that needs to be handled?
+    checkButtonPress();
 
     // give process time to WiFiManager web portal if active
     if (wfm.getWebPortalActive()) {
@@ -307,22 +322,6 @@ void loop() {
       }
     #endif
   #endif
-
-  // is it time to update OWM data?
-  if ((millis() - timeLastOWMUpdateMS) >= timeOWMKeepAliveMS) {
-    // update local weather data
-    if (!OWMCurrentWeatherRead()) {
-      owmCurrentData.tempF = 255;
-      debugMessage("OWM weather read failed!",1);
-    }
-    
-    // update local air quality data
-    if (!OWMAirPollutionRead()) {
-      owmAirQuality.aqi = 255;
-      debugMessage("OWM AQI read failed!",1);
-    }
-    timeLastOWMUpdateMS = millis();
-  }
 
   // is it time to write to the network endpoints?
   if ((millis() - timeLastReportMS) >= timeReportMS) {
@@ -548,7 +547,7 @@ void screenTempHumidity()
 // Description: Displays indoor and outdoor temperature and humidity
 // Parameters:
 // Output: NA (void)
-// Improvement: 
+// Improvement: add last time updated for outside temperatures, handling no data or no recent data
 {
   // screen layout assists in pixels
   const uint8_t yStatusRegion = display.height()/8;
@@ -587,8 +586,7 @@ void screenTempHumidity()
   display.drawBitmap((display.width()/4 + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
 
   // Outside
-  // do we have OWM Current data to display?
-  if (owmCurrentData.tempF != 255) {
+  if ((OWMCurrentWeatherRead()) && (owmCurrentData.tempF != 255)) {
     // Outside temp
     if ((owmCurrentData.tempF < sensorTempFComfortMin) || (owmCurrentData.tempF > sensorTempFComfortMax))
       display.setTextColor(TFT_YELLOW);
@@ -604,16 +602,16 @@ void screenTempHumidity()
       display.setTextColor(TFT_WHITE);
     display.drawString(String((uint8_t)(owmCurrentData.humidity + 0.5)), (display.width()*3/4), (display.height()*5/8));
     display.drawBitmap(((display.width()*3/4) + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
-  }
-
-  //weather icon
-  char weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
-  // if getMeteoIcon doesn't have a matching symbol, skip display
-  if (weatherIcon != '?') {
-    // display icon
-    display.setFreeFont(&meteocons24pt7b);
-    display.setTextColor(TFT_WHITE);
-    display.drawString(String(weatherIcon), ((display.width()*3/4)-12), (display.height()*7/8));
+    
+    //weather icon
+    char weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
+    // if getMeteoIcon doesn't have a matching symbol, skip display
+    if (weatherIcon != '?') {
+      // display icon
+      display.setFreeFont(&meteocons24pt7b);
+      display.setTextColor(TFT_WHITE);
+      display.drawString(String(weatherIcon), ((display.width()*3/4)-12), (display.height()*7/8));
+    }
   }
   debugMessage("screenTempHumidity() end", 2);
 }
@@ -622,7 +620,7 @@ void screenPM25()
 // Description: Displays indoor and outdoor PM25, outdoor air pollution index
 // Parameters:
 // Output: NA (void)
-// Improvement: 
+// Improvement: add last time updated for outside AQI, handling no data or no recent data
 {
   // screen layout assists in pixels
   const uint8_t   yStatusRegion = display.height()/8;
@@ -669,7 +667,7 @@ void screenPM25()
   
   // Outside
   // do we have OWM Air Quality data to display?
-  if (owmAirQuality.aqi != 255) {
+  if ((OWMAirPollutionRead()) && (owmAirQuality.aqi != 255)) {
     // Outside PM2.5
     display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
     display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
@@ -684,13 +682,13 @@ void screenPM25()
     display.setCursor(xOutdoorCircleText,yPMCircles + 23);
     display.setFreeFont(&FreeSans9pt7b);
     display.print("PM25");
-  }
 
-  // outside AQI
-  display.setCursor(xOutdoorMargin, yPollution);
-  display.print(OWMPollutionLabel[(owmAirQuality.aqi)]);
-  display.setCursor(xOutdoorMargin, yPollution + 15);
-  display.print("air pollution");
+    // outside AQI
+    display.setCursor(xOutdoorMargin, yPollution);
+    display.print(OWMPollutionLabel[(owmAirQuality.aqi)]);
+    display.setCursor(xOutdoorMargin, yPollution + 15);
+    display.print("air pollution");
+  }
   debugMessage("screenPM25() end", 2);
 }
 
@@ -1202,6 +1200,7 @@ void retainVOC(float voc)
       String parameterText = hardwareDeviceType + " setup";
 
       display.setFreeFont(&FreeSans18pt7b);
+      // ALERT 
       screenHelperAlert(String("goto WiFi AP '") + parameterText + "'",TFT_WHITE,TFT_BLACK,TFT_WHITE);
 
       wfm.setTitle("Ola friend!");
@@ -1354,6 +1353,7 @@ void retainVOC(float voc)
   void startWebPortal()
   {
     display.setFreeFont(&FreeSans18pt7b);
+    // ALERT
     screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_WHITE);
     wfm.startWebPortal();
     screenUpdate(screenCurrent);
@@ -1471,6 +1471,20 @@ void retainVOC(float voc)
   }
 #endif  
 
+/**
+ * @brief retreives current weather data from Open Weather Maps.
+ *
+ * If device is in hardware simulation mode, calls OWMCurrentWeatherSimulate() and returns.
+ * If not, verifies that more than X minutes have elapsed since last OWM request
+ *
+ * @param 
+ *
+ * @return BOOL true if the function has successfully updated current weather data
+ *
+ * @note 
+ *
+ * @warning 
+ */
 bool OWMCurrentWeatherRead()
 // Gets Open Weather Map Current Weather data
 {
@@ -1478,66 +1492,74 @@ bool OWMCurrentWeatherRead()
     OWMCurrentWeatherSimulate();
     return true;
   #else
-    // OWM latitude + longitude is "lat=xx.xxx&lon=-yyy.yyyy"
-    String serverPath = OWMServer + OWMWeatherPath +
-      "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&units=imperial&APPID=" + OWMKey;
+    static int32_t timeLastOWMUpdateMS = -(timeOWMRenewMS); // forces immediate sample at first run
+    
+    // is it time for new OWM data?
+    if (millis() - timeLastOWMUpdateMS > timeOWMRenewMS)
+    {
+      // OWM latitude + longitude is "lat=xx.xxx&lon=-yyy.yyyy"
+      static String serverPath = OWMServer + OWMWeatherPath +
+        "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&units=imperial&APPID=" + OWMKey;
 
-    HTTPClient http;
-    if (!http.begin(serverPath)) {
-      debugMessage("OWM Current Weather connection failed",1);
-      return false;
-    }
+      HTTPClient http;
+      if (!http.begin(serverPath)) {
+        debugMessage("OWM Current Weather connection failed",1);
+        return false;
+      }
 
-    uint16_t httpResponseCode = http.GET();
-    if (httpResponseCode != HTTP_CODE_OK) {
-      debugMessage("OWM Current Weather HTTP GET error code: " + httpResponseCode,1);
+      uint16_t httpResponseCode = http.GET();
+      if (httpResponseCode != HTTP_CODE_OK) {
+        debugMessage("OWM Current Weather HTTP GET error code: " + httpResponseCode,1);
+        http.end();
+        return false;
+      }  
+
+      // Filter: only parse what we need (saves RAM)
+      JsonDocument filter;
+      filter["main"]["temp"] = true;
+      filter["main"]["humidity"] = true;
+      filter["name"] = true;
+      filter["weather"][0]["icon"] = true;
+
+      JsonDocument doc;
+      const DeserializationError error = deserializeJson(
+        doc,
+        http.getStream(),                      // parse directly from stream
+        DeserializationOption::Filter(filter)  // apply filter
+      );
+
       http.end();
-      return false;
-    }  
 
-    // Filter: only parse what we need (saves RAM)
-    JsonDocument filter;
-    filter["main"]["temp"] = true;
-    filter["main"]["humidity"] = true;
-    filter["name"] = true;
-    filter["weather"][0]["icon"] = true;
+      if (error) {
+        debugMessage(String("OWM Current Weather deserializeJson error message: ") + error.c_str(), 1);
+        return false;
+      }
 
-    JsonDocument doc;
-    const DeserializationError error = deserializeJson(
-      doc,
-      http.getStream(),                      // parse directly from stream
-      DeserializationOption::Filter(filter)  // apply filter
-    );
-
-    http.end();
-
-    if (error) {
-      debugMessage(String("deserializeJson failed with error message: ") + error.c_str(), 1);
-      return false;
+      // owmCurrentData.lat = doc["coord"]["lat"];
+      // owmCurrentData.lon = doc["coord"]["lon"];
+      // owmCurrentData.main = (const char*) doc["weather"][0]["main"];
+      // owmCurrentData.description = (const char*) doc["weather"][0]["description"];
+      const char* iconStr = doc["weather"][0]["icon"] | "";
+      strlcpy(owmCurrentData.icon, iconStr, sizeof(owmCurrentData.icon));
+      owmCurrentData.cityName = (const char *)(doc["name"] | "");
+      // owmCurrentData.visibility = doc["visibility"];
+      // owmCurrentData.timezone = (time_t) doc["timezone"];
+      // owmCurrentData.country = (const char*) doc["sys"]["country"];
+      // owmCurrentData.observationTime = (time_t) doc["dt"];
+      // owmCurrentData.sunrise = (time_t) doc["sys"]["sunrise"];
+      // owmCurrentData.sunset = (time_t) doc["sys"]["sunset"];
+      owmCurrentData.tempF = doc["main"]["temp"] | NAN;
+      // owmCurrentData.pressure = (uint16_t) doc["main"]["pressure"];
+      owmCurrentData.humidity = doc["main"]["humidity"] | 0;
+      // owmCurrentData.tempMin = (float) doc["main"]["temp_min"];
+      // owmCurrentData.tempMax = (float) doc["main"]["temp_max"];
+      // owmCurrentData.windSpeed = (float) doc["wind"]["speed"];
+      // owmCurrentData.windDeg = (float) doc["wind"]["deg"];
+      debugMessage(String("OWM Current Weather for ") + owmCurrentData.cityName + " is " + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "% RH", 1);
+      
+      timeLastOWMUpdateMS = millis();
+      return true;
     }
-
-    // owmCurrentData.lat = doc["coord"]["lat"];
-    // owmCurrentData.lon = doc["coord"]["lon"];
-    // owmCurrentData.main = (const char*) doc["weather"][0]["main"];
-    // owmCurrentData.description = (const char*) doc["weather"][0]["description"];
-    const char* iconStr = doc["weather"][0]["icon"] | "";
-    strlcpy(owmCurrentData.icon, iconStr, sizeof(owmCurrentData.icon));
-    owmCurrentData.cityName = (const char *)(doc["name"] | "");
-    // owmCurrentData.visibility = doc["visibility"];
-    // owmCurrentData.timezone = (time_t) doc["timezone"];
-    // owmCurrentData.country = (const char*) doc["sys"]["country"];
-    // owmCurrentData.observationTime = (time_t) doc["dt"];
-    // owmCurrentData.sunrise = (time_t) doc["sys"]["sunrise"];
-    // owmCurrentData.sunset = (time_t) doc["sys"]["sunset"];
-    owmCurrentData.tempF = doc["main"]["temp"] | NAN;
-    // owmCurrentData.pressure = (uint16_t) doc["main"]["pressure"];
-    owmCurrentData.humidity = doc["main"]["humidity"] | 0;
-    // owmCurrentData.tempMin = (float) doc["main"]["temp_min"];
-    // owmCurrentData.tempMax = (float) doc["main"]["temp_max"];
-    // owmCurrentData.windSpeed = (float) doc["wind"]["speed"];
-    // owmCurrentData.windDeg = (float) doc["wind"]["deg"];
-    debugMessage(String("OWM Current Weather for ") + owmCurrentData.cityName + " is " + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "% RH", 1);
-    return true;
   #endif
 }
 
@@ -1758,6 +1780,7 @@ void processSamples(uint8_t& numSamples)
     totalNOxIndex.clear();
   }      
   else {
+    // ALERT for sustained sensor read problem
     debugMessage("No samples to process this cycle",1);
   }
   numSamples = 0;
@@ -1790,12 +1813,12 @@ bool sensorInit()
   #ifdef SENSOR_SEN54SCD40
     bool success = true;
     // Initialize PM25 sensor (SEN54)
-    if (!sensorPMInit()) {
+    if (!sensorSEN54Init()) {
       success = false;
     }
 
     // Initialize CO2 Sensor (SCD4X)
-    if (!sensorCO2Init()) {
+    if (!sensorSCD4xInit()) {
       success = false;
     }
     return(success);
@@ -1814,15 +1837,16 @@ bool sensorRead()
 
   #ifdef SENSOR_SEN54SCD40
     bool status = true;
-    if (!sensorPMRead())
+    if (!sensorSEN554Read())
     {
-      // TODO: what else to do here, see OWM Reads...
+      // ALERT
       debugMessage("PM sensor read failed",1);
       status = false;
     }
 
-    if (!sensorCO2Read())
+    if (!sensorSCD4xRead())
     {
+      // ALERT
       screenHelperAlert("CO2 read fail", TFT_WHITE,TFT_BLACK,TFT_WHITE);
       debugMessage("CO2 sensor read failed",1);
       status = false;
@@ -1906,7 +1930,7 @@ bool sensorRead()
 
 // Functions to be compiled in and use with the SEN54 + SCD40 configuration
 #ifdef SENSOR_SEN54SCD40
-  bool sensorPMInit()
+  bool sensorSEN54Init()
   {
     #ifdef HARDWARE_SIMULATE
       return true;
@@ -1915,7 +1939,7 @@ bool sensorRead()
       char errorMessage[256];
 
       // Wire.begin();
-      // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
+      // IMPROVEMENT: Do you need another Wire.begin() [see sensorSEN54Init()]?
       Wire.begin(pinSDA, pinSCL);
       pmSensor.begin(Wire);
 
@@ -1964,7 +1988,7 @@ bool sensorRead()
     #endif
   }
 
-  bool sensorPMRead()
+  bool sensorSEN554Read()
   {
     #ifdef HARDWARE_SIMULATE
       sensorSEN54Simulate();
@@ -1995,7 +2019,7 @@ bool sensorRead()
     #endif
   }
 
-  bool sensorCO2Init()
+  bool sensorSCD4xInit()
   // initializes SCD4X to read
   {
     #ifdef HARDWARE_SIMULATE
@@ -2004,7 +2028,7 @@ bool sensorRead()
       char errorMessage[256];
       uint16_t error;
 
-      // IMPROVEMENT: Do you need another Wire.begin() [see sensorPMInit()]?
+      // IMPROVEMENT: Do you need another Wire.begin() [see sensorSEN54Init()]?
       Wire.begin(pinSDA, pinSCL);
       co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
 
@@ -2043,10 +2067,10 @@ bool sensorRead()
     #endif
   }
 
-  bool sensorCO2Read()
-  // Description: Sets global environment values from SCD40 sensor
+  bool sensorSCD4xRead()
+  // Description: Retrieves values from SCD4x sensor
   // Parameters: none
-  // Output : true if successful read, false if not
+  // Output : raw tempF, humidity, and CO2 values from SCD4x
   // Improvement : NA  
   {
     bool success = false;
@@ -2068,7 +2092,7 @@ bool sensorRead()
         delay(100);
         errorCount++;
         if (errorCount > co2SensorReadFailureLimit) {
-          debugMessage(String("SCD40 failed to read after ") + errorCount + " attempts",1);
+          debugMessage(String("SCD4x failed to read after ") + errorCount + " attempts",1);
           break;
         }
         // Is data ready to be read?
@@ -2093,24 +2117,35 @@ bool sensorRead()
         else if (co2 < sensorCO2Min || co2 > sensorCO2Max)
         {
           debugMessage(String("SCD40 CO2 reading: ") + co2 + " is out of expected range",1);
-          //(sensorData.ambientCO2 < sensorCO2Min) ? sensorData.ambientCO2 = sensorCO2Min : sensorData.ambientCO2 = sensorCO2Max;
           // Implicitly continues back to the top of the loop
         }
         else
         {
-          // Valid measurement available, update globals
+          // Valid measurement, update globals
+          success = true;
           sensorData.ambientTemperatureF = (temperatureC*1.8)+32.0;
           sensorData.ambientHumidity = humidity;
           retainCO2(co2);
-          debugMessage(String("SCD40: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + uint16_t(sensorData.ambientCO2[graphPoints-1]) + " ppm",1);
-          // Update global sensor readings
-          success = true;
+          debugMessage(String("SCD4x: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + uint16_t(sensorData.ambientCO2[graphPoints-1]) + " ppm",1);
+          // check for new values that require user alert
+          sensorSCD4xEvaluate();
           break;
         }
-        delay(100); // reduces readMeasurement() "Not enough data received" errors
       }
     #endif
     return(success);
+  }
+
+  void sensorSCD4xAlert()
+  {
+    // Description: evaluates latest SCD4x sensor values for values that indicate
+    //  rapid deterioration of qir quality. If so, initiate a user alert
+    // Parameters: NA
+    // Output : 
+    // Improvement : this is just meant to trigger the a
+
+    uint16_t currentValue = totalCO2.getCurrent();
+    if 
   }
 #endif // SENSOR_SEN54SCD40
 
@@ -2126,30 +2161,23 @@ String deviceGetID(String prefix)
   }
 }
 
-void deviceDeepSleep(uint32_t deepSleepTime)
-// turns off component hardware then puts ESP32 into deep sleep mode for specified seconds
+void deviceReboot(uint16_t timeAlertMS, String messageText)
 {
-  debugMessage("deviceDeepSleep() start",1);
-
-  // power down SCD4X by stopping potentially started measurement then power down SCD4X
-  #ifndef HARDWARE_SIMULATE
-    /* DJB-DEV
-    uint16_t error = co2Sensor.stopPeriodicMeasurement();
-    if (error) {
-      char errorMessage[256];
-      errorToString(error, errorMessage, 256);
-      debugMessage(String(errorMessage) + " executing SCD4X stopPeriodicMeasurement()",1);
-    }
-    co2Sensor.powerDown();
-    debugMessage("power off: SCD4X",2);
-    */
-  #endif
-
+  debugMessage("deviceReboot() start",1);
+  display.setFreeFont(&FreeSans18pt7b);
+  screenHelperAlert(messageText,TFT_WHITE,TFT_BLACK,TFT_WHITE);
   networkDisconnect();
 
-  esp_sleep_enable_timer_wakeup(deepSleepTime);
-  debugMessage(String("deviceDeepSleep() end: ESP32 deep sleep for ") + (deepSleepTime/1000000) + " seconds",1);
-  esp_deep_sleep_start();
+  uint32_t timeRebootStartMS = millis();
+
+  // ledcWriteTone(pinAudio, 2000);
+  while (millis() - timeRebootStartMS < timeAlertMS)
+  {
+    blinkStatusLED(1000, 0xF800); // one second interval in red
+  }
+  // ledcWriteTone(pinAudio,0);
+  debugMessage("deviceReboot() end",1);
+  ESP.restart();
 }
 
 /**
@@ -2404,6 +2432,20 @@ static inline void setRGB(uint16_t color565)
   ledcWrite(pinLedRed, MAX_DUTY - r8);
   ledcWrite(pinLedGreen, MAX_DUTY - g8);
   ledcWrite(pinLedBlue, MAX_DUTY - b8);
+}
+
+void blinkStatusLED(uint16_t timeBlinkMS, uint16_t color)
+{
+  static uint32_t lastToggleMs = 0;
+  static bool ledOn = false;
+
+  uint32_t now = millis();
+  if (now - lastToggleMs >= timeBlinkMS) {
+    lastToggleMs = now;
+    ledOn = !ledOn;
+
+    setRGB(ledOn ? color : 0x0000);
+  }
 }
 
 void debugMessage(String messageText, uint8_t messageLevel)

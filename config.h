@@ -129,7 +129,7 @@ const uint16_t noxBad = 300;
 const uint32_t timeNetworkTimeoutMS = 10000; // how long to attempt network connects before failing
 const uint32_t timeNetworkKeepAliveMS = 30000;
 const uint32_t timeMQTTKeepAliveMS = 10000; // ping MQTT broker to keep alive
-const uint32_t timeOWMKeepAliveMS = 1800000;
+const uint32_t timeOWMRenewMS = 1800000; // min time between OWM calls
 
 const uint32_t timeHardwareSleepTimeμS = 10000000;  // sleep time if hardware error occurs
 // button
@@ -162,6 +162,7 @@ static constexpr uint8_t pinSCL = 27;
 static constexpr uint8_t pinLedRed = 4;
 static constexpr uint8_t pinLedGreen = 16;
 static constexpr uint8_t pinLedBlue = 17;
+static constexpr uint8_t pinAudio = 26;
 static constexpr uint8_t pinXPT2046_IRQ = 36;
 static constexpr uint8_t pinXPT2046_MOSI = 32;
 static constexpr uint8_t pinXPT2046_MISO = 39;
