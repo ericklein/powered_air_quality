@@ -9,8 +9,6 @@
 #include "powered_air_quality.h"  // global data structures
 #include "secrets.h"              // private credentials for network, MQTT
 #include "data.h"
-#include <SensirionI2cSen66.h>
-
 #include <Measure.hpp>              // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
 #include <SPI.h>                  // TFT_eSPI and XPT2046_Touchscreen
 
@@ -31,6 +29,13 @@
     #include <SensirionI2cScd4x.h>
     SensirionI2cScd4x co2Sensor;
   #endif // SENSOR_SEN54SCD40
+
+  #include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
+  #include <LEDControl.h>           // multi LED strip async control
+
+  // Instantiate LED strips
+  CRGB ledsOne[ledStripPixelCount];
+  LEDControl stripOne(ledStripPixelCount,ledsOne); 
 
   #include <HTTPClient.h>
   #include <ArduinoJson.h>      // https://github.com/bblanchon/ArduinoJson, used by OWM retrieval routines
@@ -133,16 +138,11 @@ void setup() {
 
   // initialize GPIO
   pinMode(pinButton, INPUT_PULLUP);
-
-  ledcAttach(pinLedRed, PWM_FREQ, PWM_BITS);
-  ledcAttach(pinLedGreen, PWM_FREQ, PWM_BITS);
-  ledcAttach(pinLedBlue, PWM_FREQ, PWM_BITS);
   ledcAttach(pinAudio, 2000, 10);
 
-  // turn off onboard LED
-  setRGB(0x0000); // black = off
-
   #ifndef HARDWARE_SIMULATE
+    ledInit();
+
     // load before sensorInit() to get altitude data for sensor setup
     loadNVConfig();
   #endif
@@ -165,14 +165,10 @@ void setup() {
 
   #ifndef HARDWARE_SIMULATE
     openWiFiManager();
-    #ifdef MQTT
-      mqttConnect();
-    #endif
 
-    // Explicit start-up delay because the SEN66 takes 5-6 seconds to return valid
-    // CO2 readinggs and 10-11 seconds to return valid NOx index values, and the SEN554
-    // takes up to 6 seconds to return valid NOx index values.  The user interface 
-    // should display "Initializing" during this delay
+    // Explicit start-up delay
+    // SEN66 takes 5-6 seconds to return valid CO2 readings, 10-11 seconds for valid NOx index values
+    // SEN554 takes up to 6 seconds to return valid NOx index values.
     #ifdef SENSOR_SEN66
       delay(12000);
     #endif
@@ -203,25 +199,11 @@ void loop() {
 
   // is it time to read the sensor?
   if ((millis() - timeLastSampleMS) >= timeSensorSampleMS) {
-    // Read sensor(s) to obtain all environmental values
+    // Read sensor(s)
     if (sensorRead()) {
-      // add to the running totals
       numSamples++;
-      totalTemperatureF.include(sensorData.ambientTemperatureF);
-      totalHumidity.include(sensorData.ambientHumidity);
-      totalCO2.include(sensorData.ambientCO2[graphPoints-1]);
-      totalVOCIndex.include(sensorData.vocIndex[graphPoints-1]);
-      totalPM25.include(sensorData.pm25);
-      totalNOxIndex.include(sensorData.noxIndex);
-
-      debugMessage(String("Sample #") + numSamples + ", running totals: ",2);
-      debugMessage(String("TemperatureF total: ") + totalTemperatureF.getTotal(),2);
-      debugMessage(String("Humidity total: ") + totalHumidity.getTotal(),2);
-      debugMessage(String("CO2 total: ") + totalCO2.getTotal(),2);    
-      debugMessage(String("VOC index total: ") + totalVOCIndex.getTotal(),2);
-      debugMessage(String("PM25 total: ") + totalPM25.getTotal(),2);
-      debugMessage(String("NOx index total: ") + totalNOxIndex.getTotal(),2);
-
+      sampleEvaluate();
+      // this would be a good place to evaluate whether the screen actually needs updated based on data change
       screenUpdate(screenCurrent);
     }
     else {
@@ -288,19 +270,22 @@ void loop() {
     screenUpdate(screenCurrent);
   }
 
-  #ifndef HARDWARE_SIMULATE
-    // reset button press that needs to be handled?
-    checkButtonPress();
+  // (reset) button press that needs to be handled?
+  checkButtonPress();
 
-    // give process time to WiFiManager web portal if active
-    if (wfm.getWebPortalActive()) {
-      wfm.process();
-    }
-  #endif
+  // give processor cycles to WiFiManager web portal if active
+  if (wfm.getWebPortalActive()) {
+    wfm.process();
+  }
+
+  // give processor cycles to ledControl
+  ledsOne.update();
+  FastLED.show();
+  delay(100);          // 10Hz clock for driving animations
 
   // is it time to write to the network endpoints?
   if ((millis() - timeLastReportMS) >= timeReportMS) {
-    processSamples(numSamples);
+    samplePost(numSamples);
     timeLastReportMS = millis();
   }
 }
@@ -696,7 +681,7 @@ void screenVOC()
   }
 
   // Update RGB LED based on VOC severity
-  setRGB(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
+  // ledsOne.setOneColor(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
 
   debugMessage("screenVOC() end",1);
 }
@@ -747,11 +732,10 @@ void screenCO2()
   }
 
   // Update RGB LED based on CO₂ severity
-  setRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]);
+  // ledsOne.setOneColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]);
 
   debugMessage("screenCO2() end", 1);
 }
-
 
 void screenNOX()
 // Description: Display NOx index information (ppm, color grade, graph)
@@ -792,7 +776,7 @@ void screenNOX()
   display.print("NOx");
 
   // Update RGB LED based on NOx severity
-  setRGB(warningColor[noxRange(sensorData.noxIndex)]);
+  // ledsOne.setOneColor(warningColor[noxRange(sensorData.noxIndex)]);
 
   debugMessage("screenNOX() end",1);
 }
@@ -987,6 +971,133 @@ void screenHelperComponentSetup(String header)
   debugMessage("screenHelperStatusBar() end",1);
 }
 
+void sampleEvaluate()
+{
+  debugMessage(String("sampleEvaluate() start"),2);
+  debugMessage(String("sampleEvaluate() start"),2);
+}
+
+/**
+ * @brief Process and report accumulated sensor samples.
+ *
+ * Computes averaged sensor values from accumulated sample buffers and reports
+ * them to enabled network endpoints (ThingSpeak, InfluxDB, MQTT, Home Assistant),
+ * depending on compile-time configuration and network availability.
+ *
+ * If no samples are available, the function exits without performing any
+ * reporting.
+ *
+ * After processing, all accumulated sample buffers are cleared and the
+ * sample counter is reset to zero to prepare for the next sampling interval.
+ *
+ * @param[in,out] numSamples Reference to the number of samples accumulated
+ *                           during the current reporting interval. A value
+ *                           greater than zero indicates that samples are
+ *                           available for processing. This value is reset
+ *                           to zero after processing.
+ *
+ * @note Network reporting is skipped if WiFi is not connected.
+ * @note Endpoint support is controlled via compile-time flags
+ *       (THINGSPEAK, INFLUX, MQTT, HASSIO_MQTT).
+ * @note The sample counter is reset regardless of whether reporting succeeds.
+ */
+void samplePost(uint8_t& numSamples)
+{
+  debugMessage(String("samplePost() start"),2);
+
+  // do we have samples to process?
+  if (numSamples) {
+    // can we report to network endPoints?
+    #ifndef HARDWARE_SIMULATE
+      // attemot to reconnect to WiFi if needed
+      if (WiFi.status() != WL_CONNECTED) {
+        WiFi.reconnect();
+      }
+
+      if (WiFi.status() == WL_CONNECTED) {
+        // Get averaged sample values from Measure class objects for endPoint reporting
+        float avgTemperatureF = totalTemperatureF.getAverage();
+        float avgHumidity = totalHumidity.getAverage();
+        uint16_t avgCO2 = totalCO2.getAverage();
+        float avgVOC = totalVOCIndex.getAverage();
+        float avgPM25 = totalPM25.getAverage();
+        float avgNOX = totalNOxIndex.getAverage();
+
+        debugMessage(String("Averages for the last ") + (timeReportMS/60000) + " minutes for endpoint reporting",1);
+        debugMessage(String("PM2.5: ") + avgPM25 + "ppm, CO2: " + avgCO2 + "ppm, VOC index: " + avgVOC + ", NOx index: " + avgNOX + ", " + 
+          avgTemperatureF + "F, humidity: " + avgHumidity + "%", 1);
+
+        // update RSSI before publishing
+        hardwareData.rssi = networkRSSIRead();
+        debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
+
+        #ifdef THINGSPEAK
+          debugMessage(String("AQI(US): ") + pm25toAQI_US(avgPM25),1);
+          if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
+            Serial.println("ERROR: Did not write to ThingSpeak");
+          }
+        #endif
+
+        #ifdef INFLUX
+          if (!post_influx(avgTemperatureF, avgHumidity, avgCO2 , avgPM25, avgVOC, avgNOX, hardwareData.rssi))
+            Serial.println("ERROR: Did not write to influxDB");
+        #endif
+
+        #ifdef MQTT
+          if(mqttConnect()) {
+            // publish device data
+            const char* topic;
+
+            // publish hardware data
+            topic = generateMQTTTopic(VALUE_KEY_RSSI);
+            mqttPublish(topic, String(hardwareData.rssi));
+
+            // publish sensor data
+            topic = generateMQTTTopic(VALUE_KEY_TEMPERATURE);
+            mqttPublish(topic, String(avgTemperatureF));
+            topic = generateMQTTTopic(VALUE_KEY_HUMIDITY);
+            mqttPublish(topic, String(avgHumidity));
+            topic = generateMQTTTopic(VALUE_KEY_PM25);
+            mqttPublish(topic, String(avgPM25));
+            topic = generateMQTTTopic(VALUE_KEY_VOC);
+            mqttPublish(topic, String(avgVOC));
+            topic = generateMQTTTopic(VALUE_KEY_CO2);
+            mqttPublish(topic, String(avgCO2));
+            topic = generateMQTTTopic(VALUE_KEY_NOX);
+            mqttPublish(topic, String(avgNOX));
+
+            #ifdef HASSIO_MQTT
+              debugMessage("Establishing MQTT for Home Assistant",1);
+              // Either configure sensors in Home Assistant's configuration.yaml file
+              // directly or attempt to do it via MQTT auto-discovery
+              // hassio_mqtt_setup();  // Config for MQTT auto-discovery
+              hassio_mqtt_publish(avgPM25, avgTemperatureF, avgVOC, avgHumidity);
+            #endif
+
+            mqtt.disconnect();
+          }
+        #endif
+      }
+      else {
+        debugMessage("No network, endpoint reporting skipped",1);
+      }
+    #endif
+    // Reset sample counters
+    totalTemperatureF.clear();
+    totalHumidity.clear();
+    totalCO2.clear();
+    totalVOCIndex.clear();
+    totalPM25.clear();
+    totalNOxIndex.clear();
+  }      
+  else {
+    // ALERT for sustained sensor read problem
+    debugMessage("No samples to process this cycle",1);
+  }
+  numSamples = 0;
+  debugMessage(String("samplePost() end"),2);
+}
+
 void retainCO2(float co2)
 // Description: add new element, FIFO, to CO2 array
 // Parameters:  new CO2 value from sensor
@@ -1133,8 +1244,8 @@ void retainVOC(float voc)
   // Improvement: implement mode passthrough for other sensorSimulate APIs
   {
     sensorSCD4xSimulate(1,3); // tempF, humidity, and CO2 values
-    sensorSEN54Simulate(); // pm values
-    sensorData.noxIndex = randomFloatRange(sensorVOCMin, sensorVOCMax);
+    sensorSEN54Simulate(); // pm25, VOCIndex values
+    sensorData.noxIndex = randomFloatRange(sensorNOxMin, sensorNOxMax);
 
     debugMessage(String("SIMULATED SEN66 noxIndex: ") + sensorData.noxIndex,1);
   }
@@ -1681,127 +1792,6 @@ char OWMtoMeteoconIcon(const char* icon)
   return '?'; // error handling for calling function
 }
 
-/**
- * @brief Process and report accumulated sensor samples.
- *
- * Computes averaged sensor values from accumulated sample buffers and reports
- * them to enabled network endpoints (ThingSpeak, InfluxDB, MQTT, Home Assistant),
- * depending on compile-time configuration and network availability.
- *
- * If no samples are available, the function exits without performing any
- * reporting.
- *
- * After processing, all accumulated sample buffers are cleared and the
- * sample counter is reset to zero to prepare for the next sampling interval.
- *
- * @param[in,out] numSamples Reference to the number of samples accumulated
- *                           during the current reporting interval. A value
- *                           greater than zero indicates that samples are
- *                           available for processing. This value is reset
- *                           to zero after processing.
- *
- * @note Network reporting is skipped if WiFi is not connected.
- * @note Endpoint support is controlled via compile-time flags
- *       (THINGSPEAK, INFLUX, MQTT, HASSIO_MQTT).
- * @note The sample counter is reset regardless of whether reporting succeeds.
- */
-void processSamples(uint8_t& numSamples)
-{
-  debugMessage(String("processSamples() start"),2);
-
-  // do we have samples to process?
-  if (numSamples) {
-    // can we report to network endPoints?
-    #ifndef HARDWARE_SIMULATE
-      // attemot to reconnect to WiFi if needed
-      if (WiFi.status() != WL_CONNECTED) {
-        WiFi.reconnect();
-      }
-
-      if (WiFi.status() == WL_CONNECTED) {
-        // Get averaged sample values from Measure class objects for endPoint reporting
-        float avgTemperatureF = totalTemperatureF.getAverage();
-        float avgHumidity = totalHumidity.getAverage();
-        uint16_t avgCO2 = totalCO2.getAverage();
-        float avgVOC = totalVOCIndex.getAverage();
-        float avgPM25 = totalPM25.getAverage();
-        float avgNOX = totalNOxIndex.getAverage();
-
-        debugMessage(String("Averages for the last ") + (timeReportMS/60000) + " minutes for endpoint reporting",1);
-        debugMessage(String("PM2.5: ") + avgPM25 + "ppm, CO2: " + avgCO2 + "ppm, VOC index: " + avgVOC + ", NOx index: " + avgNOX + ", " + 
-          avgTemperatureF + "F, humidity: " + avgHumidity + "%", 1);
-
-        // update RSSI before publishing
-        hardwareData.rssi = networkRSSIRead();
-        debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
-
-        #ifdef THINGSPEAK
-          debugMessage(String("AQI(US): ") + pm25toAQI_US(avgPM25),1);
-          if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
-            Serial.println("ERROR: Did not write to ThingSpeak");
-          }
-        #endif
-
-        #ifdef INFLUX
-          if (!post_influx(avgTemperatureF, avgHumidity, avgCO2 , avgPM25, avgVOC, avgNOX, hardwareData.rssi))
-            Serial.println("ERROR: Did not write to influxDB");
-        #endif
-
-        #ifdef MQTT
-          if(mqttConnect()) {
-            // publish device data
-            const char* topic;
-
-            // publish hardware data
-            topic = generateMQTTTopic(VALUE_KEY_RSSI);
-            mqttPublish(topic, String(hardwareData.rssi));
-
-            // publish sensor data
-            topic = generateMQTTTopic(VALUE_KEY_TEMPERATURE);
-            mqttPublish(topic, String(avgTemperatureF));
-            topic = generateMQTTTopic(VALUE_KEY_HUMIDITY);
-            mqttPublish(topic, String(avgHumidity));
-            topic = generateMQTTTopic(VALUE_KEY_PM25);
-            mqttPublish(topic, String(avgPM25));
-            topic = generateMQTTTopic(VALUE_KEY_VOC);
-            mqttPublish(topic, String(avgVOC));
-            topic = generateMQTTTopic(VALUE_KEY_CO2);
-            mqttPublish(topic, String(avgCO2));
-            topic = generateMQTTTopic(VALUE_KEY_NOX);
-            mqttPublish(topic, String(avgNOX));
-
-            #ifdef HASSIO_MQTT
-              debugMessage("Establishing MQTT for Home Assistant",1);
-              // Either configure sensors in Home Assistant's configuration.yaml file
-              // directly or attempt to do it via MQTT auto-discovery
-              // hassio_mqtt_setup();  // Config for MQTT auto-discovery
-              hassio_mqtt_publish(avgPM25, avgTemperatureF, avgVOC, avgHumidity);
-            #endif
-
-            mqtt.disconnect();
-          }
-        #endif
-      }
-      else {
-        debugMessage("No network, endpoint reporting skipped",1);
-      }
-    #endif
-    // Reset sample counters
-    totalTemperatureF.clear();
-    totalHumidity.clear();
-    totalCO2.clear();
-    totalVOCIndex.clear();
-    totalPM25.clear();
-    totalNOxIndex.clear();
-  }      
-  else {
-    // ALERT for sustained sensor read problem
-    debugMessage("No samples to process this cycle",1);
-  }
-  numSamples = 0;
-  debugMessage(String("processSamples() end"),2);
-}
-
 uint8_t networkRSSIRead()
 {
   uint8_t rssi;
@@ -1925,41 +1915,91 @@ bool sensorRead()
       return true;
   }
 
-  // Read data from SEN66 sensor
   bool sensorSEN6xRead()
+  // Description: Retrieves values from SEN66 sensor
+  // Parameters: none
+  // Output : range validated pm25 and VOCIndex values, NAN NOxIndex value from SEN54
+  // Improvement : Add support for checking isDataReady flag (see SCD40 read)
   {
+    bool success = false;
+
     #ifdef HARDWARE_SIMULATE
       sensorSEN6xSimulate();
-      return true;
-    #endif
-      static char errorMessage[64];
-      static int16_t error;
-      float ambientTemperatureC, voc;
+      success = true;
+    #else
+      uint16_t error;
+      char errorMessage[256];
+      float pm1, pm25, pm4, pm10, temperatureC, temperatureF, humidity, VOCIndex, NOxIndex = 0.0f;
       uint16_t co2 = 0;
 
-      // TODO: Add support for checking isDataReady flag on SEN66
+      error = paqSensor.readMeasuredValues(pm1, pm25, pm4, pm10, humidity, temperatureC , VOCIndex,
+        NOxIndex, co2);
 
-      error = paqSensor.readMeasuredValues(
-        sensorData.pm1, sensorData.pm25, sensorData.pm4,
-        sensorData.pm10, sensorData.ambientHumidity, ambientTemperatureC , voc,
-        sensorData.noxIndex, co2);
+      if (error) {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " error during SEN6x read",1);
+      }
+      else
+        success = true;
 
-    if (error != 0) {
-        debugMessage("Error trying to execute readMeasuredValues(): ",1);
-        errorToString(error, errorMessage, sizeof errorMessage);
-        debugMessage(errorMessage,1);
-        return false;
-    }
-    // Convert temperature Celsius from sensor into Farenheit
-    sensorData.ambientTemperatureF = (1.8*ambientTemperatureC) + 32.0;
+      // range valid returned sensor values
+      temperatureF = (temperatureC*1.8)+32;
 
-    retainCO2(co2);
-    retainVOC(voc);
-    
-    debugMessage(String("SEN6x: PM2.5: ") + sensorData.pm25 + ", CO2: " + uint16_t(sensorData.ambientCO2[graphPoints-1]) +
-      "ppm, VOC index: " + sensorData.vocIndex[graphPoints-1] + ", NOx index: " + sensorData.noxIndex + ", temp:" + 
-      sensorData.ambientTemperatureF + "F, humidity:" + sensorData.ambientHumidity + "%",1);
-    return true;
+      if (co2 < sensorCO2Min || co2 > sensorCO2Max) {
+        success = false;
+        debugMessage(String("SEN66 CO2 reading: ") + co2 + " is out of datasheet range",1);
+      }
+
+      if (temperatureF < sensorTempFMin || temperatureF > sensorTempFMax) {
+        success = false;
+        debugMessage(String("SEN66 temperatureF reading: ") + temperatureF + " is out of datasheet range",1);
+      }
+
+      if (humidity < sensorHumidityMin || humidity > sensorHumidityMax) {
+        success = false;
+        debugMessage(String("SEN66 humidity reading: ") + humidity + " is out of datasheet range",1);
+      }
+
+      if (pm25 < sensorPMMin || pm25 > sensorPMMax) {
+        success = false;
+        debugMessage(String("SEN66 PM2.5 reading: ") + pm25 + " is out of datasheet range",1);
+      }
+
+      if (VOCIndex < sensorVOCMin || VOCIndex > sensorVOCMax) {
+        success = false;
+        debugMessage(String("SEN66 VOC index reading: ") + VOCIndex + " is out of datasheet range",1);
+      }
+
+      if (NOxIndex < sensorNOxMin || NOxIndex > sensorNOxMax) {
+        success = false;
+        debugMessage(String("SEN66 NOx index reading: ") + NOxIndex + " is out of datasheet range",1);
+      }
+
+      // valid measurement, update globals
+      if (success) {
+
+        sensorData.ambientTemperatureF = temperatureF;
+        totalTemperatureF.include(sensorData.ambientTemperatureF);
+        sensorData.humidity = humidity;
+        totalHumidity.include(sensorData.ambientHumidity);
+        retainCO2(co2);
+        totalCO2.include(co2);
+        sensorData.pm25 = pm25;
+        totalPM25.include(sensorData.pm25);
+        retainVOC(VOCIndex);
+        totalVOCIndex.include(VOCIndex);
+        sensorData.noxIndex = NOxIndex;
+        totalNOxIndex.include(sensorData.noxIndex);
+
+        debugMessage(String("SEN66 temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
+        debugMessage(String("SEN66 humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
+        debugMessage(String("SEN66 CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total: " + totalCO2.getTotal(),2);
+        debugMessage(String("SEN66 PM25 ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
+        debugMessage(String("SEN66 VOC index ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
+        debugMessage(String("SEN66 NOx index ") + sensorData.noxIndex + ", total: " + totalNOxIndex.getTotal(),2);
+      }
+    #endif
+    return (success);
   }
 #endif // SENSOR_SEN66
 
@@ -2023,35 +2063,57 @@ bool sensorRead()
     #endif
   }
 
-  bool sensorSEN554Read()
+  bool sensorSEN554Read() 
+  // Description: Retrieves values from SEN54 sensor
+  // Parameters: none
+  // Output : range validated pm25 and VOCIndex values, NAN NOxIndex value from SEN54
+  // Improvement : Add support for checking isDataReady flag (see SCD40 read) 
   {
+    bool success = false;
+
     #ifdef HARDWARE_SIMULATE
       sensorSEN54Simulate();
-      return true;
+      success = true;
     #else
       uint16_t error;
       char errorMessage[256];
-      // we'll use the SCD4X values for these
-      // IMPROVEMENT: Compare to SCD4X values?
-      float sen5xTempF, sen5xHumidity, sen5xvoc;
-
+      float pm1, pm25, pm4, pm10, temperatureC, humidity, VOCIndex, NOxIndex = 0.0f;
 
       debugMessage("SEN5X read initiated",1);
 
-      error = pmSensor.readMeasuredValues(
-        sensorData.pm1, sensorData.pm25, sensorData.pm4,
-        sensorData.pm10, sen5xHumidity, sen5xTempF, sen5xvoc,
-        sensorData.noxIndex);
+      error = pmSensor.readMeasuredValues(pm1, pm25, pm4, pm10, humidity, temperatureC, VOCIndex, NOxIndex);
       if (error) {
         errorToString(error, errorMessage, 256);
         debugMessage(String(errorMessage) + " error during SEN5x read",1);
-        return false;
+      }
+      else
+        success = true;
+
+      // range valid returned sensor values
+      if (pm25 < sensorPMMin || pm25 > sensorPMMax) {
+        success = false;
+        debugMessage(String("SEN5x PM2.5 reading: ") + pm25 + " is out of datasheet range",1);
       }
 
-      retainVOC(sen5xvoc);
-      debugMessage(String("SEN5X PM2.5: ") + sensorData.pm25 + "ppm, VOC Index: " + sensorData.vocIndex[graphPoints-1] + ", NOx Index: " + sensorData.noxIndex, 1);
-      return true;
+      if (VOCIndex < sensorVOCMin || VOCIndex > sensorVOCMax) {
+        success = false;
+        debugMessage(String("SEN5x VOC index reading: ") + VOCIndex + " is out of datasheet range",1);
+      }
+
+      // valid measurement, update globals
+      if (success) {
+        sensorData.pm25 = pm25;
+        totalPM25.include(sensorData.pm25);
+        retainVOC(VOCIndex);
+        totalVOCIndex.include(VOCIndex);
+        sensorData.noxIndex = NOxIndex;
+        totalNOxIndex.include(sensorData.noxIndex);
+
+        debugMessage(String("SEN54 PM25 ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
+        debugMessage(String("SEN54 VOC index ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
+      }
     #endif
+    return(success);
   }
 
   bool sensorSCD4xInit()
@@ -2105,7 +2167,7 @@ bool sensorRead()
   bool sensorSCD4xRead()
   // Description: Retrieves values from SCD4x sensor
   // Parameters: none
-  // Output : raw tempF, humidity, and CO2 values from SCD4x
+  // Output : range validated tempF, humidity, and CO2 values from SCD4x
   // Improvement : NA  
   {
     bool success = false;
@@ -2114,22 +2176,17 @@ bool sensorRead()
       success = true;
       sensorSCD4xSimulate(1,3);
     #else
-      char errorMessage[256];
-      uint16_t co2 = 0;
-      float temperatureC = 0.0f;
-      float humidity = 0.0f;
       uint16_t error;
       uint8_t errorCount = 0;
+      char errorMessage[256];
+      float temperatureC, temperatureF, humidity = 0.0f;
+      uint16_t co2 = 0;
 
       // Loop attempting to read Measurement
       debugMessage("CO2 sensor read initiated",1);
-      while(!success) {
+      while((errorCount < co2SensorReadFailureLimit) && (!success)) {
         delay(100);
         errorCount++;
-        if (errorCount > co2SensorReadFailureLimit) {
-          debugMessage(String("SCD4x failed to read after ") + errorCount + " attempts",1);
-          break;
-        }
         // Is data ready to be read?
         bool isDataReady = false;
         error = co2Sensor.getDataReadyStatus(isDataReady);
@@ -2146,41 +2203,48 @@ bool sensorRead()
         error = co2Sensor.readMeasurement(co2, temperatureC, humidity);
         if (error) {
             errorToString(error, errorMessage, 256);
-            debugMessage(String("SCD40 executing readMeasurement(): ") + errorMessage,1);
+            debugMe(String("SCD40 executing readMeasurement(): ") + errorMessage,1);
             // Implicitly continues back to the top of the loop
         }
-        else if (co2 < sensorCO2Min || co2 > sensorCO2Max)
-        {
-          debugMessage(String("SCD40 CO2 reading: ") + co2 + " is out of expected range",1);
-          // Implicitly continues back to the top of the loop
-        }
         else
-        {
-          // Valid measurement, update globals
           success = true;
-          sensorData.ambientTemperatureF = (temperatureC*1.8)+32.0;
-          sensorData.ambientHumidity = humidity;
-          retainCO2(co2);
-          debugMessage(String("SCD4x: ") + sensorData.ambientTemperatureF + "F, " + sensorData.ambientHumidity + "%, " + uint16_t(sensorData.ambientCO2[graphPoints-1]) + " ppm",1);
-          // check for new values that require user alert
-          sensorSCD4xEvaluate();
-          break;
-        }
+      }
+
+      // range valid returned sensor values
+      temperatureF = (temperatureC*1.8)+32;
+
+      if (co2 < sensorCO2Min || co2 > sensorCO2Max) {
+        success = false;
+        debugMessage(String("SCD4x CO2 reading: ") + co2 + " is out of datasheet range",1);
+      }
+
+      if (temperatureF < sensorTempFMin || temperatureF > sensorTempFMax) {
+        success = false;
+        debugMessage(String("SCD4x temperatureF reading: ") + temperatureF + " is out of datasheet range",1);
+      }
+
+      if (humidity < sensorHumidityMin || humidity > sensorHumidityMax) {
+        success = false;
+        debugMessage(String("SCD4x humidity reading: ") + humidity + " is out of datasheet range",1);
+      }
+
+      // valid measurement, update globals
+      if (success) {
+        retainCO2(co2);
+
+        sensorData.ambientTemperatureF = temperatureF;
+        totalTemperatureF.include(sensorData.ambientTemperatureF);
+        sensorData.humidity = humidity;
+        totalHumidity.include(sensorData.ambientHumidity);
+        retainCO2(co2);
+        totalCO2.include(co2);
+
+        debugMessage(String("SCD4x temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
+        debugMessage(String("SCD4x humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
+        debugMessage(String("SCD4x CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total: " + totalCO2.getTotal(),2);
       }
     #endif
     return(success);
-  }
-
-  void sensorSCD4xAlert()
-  {
-    // Description: evaluates latest SCD4x sensor values for values that indicate
-    //  rapid deterioration of qir quality. If so, initiate a user alert
-    // Parameters: NA
-    // Output : 
-    // Improvement : this is just meant to trigger the a
-
-    uint16_t currentValue = totalCO2.getCurrent();
-    if 
   }
 #endif // SENSOR_SEN54SCD40
 
@@ -2205,12 +2269,20 @@ void deviceReboot(uint16_t timeAlertMS, String messageText)
 
   uint32_t timeRebootStartMS = millis();
 
-  // ledcWriteTone(pinAudio, 2000);
   while (millis() - timeRebootStartMS < timeAlertMS)
   {
-    blinkStatusLED(1000, 0xF800); // one second interval in red
+    #ifndef HARDWARE_SIMULATE
+      // quick and dirty, no ledControl since we are rebooting anyway
+      ledsOne[0] = CRGB::Red;
+      FastLED.show();
+      // ledcWriteTone(pinAudio, 2000);
+      delay(500);
+      ledsOne[0] = CRGB::Black;
+      FastLED.show();
+      // ledcWriteTone(pinAudio,0);
+      delay(500);
+    #endif
   }
-  // ledcWriteTone(pinAudio,0);
   debugMessage("deviceReboot() end",1);
   ESP.restart();
 }
@@ -2390,9 +2462,9 @@ uint8_t noxRange(float noxIndex)
 // converts noxIndex value to index value for labeling and color
 {
   uint8_t noxRange =
-  (noxIndex <= noxFair) ? 0 :
-  (noxIndex <= noxPoor) ? 1 :
-  (noxIndex <= noxBad)  ? 2 : 3;
+  (noxIndex <= sensorNOxFair) ? 0 :
+  (noxIndex <= sensorNOxPoor) ? 1 :
+  (noxIndex <= sensorNOxBad)  ? 2 : 3;
 
   debugMessage(String("NOx index input of ") + noxIndex + " yields " + noxRange + " NOx band",2);
   return noxRange;
@@ -2426,62 +2498,14 @@ float randomFloatRange(uint16_t min, uint16_t max) {
   return randomFixed / 100.0f;
 }
 
-/**
- * @brief Set the onboard RGB LED color using a 16-bit RGB565 value.
- *
- * Converts an RGB565 color (5 bits red, 6 bits green, 5 bits blue) into
- * 8-bit PWM duty cycles and drives the CYD onboard RGB LED using ESP32
- * LEDC hardware PWM.
- *
- * The ESP32-2432S028R onboard RGB LED is wired as active-LOW, so the
- * computed PWM values are inverted before being written.
- *
- * @param color565
- *        16-bit RGB565 color value:
- *        - Bits 15–11: Red   (0–31)
- *        - Bits 10–5 : Green (0–63)
- *        - Bits 4–0  : Blue  (0–31)
- *
- * @note This function assumes the LEDC PWM channels have already been
- *       attached to the RGB LED GPIO pins via ledcAttach().
- *
- * @note RGB565 → 8-bit expansion uses bit replication for improved
- *       perceptual brightness mapping.
- *
- * @see ledcAttach()
- * @see ledcWrite()
- */
-static inline void setRGB(uint16_t color565)
+void ledInit()
 {
-  // Extract RGB565 components
-  uint8_t r5 = (color565 >> 11) & 0x1F;
-  uint8_t g6 = (color565 >> 5)  & 0x3F;
-  uint8_t b5 =  color565        & 0x1F;
-
-  // Expand to 8-bit (good perceptual spread)
-  uint8_t r8 = (r5 << 3) | (r5 >> 2);
-  uint8_t g8 = (g6 << 2) | (g6 >> 4);
-  uint8_t b8 = (b5 << 3) | (b5 >> 2);
-
-  // Active-LOW onboard RGB LED (ESP32-2432S028R)
-  ledcWrite(pinLedRed, MAX_DUTY - r8);
-  ledcWrite(pinLedGreen, MAX_DUTY - g8);
-  ledcWrite(pinLedBlue, MAX_DUTY - b8);
+  debugMessage("ledInit() begin",2);  
+  FastLED.addLeds<WS2812B, ledStrip1DataPin, GRB>(ledsOne,ledStripPixelCount);
+  FastLED.setBrightness(200);
+  debugMessage("ledInit() end",2);
 }
 
-void blinkStatusLED(uint16_t timeBlinkMS, uint16_t color)
-{
-  static uint32_t lastToggleMs = 0;
-  static bool ledOn = false;
-
-  uint32_t now = millis();
-  if (now - lastToggleMs >= timeBlinkMS) {
-    lastToggleMs = now;
-    ledOn = !ledOn;
-
-    setRGB(ledOn ? color : 0x0000);
-  }
-}
 
 void debugMessage(String messageText, uint8_t messageLevel)
 // wraps Serial.println as #define conditional

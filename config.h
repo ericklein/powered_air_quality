@@ -72,61 +72,64 @@ const String hardwareDeviceType = "AirQuality";
 
 // sensors
 // simulation boundary values
-#ifdef HARDWARE_SIMULATE
-  const uint16_t sensorTempFMin =       14; // -10C per SCD40, SEN66 datasheet
-  #ifdef SCD40
-    const uint16_t sensorTempFMax =       140; // 60C per datasheet
-  #else
-    const uint16_t sensorTempFMax =       122; // 50C per datasheet
-  #endif
-  const uint16_t sensorHumidityMin =    0; // RH% per datasheet
-  const uint16_t sensorHumidityMax =    100;
+const uint8_t OWMAQIMin = 1;  // https://openweathermap.org/api/air-pollution
+const uint8_t OWMAQIMax = 5;
 
-  const uint8_t OWMAQIMin = 1;  // https://openweathermap.org/api/air-pollution
-  const uint8_t OWMAQIMax = 5;
+const uint16_t OWMPM25Min = 0;
+const uint16_t OWMPM25Max = 100; 
 
-  const uint16_t OWMPM25Min = 0;
-  const uint16_t OWMPM25Max = 100; 
-
-  const uint8_t networkRSSIMin = 30; // ESP32 abs(WiFi.RSSI()) spec
-  const uint8_t networkRSSIMax = 100;
-#endif
+const uint8_t networkRSSIMin = 30; // ESP32 abs(WiFi.RSSI()) spec
+const uint8_t networkRSSIMax = 100;
 
 // tempF value threshholds
+const uint16_t sensorTempFMin =       14; // -10C per SCD40, SEN66 datasheet
 const uint8_t sensorTempFComfortMin = 65;
 const uint8_t sensorTempFComfortMax = 80;
+#ifdef SCD40
+  const uint16_t sensorTempFMax =       140; // 60C per SCD4X datasheet
+#else
+  const uint16_t sensorTempFMax =       122; // 50C per SEN66 datasheet
+#endif
 
 // humidity value thresholds
+const uint16_t sensorHumidityMin =    0; // RH% per datasheet
 const uint8_t sensorHumidityComfortMin = 40;
 const uint8_t sensorHumidityComfortMax = 60;
+const uint16_t sensorHumidityMax =    100;
 
 // CO2 value thresholds
 const uint16_t sensorCO2Min =   400;   // in ppm
 const uint16_t sensorCO2Fair =  800;
 const uint16_t sensorCO2Poor =  1200;
 const uint16_t sensorCO2Bad =   1600;
-const uint16_t sensorCO2Max =   2000;
+#ifdef SCD40
+  const uint16_t sensorCO2Max =   2000; // SCD4x raw up to 40000
+#else 
+  const uint16_t sensorCO2Max =   5000; // SEN6x raw up to 40000
+#endif
 const uint8_t co2SensorReadFailureLimit = 20;
 const uint8_t sensorCO2VariabilityRange = 30;
 
 // Particulates (pm1, pm2.5, pm4, pm10) value thresholds
-const uint16_t sensorPMMin =  0;
+const uint16_t sensorPMMin =  0;  // per datasheet
 const uint16_t sensorPMFair = 25;
 const uint16_t sensorPMPoor = 50;
 const uint16_t sensorPMBad =  150;
-const uint16_t sensorPMMax =  1000;
+const uint16_t sensorPMMax =  1000; // per SEN54, SEN66 datasheet
 
 // VOC (volatile organic compounds) index value thresholds
-const uint8_t   sensorVOCMin =  0;
+const uint16_t  sensorVOCMin =  0;    // per SEN54, SEN66 datasheet
 const uint16_t  sensorVOCFair = 150;
 const uint16_t  sensorVOCPoor = 250;
 const uint16_t  sensorVOCBad =  400;
-const uint16_t  sensorVOCMax =  500;
+const uint16_t  sensorVOCMax =  500;  // per SEN54, SEN66 datasheet
 
 // NOx (nitrogen oxide) index value thresholds, Sensiron Info_Note_NOx_Index.pdf
-const uint16_t noxFair = 49;
-const uint16_t noxPoor = 150;
-const uint16_t noxBad = 300;
+const uint16_t sensorNOxMin =   0;    // per SEN66 datasheet
+const uint16_t sensorNOxFair =  49;
+const uint16_t sensorNOxPoor =  150;
+const uint16_t sensorNOxBad =   300;
+const uint16_t sensorNOxMax =   500;  // per SEN66 datasheet
 
 // timers
 // Internet and network endpoints
@@ -162,9 +165,8 @@ const uint16_t touchscreenMaxY = 3800;
 static constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
 static constexpr uint8_t pinSDA = 22;
 static constexpr uint8_t pinSCL = 27;
-static constexpr uint8_t pinLedRed = 4;
-static constexpr uint8_t pinLedGreen = 16;
-static constexpr uint8_t pinLedBlue = 17;
+static constexpr uint8_t ledStrip1DataPin = 16;
+static constexpr uint8_t ledStripPixelCount = 17; // number of LEDs on each strip
 static constexpr uint8_t pinAudio = 26;
 static constexpr uint8_t pinXPT2046_IRQ = 36;
 static constexpr uint8_t pinXPT2046_MOSI = 32;

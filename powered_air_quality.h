@@ -4,16 +4,17 @@
   #include <Arduino.h>  // for String, uint16_t
 
   // environment sensor data
+  // ranges in config.h
   struct envData {
-    float ambientTemperatureF;        // range -10C to 60C
-    float ambientHumidity;            // RH [%], range 0 to 100
-    float  ambientCO2[graphPoints];   // ppm, range 400 to 2000, FIFO queue, -1 = no data, errant values ~ first 7 seconds (SCD4x, SEN6x)
-    float pm25;                       // PM2.5 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
-    float pm1;                        // PM1.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
-    float pm10;                       // PM10.0 [µg/m³], (SEN54 -> range 0 to 1000, NAN if unknown)
-    float pm4;                        // PM4.0 [µg/m³], range 0 to 1000, NAN if unknown
-    float vocIndex[graphPoints];      // Sensiron VOC Index, range 0 to 500 (SEN54, SEN66)
-    float noxIndex;                   // Sensiron NOx Index, range 0 to 500, NAN for first ~11 seconds with SEN66, always NAN for SEN54
+    float ambientTemperatureF;        
+    float ambientHumidity;            // RH [%]
+    float ambientCO2[graphPoints];    // ppm, FIFO queue, -1 = no data
+    float pm25;                       // PM2.5 [µg/m³]
+    float pm1;                        // PM1.0 [µg/m³]
+    float pm10;                       // PM10.0 [µg/m³]
+    float pm4;                        // PM4.0 [µg/m³]
+    float vocIndex[graphPoints];      // Sensiron VOC Index
+    float noxIndex;                   // Sensiron NOx Index
   };
   extern envData sensorData;
 
