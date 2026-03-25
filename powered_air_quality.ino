@@ -9,70 +9,44 @@
 #include "powered_air_quality.h"  // global data structures
 #include "secrets.h"              // private credentials for network, MQTT
 #include "data.h"
-#include <Measure.hpp>              // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
-#include <SPI.h>                  // TFT_eSPI and XPT2046_Touchscreen
 
-#ifndef HARDWARE_SIMULATE
+#include <HTTPClient.h>           // used to access Open Weather Map
+#include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
+#include <Measure.hpp>            // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
+#include <Preferences.h>          // read-write to ESP32 persistent storage
+#include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
+#include <LEDControl.h>           // multi LED strip async control
+#include <TFT_eSPI.h>             // https://github.com/Bodmer/TFT_eSPI
+#include <XPT2046_Touchscreen.h>  // https://github.com/PaulStoffregen/XPT2046_Touchscreen
+#include <ArduinoJson.h>          // https://github.com/bblanchon/ArduinoJson, used by OWM retrieval routines
+
 // environment sensors
-  #ifdef SENSOR_SEN66
-    // Instanstiate SEN66 hardware object, if being used
-    #include <SensirionI2cSen66.h>
-    SensirionI2cSen66 paqSensor;
-  #endif // SENSOR_SEN66
-
-  #ifdef SENSOR_SEN54SCD40
-    // instanstiate SEN5X hardware object
-    #include <SensirionI2CSen5x.h>
-    SensirionI2CSen5x pmSensor;
-
-    // instanstiate SCD4X hardware object
-    #include <SensirionI2cScd4x.h>
-    SensirionI2cScd4x co2Sensor;
-  #endif // SENSOR_SEN54SCD40
-
-  #include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
-  #include <LEDControl.h>           // multi LED strip async control
-
-  // Instantiate LED strips
-  CRGB ledsOne[ledStripPixelCount];
-  LEDControl stripOne(ledStripPixelCount,ledsOne); 
-
-  #include <HTTPClient.h>
-  #include <ArduinoJson.h>      // https://github.com/bblanchon/ArduinoJson, used by OWM retrieval routines
-  #include <WiFiManager.h>      // https://github.com/tzapu/WiFiManager
-  #include <Preferences.h>      // read-write to ESP32 persistent storage
-
-  WiFiClient client;   // WiFi Managers loads WiFi.h, which is used by OWM and MQTT
-  WiFiManager wfm;
-  Preferences nvConfig;
-
-  #ifdef THINGSPEAK
-    extern bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, 
-      float vocIndex, float noxIndex, float aqi);
-  #endif
-
-  #ifdef INFLUX
-    influxConfig influxdbConfig;
-    extern bool post_influx(float temperatureF, float humidity, uint16_t co2, float pm25, float vocIndex, float noxIndex, uint8_t rssi);
-  #endif
-
-  #ifdef MQTT
-    #include <PubSubClient.h>     // https://github.com/knolleary/pubsubclient
-    MqttConfig mqttBrokerConfig;
-    PubSubClient mqtt(client);
-
-    extern bool mqttConnect();
-    extern void mqttPublish(const char* topic, const String& payload);
-    extern const char* generateMQTTTopic(String key);
-
-    #ifdef HASSIO_MQTT
-      extern void hassio_mqtt_publish(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2);
-    #endif
-  #endif
+#ifdef SENSOR_SEN66
+  // Instanstiate SEN66 hardware object, if being used
+  #include <SensirionI2cSen66.h>
+  SensirionI2cSen66 paqSensor;
 #endif
 
+#ifdef SENSOR_SEN54SCD40
+  // instanstiate SEN5X hardware object
+  #include <SensirionI2CSen5x.h>
+  SensirionI2CSen5x pmSensor;
+
+  // instanstiate SCD4X hardware object
+  #include <SensirionI2cScd4x.h>
+  SensirionI2cScd4x co2Sensor;
+#endif
+
+Preferences nvConfig;
+
+WiFiClient client;   // WiFiManager loads WiFi.h, which is used by OWM and MQTT
+WiFiManager wfm;
+
+// Instantiate LED strips
+CRGB ledsOne[ledStripPixelCount];
+LEDControl stripOne(ledStripPixelCount,ledsOne); 
+
 // 2.8″ 320x240 color TFT
-#include <TFT_eSPI.h>  // https://github.com/Bodmer/TFT_eSPI
 TFT_eSPI display = TFT_eSPI();
 
 // fonts and glyphs
@@ -82,9 +56,32 @@ TFT_eSPI display = TFT_eSPI();
 #include "glyphs.h"
 
 // CYD touchscreen
-#include <XPT2046_Touchscreen.h> // https://github.com/PaulStoffregen/XPT2046_Touchscreen
 SPIClass touchscreenSPI = SPIClass(VSPI);
 XPT2046_Touchscreen touchscreen(pinXPT2046_CS,pinXPT2046_IRQ);
+
+#ifdef THINGSPEAK
+  extern bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, 
+    float vocIndex, float noxIndex, float aqi);
+#endif
+
+#ifdef INFLUX
+  influxConfig influxdbConfig;
+  extern bool post_influx(float temperatureF, float humidity, uint16_t co2, float pm25, float vocIndex, float noxIndex, uint8_t rssi);
+#endif
+
+#ifdef MQTT
+  #include <PubSubClient.h>     // https://github.com/knolleary/pubsubclient
+  MqttConfig mqttBrokerConfig;
+  PubSubClient mqtt(client);
+
+  extern bool mqttConnect();
+  extern void mqttPublish(const char* topic, const String& payload);
+  extern const char* generateMQTTTopic(String key);
+
+  #ifdef HASSIO_MQTT
+    extern void hassio_mqtt_publish(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2);
+  #endif
+#endif
 
 // global variables
 
@@ -102,7 +99,7 @@ OpenWeatherMapCurrentData owmCurrentData;
 OpenWeatherMapAirQuality owmAirQuality; 
 
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.
-Measure totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
+Measure<graphPoints> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
 
 uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
 bool saveWFMConfig = false;
@@ -184,8 +181,6 @@ void loop() {
   static uint8_t numSamples               = 0;  // Number of sensor readings over reporting interval
   static uint32_t timeLastSampleMS        = -(timeSensorSampleMS); // forces immediate sample in loop() 
   static uint32_t timeLastInputMS         = millis();  // timestamp for last user input (screensaver)
-  static uint32_t timeNextNetworkRetryMS  = 0;
-  static uint32_t timeLastOWMUpdateMS     = -(timeOWMKeepAliveMS); // forces immediate sample in loop()
   uint16_t calibratedX, calibratedY;
 
   // order of operation
@@ -207,6 +202,7 @@ void loop() {
       screenUpdate(screenCurrent);
     }
     else {
+      // ALERT
       // TODO: what else to do here?; detailed error message comes from sensorRead()
       // debugMessage("Sensor read failed!",1);
     }
@@ -279,7 +275,7 @@ void loop() {
   }
 
   // give processor cycles to ledControl
-  ledsOne.update();
+  stripOne.update();
   FastLED.show();
   delay(100);          // 10Hz clock for driving animations
 
@@ -815,7 +811,6 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
     debugMessage("WiFi signal strength via red bars because no WiFi connection", 1);
   }
   debugMessage("screenHelperWiFiStatus() end",2);
- 
 }
 
 void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
@@ -974,7 +969,7 @@ void screenHelperComponentSetup(String header)
 void sampleEvaluate()
 {
   debugMessage(String("sampleEvaluate() start"),2);
-  debugMessage(String("sampleEvaluate() start"),2);
+  debugMessage(String("sampleEvaluate() end"),2);
 }
 
 /**
@@ -1122,134 +1117,131 @@ void retainVOC(float voc)
   sensorData.vocIndex[graphPoints-1] = voc;
 }
 
-// Hardware simulation routines
-#ifdef HARDWARE_SIMULATE
-  void OWMCurrentWeatherSimulate()
-  // Description : Simulates Open Weather Map (OWM) Current Weather data
-  // Parameters: NA
-  // Return : NA
-  // Improvement : variable city name and weather condition/icon
-  {
-    owmCurrentData.cityName = "Pleasantville";
-    owmCurrentData.tempF = randomFloatRange(sensorTempFMin, sensorTempFMax);
-    owmCurrentData.humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-    strncpy(owmCurrentData.icon, "09d", sizeof(owmCurrentData.icon));
-    debugMessage(String("SIMULATED OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
+void OWMCurrentWeatherSimulate()
+// Description : Simulates Open Weather Map (OWM) Current Weather data
+// Parameters: NA
+// Return : NA
+// Improvement : variable city name and weather condition/icon
+{
+  owmCurrentData.cityName = "Pleasantville";
+  owmCurrentData.tempF = randomFloatRange(sensorTempFMin, sensorTempFMax);
+  owmCurrentData.humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+  strncpy(owmCurrentData.icon, "09d", sizeof(owmCurrentData.icon));
+  debugMessage(String("SIMULATED OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
+}
+
+void OWMAirPollutionSimulate()
+// Description : Simulates Open Weather Map (OWM) Air Pollution data
+// Parameters: NA
+// Return : NA
+// Improvement : NA
+{
+  owmAirQuality.aqi = random(OWMAQIMin, OWMAQIMax);
+  owmAirQuality.pm25 = randomFloatRange(OWMPM25Min, OWMPM25Max);
+  debugMessage(String("SIMULATED OWM Air Pollution PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
+}
+
+uint8_t networkRSSISimulate()
+// Description : returns simulated WiFi RSSI value from hardware or simulation value
+// Parameters: NA
+// Return : NA
+// Improvement : NA
+{ 
+  uint8_t rssi = random(networkRSSIMin, networkRSSIMax);
+  debugMessage(String("SIMULATED WiFi RSSI: -") + rssi + "db",1);
+  return(rssi);
+}
+
+void sensorSEN54Simulate()
+// Description: Simulates sensor reading from SEN54 sensor
+// Parameters: NA
+// Return: NA
+// Improvement: mode 1 from CO2 for VOC
+// Note: tempF and humidity come from SCD4X simulation
+{
+  sensorData.pm1 = randomFloatRange(sensorPMMin, sensorPMMax);
+  sensorData.pm10 = randomFloatRange(sensorPMMin, sensorPMMax);
+  sensorData.pm25 = randomFloatRange(sensorPMMin, sensorPMMax);
+  sensorData.pm4 = randomFloatRange(sensorPMMin, sensorPMMax);
+  retainVOC(randomFloatRange(sensorVOCMin, sensorVOCMax));
+
+  debugMessage(String("SIMULATED PM2.5: ") + sensorData.pm25 + " ppm, VOC index: " + sensorData.vocIndex[graphPoints-1],1);
+}
+
+void sensorSCD4xSimulate(uint8_t mode = 0, uint8_t cycles = 0)
+// Description: Simulates temp, humidity, and CO2 values from Sensirion SCD4X sensor
+// Parameters:
+//  mode
+//    default = random values, ignores cycles parameter
+//    1 = random values, slightly +/- per cycle
+//  cycles = If used, determines how many times the current mode executes before resetting
+// Output : NA
+// Improvement : implement edge value mode, rapid CO2 rise mode 
+{
+  static uint8_t currentMode = 0;
+  static uint8_t cycleCount = 0;
+  static float simulatedTempF;
+  static float simulatedHumidity;
+  static uint16_t simulatedCO2;
+
+  if (mode != currentMode) {
+    cycleCount = 0;
+    currentMode = mode;
   }
-
-  void OWMAirPollutionSimulate()
-  // Description : Simulates Open Weather Map (OWM) Air Pollution data
-  // Parameters: NA
-  // Return : NA
-  // Improvement : NA
-  {
-    owmAirQuality.aqi = random(OWMAQIMin, OWMAQIMax);
-    owmAirQuality.pm25 = randomFloatRange(OWMPM25Min, OWMPM25Max);
-    debugMessage(String("SIMULATED OWM Air Pollution PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
-  }
-
-  uint8_t networkRSSISimulate()
-  // Description : returns simulated WiFi RSSI value from hardware or simulation value
-  // Parameters: NA
-  // Return : NA
-  // Improvement : NA
-  { 
-    uint8_t rssi = random(networkRSSIMin, networkRSSIMax);
-    debugMessage(String("SIMULATED WiFi RSSI: -") + rssi + "db",1);
-    return(rssi);
-  }
-
-  void sensorSEN54Simulate()
-  // Description: Simulates sensor reading from SEN54 sensor
-  // Parameters: NA
-  // Return: NA
-  // Improvement: mode 1 from CO2 for VOC
-  // Note: tempF and humidity come from SCD4X simulation
-  {
-    sensorData.pm1 = randomFloatRange(sensorPMMin, sensorPMMax);
-    sensorData.pm10 = randomFloatRange(sensorPMMin, sensorPMMax);
-    sensorData.pm25 = randomFloatRange(sensorPMMin, sensorPMMax);
-    sensorData.pm4 = randomFloatRange(sensorPMMin, sensorPMMax);
-    retainVOC(randomFloatRange(sensorVOCMin, sensorVOCMax));
-
-    debugMessage(String("SIMULATED PM2.5: ") + sensorData.pm25 + " ppm, VOC index: " + sensorData.vocIndex[graphPoints-1],1);
-  }
-
-  void sensorSCD4xSimulate(uint8_t mode = 0, uint8_t cycles = 0)
-  // Description: Simulates temp, humidity, and CO2 values from Sensirion SCD4X sensor
-  // Parameters:
-  //  mode
-  //    default = random values, ignores cycles parameter
-  //    1 = random values, slightly +/- per cycle
-  //  cycles = If used, determines how many times the current mode executes before resetting
-  // Output : NA
-  // Improvement : implement edge value mode, rapid CO2 rise mode 
-  {
-    static uint8_t currentMode = 0;
-    static uint8_t cycleCount = 0;
-    static float simulatedTempF;
-    static float simulatedHumidity;
-    static uint16_t simulatedCO2;
-
-    if (mode != currentMode) {
+  switch (currentMode) {
+  case 0: // 0 = random values, ignores cycles value
+    simulatedTempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
+    simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+    simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
+    break;    
+  case 1: // 1 = random values, slightly +/- per cycle
+    if (cycleCount == cycles) {
       cycleCount = 0;
-      currentMode = mode;
     }
-    switch (currentMode) {
-    case 0: // 0 = random values, ignores cycles value
+    if (!cycleCount) {
+      // create new base values
       simulatedTempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
       simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
       simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
-      break;    
-    case 1: // 1 = random values, slightly +/- per cycle
-      if (cycleCount == cycles) {
-        cycleCount = 0;
-      }
-      if (!cycleCount) {
-        // create new base values
-        simulatedTempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
-        simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-        simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
-        cycleCount++;
-      }
-      else
-      {
-        // slightly +/- CO2 value
-        int8_t sign = random(0, 2) == 0 ? -1 : 1;
-        simulatedCO2 = simulatedCO2 + (sign * random(0, sensorCO2VariabilityRange));
-        // slightly +/- temp value
-        // slightly +/- humidity value
-        cycleCount++;
-      }
-      break;
-    default: // should not occur; random values, ignores cycles value
-      simulatedTempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
-      simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-      simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
-      break;
+      cycleCount++;
     }
-    sensorData.ambientTemperatureF = simulatedTempF;
-    sensorData.ambientHumidity = simulatedHumidity;
-    retainCO2(simulatedCO2);
-
-    debugMessage(String("Simulated temp: ") + sensorData.ambientTemperatureF + "F, humidity: " + sensorData.ambientHumidity
-      + "%, CO2: " + uint16_t(sensorData.ambientCO2[graphPoints-1]) + "ppm",1);
+    else
+    {
+      // slightly +/- CO2 value
+      int8_t sign = random(0, 2) == 0 ? -1 : 1;
+      simulatedCO2 = simulatedCO2 + (sign * random(0, sensorCO2VariabilityRange));
+      // slightly +/- temp value
+      // slightly +/- humidity value
+      cycleCount++;
+    }
+    break;
+  default: // should not occur; random values, ignores cycles value
+    simulatedTempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
+    simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+    simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
+    break;
   }
+  sensorData.ambientTemperatureF = simulatedTempF;
+  sensorData.ambientHumidity = simulatedHumidity;
+  retainCO2(simulatedCO2);
 
-  void sensorSEN6xSimulate()
-  // Description: Simulates sensor reading from SEN66 sensor
-  //  leveraging other sensor simulations
-  // Parameters: NA
-  // Return: NA
-  // Improvement: implement mode passthrough for other sensorSimulate APIs
-  {
-    sensorSCD4xSimulate(1,3); // tempF, humidity, and CO2 values
-    sensorSEN54Simulate(); // pm25, VOCIndex values
-    sensorData.noxIndex = randomFloatRange(sensorNOxMin, sensorNOxMax);
+  debugMessage(String("Simulated temp: ") + sensorData.ambientTemperatureF + "F, humidity: " + sensorData.ambientHumidity
+    + "%, CO2: " + uint16_t(sensorData.ambientCO2[graphPoints-1]) + "ppm",1);
+}
 
-    debugMessage(String("SIMULATED SEN66 noxIndex: ") + sensorData.noxIndex,1);
-  }
-#endif
+void sensorSEN6xSimulate()
+// Description: Simulates sensor reading from SEN66 sensor
+//  leveraging other sensor simulations
+// Parameters: NA
+// Return: NA
+// Improvement: implement mode passthrough for other sensorSimulate APIs
+{
+  sensorSCD4xSimulate(1,3); // tempF, humidity, and CO2 values
+  sensorSEN54Simulate(); // pm25, VOCIndex values
+  sensorData.noxIndex = randomFloatRange(sensorNOxMin, sensorNOxMax);
+
+  debugMessage(String("SIMULATED SEN66 noxIndex: ") + sensorData.noxIndex,1);
+}
 
 // hardware routines tied to HARDWARE_SIMULATE
 #ifndef HARDWARE_SIMULATE
@@ -1410,44 +1402,6 @@ void retainVOC(float voc)
     return (connected);
   }
 
-  void checkButtonPress() {
-    static uint32_t pressStartMS = 0;
-    static bool portalTriggered = false;
-
-    const uint8_t buttonState = digitalRead(pinButton);
-    const uint32_t now = millis();
-
-    if (buttonState == LOW) {
-      if (pressStartMS == 0) {
-        pressStartMS = now;
-        portalTriggered = false;
-      }
-
-      const uint32_t heldMS = now - pressStartMS;
-      debugMessage(String("button pressed for ") + (heldMS / 1000) + " seconds", 2);
-
-      // Once portal is triggered for this press, do NOT allow escalation to reset
-      if (!portalTriggered) {
-        if (heldMS >= timeDeviceResetHoldMS) {
-          wipePrefsAndReboot(); // typically does not return
-          return;
-        }
-
-        if (heldMS >= timeStartPortalHoldMS) {
-          portalTriggered = true;
-          startWebPortal();
-        }
-      }
-    } 
-    else {
-      if (pressStartMS != 0) {
-        debugMessage("button released", 2);
-        pressStartMS = 0;
-        portalTriggered = false;
-      }
-    }
-  }
-
   void startWebPortal()
   {
     display.setFreeFont(&FreeSans18pt7b);
@@ -1477,97 +1431,135 @@ void retainVOC(float voc)
     debugMessage("wipePrefsAndReboot end, rebooting...",2);
     ESP.restart();
   }
+#endif
 
-  // Preferences helper routines
-  void loadNVConfig() {
-    debugMessage("loadNVConfig begin",2);
-    nvConfig.begin("config", true); // read-only
+// Preferences helper routines
+void loadNVConfig() {
+  debugMessage("loadNVConfig begin",2);
+  nvConfig.begin("config", true); // read-only
 
-    hardwareData.altitude = nvConfig.getUShort("altitude", uint16_t(defaultAltitude.toInt()));
-    debugMessage(String("Device altitude is ") + hardwareData.altitude + " meters",2);
-    hardwareData.latitude = nvConfig.getFloat("latitude");
-    debugMessage(String("Device latitude is ") + hardwareData.latitude,2);
-    hardwareData.longitude = nvConfig.getFloat("longitude");
-    debugMessage(String("Device longitude is ") + hardwareData.longitude,2);
+  hardwareData.altitude = nvConfig.getUShort("altitude", uint16_t(defaultAltitude.toInt()));
+  debugMessage(String("Device altitude is ") + hardwareData.altitude + " meters",2);
+  hardwareData.latitude = nvConfig.getFloat("latitude");
+  debugMessage(String("Device latitude is ") + hardwareData.latitude,2);
+  hardwareData.longitude = nvConfig.getFloat("longitude");
+  debugMessage(String("Device longitude is ") + hardwareData.longitude,2);
 
-    #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-      endpointPath.site = nvConfig.getString("site", defaultSite);
-      debugMessage(String("Device site is ") + endpointPath.site,2);
-      endpointPath.location = nvConfig.getString("location", defaultLocation);
-      debugMessage(String("Device location is ") + endpointPath.location,2);
-      endpointPath.room = nvConfig.getString("room", defaultRoom);
-      debugMessage(String("Device room is ") + endpointPath.room,2);
-      endpointPath.deviceID = nvConfig.getString("deviceID", defaultDeviceID);
-      debugMessage(String("Device ID is ") + endpointPath.deviceID,1);
-    #endif
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+    endpointPath.site = nvConfig.getString("site", defaultSite);
+    debugMessage(String("Device site is ") + endpointPath.site,2);
+    endpointPath.location = nvConfig.getString("location", defaultLocation);
+    debugMessage(String("Device location is ") + endpointPath.location,2);
+    endpointPath.room = nvConfig.getString("room", defaultRoom);
+    debugMessage(String("Device room is ") + endpointPath.room,2);
+    endpointPath.deviceID = nvConfig.getString("deviceID", defaultDeviceID);
+    debugMessage(String("Device ID is ") + endpointPath.deviceID,1);
+  #endif
 
-    #ifdef MQTT
-      mqttBrokerConfig.host     = nvConfig.getString("mqttHost", defaultMQTTBroker);
-      debugMessage(String("MQTT broker is ") + mqttBrokerConfig.host,2);
-      mqttBrokerConfig.port     = nvConfig.getUShort("mqttPort", uint16_t(defaultMQTTPort.toInt()));
-      debugMessage(String("MQTT broker port is ") + mqttBrokerConfig.port,2);
-      mqttBrokerConfig.user     = nvConfig.getString("mqttUser", defaultMQTTUser);
-      debugMessage(String("MQTT username is ") + mqttBrokerConfig.user,2);
-      mqttBrokerConfig.password = nvConfig.getString("mqttPassword", defaultMQTTPassword);
-      debugMessage(String("MQTT user password is ") + mqttBrokerConfig.password,2);
-    #endif
+  #ifdef MQTT
+    mqttBrokerConfig.host     = nvConfig.getString("mqttHost", defaultMQTTBroker);
+    debugMessage(String("MQTT broker is ") + mqttBrokerConfig.host,2);
+    mqttBrokerConfig.port     = nvConfig.getUShort("mqttPort", uint16_t(defaultMQTTPort.toInt()));
+    debugMessage(String("MQTT broker port is ") + mqttBrokerConfig.port,2);
+    mqttBrokerConfig.user     = nvConfig.getString("mqttUser", defaultMQTTUser);
+    debugMessage(String("MQTT username is ") + mqttBrokerConfig.user,2);
+    mqttBrokerConfig.password = nvConfig.getString("mqttPassword", defaultMQTTPassword);
+    debugMessage(String("MQTT user password is ") + mqttBrokerConfig.password,2);
+  #endif
 
-    #ifdef INFLUX
-      influxdbConfig.host     = nvConfig.getString("influxHost", defaultInfluxAddress);
-      debugMessage(String("influxdb server address is ") + influxdbConfig.host,2);
-      influxdbConfig.port     = nvConfig.getUShort("influxPort", uint16_t(defaultInfluxPort.toInt()));
-      debugMessage(String("influxdb server port is ") + influxdbConfig.port,2);
-      influxdbConfig.org     = nvConfig.getString("influxOrg", defaultInfluxOrg);
-      debugMessage(String("influxdb org is ") + influxdbConfig.org,2);
-      influxdbConfig.bucket = nvConfig.getString("influxBucket", defaultInfluxBucket);
-      debugMessage(String("influxdb bucket is ") + influxdbConfig.bucket,2);
-      influxdbConfig.envMeasurement = nvConfig.getString("influxEnvMeasure", defaultInfluxEnvMeasurement);
-      debugMessage(String("influxdb environment measurement is ") + influxdbConfig.envMeasurement,2);
-      influxdbConfig.devMeasurement = nvConfig.getString("influxDevMeasure", defaultInfluxDevMeasurement);
-      debugMessage(String("influxdb device measurement is ") + influxdbConfig.devMeasurement,2);
-    #endif
+  #ifdef INFLUX
+    influxdbConfig.host     = nvConfig.getString("influxHost", defaultInfluxAddress);
+    debugMessage(String("influxdb server address is ") + influxdbConfig.host,2);
+    influxdbConfig.port     = nvConfig.getUShort("influxPort", uint16_t(defaultInfluxPort.toInt()));
+    debugMessage(String("influxdb server port is ") + influxdbConfig.port,2);
+    influxdbConfig.org     = nvConfig.getString("influxOrg", defaultInfluxOrg);
+    debugMessage(String("influxdb org is ") + influxdbConfig.org,2);
+    influxdbConfig.bucket = nvConfig.getString("influxBucket", defaultInfluxBucket);
+    debugMessage(String("influxdb bucket is ") + influxdbConfig.bucket,2);
+    influxdbConfig.envMeasurement = nvConfig.getString("influxEnvMeasure", defaultInfluxEnvMeasurement);
+    debugMessage(String("influxdb environment measurement is ") + influxdbConfig.envMeasurement,2);
+    influxdbConfig.devMeasurement = nvConfig.getString("influxDevMeasure", defaultInfluxDevMeasurement);
+    debugMessage(String("influxdb device measurement is ") + influxdbConfig.devMeasurement,2);
+  #endif
 
-    nvConfig.end();
-    debugMessage("loadNVConfig end",2);
+  nvConfig.end();
+  debugMessage("loadNVConfig end",2);
+}
+
+void saveNVConfig()
+// copy new config data to non-volatile storage
+{
+  debugMessage("saveNVConfig begin",2);
+  nvConfig.begin("config", false); // read-write
+
+  nvConfig.putUShort("altitude", hardwareData.altitude);
+  nvConfig.putFloat("latitude",hardwareData.latitude);
+  nvConfig.putFloat("longitude", hardwareData.longitude);
+
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+    nvConfig.putString("site", endpointPath.site);
+    nvConfig.putString("location", endpointPath.location);
+    nvConfig.putString("room", endpointPath.room);
+    nvConfig.putString("deviceID", endpointPath.deviceID);
+  #endif
+
+  #ifdef MQTT
+    nvConfig.putString("mqttHost",  mqttBrokerConfig.host);
+    nvConfig.putUShort("mqttPort",  mqttBrokerConfig.port);
+    nvConfig.putString("mqttUser",  mqttBrokerConfig.user);
+    nvConfig.putString("mqttPassword",  mqttBrokerConfig.password);
+  #endif
+
+  #ifdef INFLUX
+    nvConfig.putString("influxHost",  influxdbConfig.host);
+    nvConfig.putUShort("influxPort",  influxdbConfig.port);
+    nvConfig.putString("influxOrg",   influxdbConfig.org);
+    nvConfig.putString("influxBucket",influxdbConfig.bucket);
+    nvConfig.putString("influxEnvMeasure",influxdbConfig.envMeasurement);
+    nvConfig.putString("influxDevMeasure", influxdbConfig.devMeasurement);
+  #endif
+
+  nvConfig.end();
+  debugMessage("saveNVConfig end",2);
+}
+
+void checkButtonPress() {
+  static uint32_t pressStartMS = 0;
+  static bool portalTriggered = false;
+
+  const uint8_t buttonState = digitalRead(pinButton);
+  const uint32_t now = millis();
+
+  if (buttonState == LOW) {
+    if (pressStartMS == 0) {
+      pressStartMS = now;
+      portalTriggered = false;
+    }
+
+    const uint32_t heldMS = now - pressStartMS;
+    debugMessage(String("button pressed for ") + (heldMS / 1000) + " seconds", 2);
+
+    // Once portal is triggered for this press, do NOT allow escalation to reset
+    if (!portalTriggered) {
+      if (heldMS >= timeDeviceResetHoldMS) {
+        wipePrefsAndReboot(); // typically does not return
+        return;
+      }
+
+      if (heldMS >= timeStartPortalHoldMS) {
+        portalTriggered = true;
+        startWebPortal();
+      }
+    }
+  } 
+  else {
+    if (pressStartMS != 0) {
+      debugMessage("button released", 2);
+      pressStartMS = 0;
+      portalTriggered = false;
+    }
   }
-
-  void saveNVConfig()
-  // copy new config data to non-volatile storage
-  {
-    debugMessage("saveNVConfig begin",2);
-    nvConfig.begin("config", false); // read-write
-
-    nvConfig.putUShort("altitude", hardwareData.altitude);
-    nvConfig.putFloat("latitude",hardwareData.latitude);
-    nvConfig.putFloat("longitude", hardwareData.longitude);
-
-    #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-      nvConfig.putString("site", endpointPath.site);
-      nvConfig.putString("location", endpointPath.location);
-      nvConfig.putString("room", endpointPath.room);
-      nvConfig.putString("deviceID", endpointPath.deviceID);
-    #endif
-
-    #ifdef MQTT
-      nvConfig.putString("mqttHost",  mqttBrokerConfig.host);
-      nvConfig.putUShort("mqttPort",  mqttBrokerConfig.port);
-      nvConfig.putString("mqttUser",  mqttBrokerConfig.user);
-      nvConfig.putString("mqttPassword",  mqttBrokerConfig.password);
-    #endif
-
-    #ifdef INFLUX
-      nvConfig.putString("influxHost",  influxdbConfig.host);
-      nvConfig.putUShort("influxPort",  influxdbConfig.port);
-      nvConfig.putString("influxOrg",   influxdbConfig.org);
-      nvConfig.putString("influxBucket",influxdbConfig.bucket);
-      nvConfig.putString("influxEnvMeasure",influxdbConfig.envMeasurement);
-      nvConfig.putString("influxDevMeasure", influxdbConfig.devMeasurement);
-    #endif
-
-    nvConfig.end();
-    debugMessage("saveNVConfig end",2);
-  }
-#endif  
+}
 
 /**
  * @brief retreives current weather data from Open Weather Maps.
@@ -1664,6 +1656,7 @@ bool OWMCurrentWeatherRead()
       return true;
     }
   #endif
+  return true;
 }
 
 bool OWMAirPollutionRead()
@@ -1683,7 +1676,7 @@ bool OWMAirPollutionRead()
         WiFi.reconnect();
       }
 
-    aString serverPath = OWMServer + OWMAQMPath +
+    String serverPath = OWMServer + OWMAQMPath +
      "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&APPID=" + OWMKey;
 
       HTTPClient http;
@@ -1735,6 +1728,7 @@ bool OWMAirPollutionRead()
       return true;
     }
   #endif
+  return true;
 }
 
 /**
@@ -1980,7 +1974,7 @@ bool sensorRead()
 
         sensorData.ambientTemperatureF = temperatureF;
         totalTemperatureF.include(sensorData.ambientTemperatureF);
-        sensorData.humidity = humidity;
+        sensorData.ambientHumidity = humidity;
         totalHumidity.include(sensorData.ambientHumidity);
         retainCO2(co2);
         totalCO2.include(co2);
@@ -2203,7 +2197,7 @@ bool sensorRead()
         error = co2Sensor.readMeasurement(co2, temperatureC, humidity);
         if (error) {
             errorToString(error, errorMessage, 256);
-            debugMe(String("SCD40 executing readMeasurement(): ") + errorMessage,1);
+            debugMessage(String("SCD40 executing readMeasurement(): ") + errorMessage,1);
             // Implicitly continues back to the top of the loop
         }
         else
@@ -2234,7 +2228,7 @@ bool sensorRead()
 
         sensorData.ambientTemperatureF = temperatureF;
         totalTemperatureF.include(sensorData.ambientTemperatureF);
-        sensorData.humidity = humidity;
+        sensorData.ambientHumidity = humidity;
         totalHumidity.include(sensorData.ambientHumidity);
         retainCO2(co2);
         totalCO2.include(co2);
