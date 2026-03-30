@@ -17,8 +17,7 @@ extern uint32_t timeLastReportMS;
 extern Measure<graphPoints> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
 
 // Forward declarations for local functions to help make ordering in this file easier
-void screenHelperGraphNew(uint16_t, uint16_t, uint16_t, uint16_t, Measure<graphPoints>, uint8_t, String);
-void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, const float *, uint8_t, String);
+void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<graphPoints>, uint8_t, String);
 void screenHelperComponentSetup(String);
 uint16_t getWarningColor(uint8_t, float);
 void screenHelperWiFiStatus(uint16_t, uint16_t, uint8_t, uint8_t, uint8_t);
@@ -32,7 +31,6 @@ char OWMtoMeteoconIcon(const char*);
 
 // ***** Screen display routines, typically one per major screen ***** //
 
-
 void screenSaver()
 // Description: Display current CO2 reading at a random location (e.g. "screen saver")
 // Parameters:  NA
@@ -45,12 +43,12 @@ void screenSaver()
 
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(TL_DATUM);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+  display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
 
-  uint16_t textWidth = display.textWidth(String(sensorData.ambientCO2[graphPoints-1]));
+  uint16_t textWidth = display.textWidth(String(totalCO2.getCurrent()));
 
   // Display CO2 value in random, valid location
-  display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints-1])), random(xMargins,display.width()-xMargins-textWidth), random(yMargins, display.height() - yMargins - display.fontHeight()));
+  display.drawString(String(uint16_t(totalCO2.getCurrent())), random(xMargins,display.width()-xMargins-textWidth), random(yMargins, display.height() - yMargins - display.fontHeight()));
   
   debugMessage("screenSaver() end",1);
 }
@@ -72,33 +70,27 @@ void screenMain()
 
   display.fillScreen(TFT_BLACK);
   // CO2
-  display.fillSmoothRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+  display.fillSmoothRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, getWarningColor(CO2_DATA,totalCO2.getCurrent()) );
   display.drawString("CO2",display.width()/4,display.height()/4);
   // PM2.5
-  display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth), 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[pm25Range(sensorData.pm25)]);
+  display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth), 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, getWarningColor(PM_DATA,totalPM25.getCurrent()) ); 
   display.drawString("PM25",display.width()*3/4,display.height()/4);
   // VOC Index
-  display.fillSmoothRoundRect(0, ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
+  display.fillSmoothRoundRect(0, ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()) );
   display.drawString("VOC",display.width()/4,display.height()*3/4);
   #ifdef SENSOR_SEN66
     // NOx index
-    display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, warningColor[pm25Range(sensorData.pm25)]);
+    display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, getWarningColor(NOX_DATA,totalNOXIndex.getCurrent()) );
     display.drawString("NOx",display.width()*3/4,display.height()*3/4);
   #else
     // Temperature
-    if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
-      display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_YELLOW);
-    else
-      display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_GREEN);
+    display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,getWarningColor(TEMP_DATA,totalTemperatureF.getCurrent()) );
     // display.setCursor(((display.width()*5)/8),((display.height()*3)/4));
     display.setFreeFont(&meteocons24pt7b);
     display.drawString("+",display.width()*5/8,display.height()*3/4);
     // display.print("+");
     // Humdity
-    if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
-      display.fillSmoothRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_YELLOW);
-    else
-      display.fillSmoothRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_GREEN);
+    display.fillSmoothRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,getWarningColor(HUM_DATA,totalHumidity.getCurrent()) );
     display.drawBitmap(((display.width()*7/8)-10),((display.height()*3/4)-14), bitmapHumidityIconSmall, 20, 28, TFT_BLACK);
   #endif
 
@@ -132,37 +124,25 @@ void screenTempHumidity()
 
   // Indoor
   // Indoor temp
-  if ((sensorData.ambientTemperatureF<sensorTempFComfortMin) || (sensorData.ambientTemperatureF>sensorTempFComfortMax))
-    display.setTextColor(TFT_YELLOW);
-  else
-    display.setTextColor(TFT_WHITE);
-  display.drawString(String((uint8_t)(sensorData.ambientTemperatureF + .5)), (display.width()/4), (display.height()*3/8));
+  display.setTextColor(getWarningColor(TEMP_DATA,totalTemperatureF.getCurrent()));
+  display.drawString(String((uint8_t)(totalTemperatureF.getCurrent() + .5)), (display.width()/4), (display.height()*3/8));
   display.drawBitmap((display.width()/4 + 30), ((display.height()*3/8) - 14), bitmapTempFSmall, 20, 28, TFT_WHITE);
 
   // Indoor humidity
-  if ((sensorData.ambientHumidity < sensorHumidityComfortMin) || (sensorData.ambientHumidity > sensorHumidityComfortMax))
-    display.setTextColor(TFT_YELLOW);
-  else
-    display.setTextColor(TFT_GREEN);
-  display.drawString(String((uint8_t)(sensorData.ambientHumidity + 0.5)), (display.width()/4), (display.height()*5/8));
+  display.setTextColor(getWarningColor(HUM_DATA,totalHumidity.getCurrent()));
+  display.drawString(String((uint8_t)(totalHumidity.getCurrent() + 0.5)), (display.width()/4), (display.height()*5/8));
   display.drawBitmap((display.width()/4 + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
 
   // Outside
   // do we have OWM Current data to display?
   if (owmCurrentData.tempF != 255) {
     // Outside temp
-    if ((owmCurrentData.tempF < sensorTempFComfortMin) || (owmCurrentData.tempF > sensorTempFComfortMax))
-      display.setTextColor(TFT_YELLOW);
-    else
-      display.setTextColor(TFT_WHITE);
+    display.setTextColor(getWarningColor(TEMP_DATA,owmCurrentData.tempF));
     display.drawString(String((uint8_t)(owmCurrentData.tempF + 0.5)), (display.width()*3/4), (display.height()*3/8));
     display.drawBitmap(((display.width()*3/4) + 30), ((display.height()*3/8) - 14), bitmapTempFSmall, 20, 28, TFT_WHITE);
 
     // Outside humidity
-    if ((owmCurrentData.humidity < sensorHumidityComfortMin) || (owmCurrentData.humidity > sensorHumidityComfortMax))
-      display.setTextColor(TFT_YELLOW);
-    else
-      display.setTextColor(TFT_WHITE);
+    display.setTextColor(getWarningColor(HUM_DATA,owmCurrentData.humidity));
     display.drawString(String((uint8_t)(owmCurrentData.humidity + 0.5)), (display.width()*3/4), (display.height()*5/8));
     display.drawBitmap(((display.width()*3/4) + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
   }
@@ -214,14 +194,14 @@ void screenPM25()
   display.drawString("Outside", (display.width()*3/4), display.height()/6);
 
   // Indoor PM2.5 ring
-  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(sensorData.pm25)]);
+  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius,getWarningColor(PM_DATA,totalPM25.getCurrent()));
   display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
   // Indoor pm25 value and label inside the circle
   display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(warningColor[pm25Range(sensorData.pm25)]);  // Use highlight color look-up table
+  display.setTextColor(getWarningColor(PM_DATA,totalPM25.getCurrent()));  // Use highlight color look-up
   display.setCursor(xIndoorCircleText,yPMCircles);
-  display.print(sensorData.pm25);
+  display.print(totalPM25.getCurrent());
   // label
   display.setTextColor(TFT_WHITE);
   display.setCursor(xIndoorCircleText,yPMCircles+23);
@@ -232,12 +212,12 @@ void screenPM25()
   // do we have OWM Air Quality data to display?
   if (owmAirQuality.aqi != 255) {
     // Outside PM2.5
-    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius,warningColor[pm25Range(owmAirQuality.pm25)]);
+    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius,getWarningColor(PM_DATA,owmAirQuality.pm25));
     display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
     // outdoor pm25 value and label inside the circle
     display.setFreeFont(&FreeSans12pt7b);
-    display.setTextColor(warningColor[pm25Range(owmAirQuality.pm25)]);  // Use highlight color look-up table
+    display.setTextColor(getWarningColor(PM_DATA,owmAirQuality.pm25)); // Use highlight color look-up 
     display.setCursor(xOutdoorCircleText, yPMCircles);
     display.print(owmAirQuality.pm25);
     //label
@@ -276,12 +256,12 @@ void screenVOC()
   display.setTextDatum(MC_DATUM);
 
   // VOC numeric value
-  display.setTextColor(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);  // Use highlight color look-up table
-  display.drawString(String(uint16_t(sensorData.vocIndex[graphPoints-1])), (display.width()/2), yValue);
+  display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));  // Use highlight color look-up 
+  display.drawString(String(uint16_t(totalVOCIndex.getCurrent())), (display.width()/2), yValue);
 
-  screenHelperGraph(xMargins, display.height()/3, (display.width()-(2*xMargins)-legendWidth-10),((display.height()*2/3)-yMargins), sensorData.vocIndex, VOC_DATA, "Recent values");
+  screenHelperGraph(xMargins, display.height()/3, (display.width()-(2*xMargins)-legendWidth-10),((display.height()*2/3)-yMargins), totalVOCIndex, VOC_DATA, "Recent values");
 
-  // legend for CO2 color wheel
+  // legend for VOC color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
     display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
   }
@@ -310,10 +290,10 @@ void screenCO2()
   display.setTextDatum(MC_DATUM);
 
   // CO2 numeric value
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
-  display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints-1])), (display.width()/2), yValue);
+  display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
+  display.drawString(String(uint16_t(totalCO2.getCurrent())), (display.width()/2), yValue);
 
-  screenHelperGraph(xMargins, display.height()/3, (display.width()-(2*xMargins)-legendWidth-10),((display.height()*2/3)-yMargins), sensorData.ambientCO2, CO2_DATA, "Recent values");
+  screenHelperGraph(xMargins, display.height()/3, (display.width()-(2*xMargins)-legendWidth-10),((display.height()*2/3)-yMargins), totalCO2, CO2_DATA, "Recent values");
 
   // legend for CO2 color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
@@ -346,7 +326,7 @@ void screenNOX()
   display.setFreeFont(&FreeSans18pt7b);
 
   // NOx color circle
-  display.fillSmoothCircle(xVOCCircle,yVOCCircle,circleRadius,warningColor[noxRange(sensorData.noxIndex)]);
+  display.fillSmoothCircle(xVOCCircle,yVOCCircle,circleRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));
   display.fillSmoothCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,TFT_BLACK);
 
   // legend for NOx color wheel
@@ -355,9 +335,9 @@ void screenNOX()
   }
 
   // NOx value and label (displayed inside circle)
-  display.setTextColor(warningColor[vocRange(sensorData.noxIndex)]);  // Use highlight color look-up table
+  display.setTextColor(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));  // Use highlight color look-up 
   display.setCursor(xVOCCircle-20,yVOCCircle);
-  display.print(int(sensorData.noxIndex+.5));
+  display.print(int(totalNOxIndex.getCurrent() +.5));
   display.setTextColor(TFT_WHITE);
   display.setCursor(xVOCLabel,yVOCLabel);
   display.print("NOx");
@@ -610,118 +590,7 @@ uint8_t noxRange(float noxIndex)
   return noxRange;
 }
 
-
-void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, const float *values, uint8_t datatype, String xLabel)
-// Description : Draw a graph of recent (CO2) values from right (most recent) to left. -1 values not graphed.
-// Parameters: starting graph position (x,y), width and height of graph, x axis description
-// Return : none
-// Improvement : This function assumes the use of the default Adafruit GFX font and its rendering direction (down, right)
-//  determine minimum size and block width and height smaller than that  
-{
-  uint8_t loop; // upper bound is graphPoints definition
-  uint16_t text1Width, text1Height;
-  uint16_t deltaX, x, y, xp, yp;  // graphing positions
-  float minValue, maxValue;
-  bool firstpoint = true, nodata = true;
-
-  // screen layout assists in pixels
-  uint8_t labelSpacer = 2;
-  uint16_t graphLineX; // dynamically defined below
-  uint16_t graphLineY;
-
-  debugMessage("screenHelperGraph() start",1);
-
-  display.fillRect(initialX,initialY,xWidth,yHeight,TFT_BLACK);
-  display.setFreeFont();
-  display.setTextColor(TFT_WHITE);
-
-  switch (datatype) {
-    case CO2_DATA:
-      minValue = sensorCO2Max;
-      maxValue = sensorCO2Min;
-      break;
-    case VOC_DATA:
-      minValue = sensorVOCMax;
-      maxValue = sensorVOCMin;
-      break;  
-}
-  // scan the array for min/max
-  for(loop=0;loop<graphPoints;loop++) {
-    if(values[loop] == -1) continue;   // Skip "empty" slots
-    nodata = false;  // At least one data point
-    if(values[loop] < minValue) minValue = values[loop];
-    if(values[loop] > maxValue) maxValue = values[loop];
-  }
-  debugMessage(String("Min value in samples is ") + minValue + ", max is " + maxValue, 2);
-
-  // do we have data? (e.g., just booted)
-  if (nodata)
-    xLabel = "Awaiting samples";
-  else {
-    // since we have data, pad min and max CO2 to add room and be multiples of 50 (for nicer axis labels)
-    minValue = (uint16_t(minValue)/50)*50;
-    maxValue = ((uint16_t(maxValue)/50)+1)*50;
-  }
-
-  // draw the X axis description, if provided, and set the position of the horizontal axis line
-  if (strlen(xLabel.c_str())) {
-    text1Width = display.textWidth(xLabel);
-    text1Height = display.fontHeight();
-    graphLineY = initialY + yHeight - text1Height - labelSpacer;
-    display.setCursor((((initialX + xWidth)/2) - (text1Width/2)), (initialY + yHeight - text1Height));
-    display.print(xLabel);
-  }
-
-  // calculate text width and height of longest Y axis label
-  text1Width = display.textWidth(String(maxValue));
-  text1Height = display.fontHeight(); 
-  graphLineX = initialX + text1Width + labelSpacer;
-  
-  // draw top Y axis label
-  display.setCursor(initialX, initialY);
-  display.print(uint16_t(maxValue));
-  // draw bottom Y axis label
-  display.setCursor(initialX, graphLineY-text1Height); 
-  display.print(uint16_t(minValue));
-
-  // Draw vertical axis
-  display.drawFastVLine(graphLineX,initialY,(graphLineY-initialY), TFT_WHITE);
-  // Draw horitzonal axis
-  display.drawFastHLine(graphLineX,graphLineY,(xWidth-graphLineX),TFT_WHITE);
-
-  // Plot however many data points we have both with filled circles at each
-  // point and lines connecting the points.  Color the filled circles with the
-  // appropriate CO2 warning level color.
-  deltaX = ((xWidth-graphLineX) - 10) / (graphPoints-1);  // X distance between points, 10 pixel padding for Y axis
-  xp = graphLineX;
-  yp = graphLineY;
-  for(loop=0;loop<graphPoints;loop++) {
-    if(values[loop] == -1) continue;
-    x = graphLineX + 10 + (loop*deltaX);  // Include 10 pixel padding for Y axis
-    y = graphLineY - (((values[loop] - minValue)/(maxValue-minValue)) * (graphLineY-initialY));
-    debugMessage(String("Array ") + loop + " y value is " + y,2);
-    if (datatype == CO2_DATA)
-      display.fillSmoothCircle(x,y,4,warningColor[co2Range(sensorData.ambientCO2[loop])]);
-    else
-      if (datatype == VOC_DATA)
-        display.fillSmoothCircle(x,y,4,warningColor[vocRange(sensorData.vocIndex[loop])]);
-    if(firstpoint) {
-      // If this is the first drawn point then don't try to draw a line
-      firstpoint = false;
-    }
-    else {
-      // Draw line from previous point (if one) to this point
-      display.drawLine(xp,yp,x,y,TFT_WHITE);
-    }
-    // Save x & y of this point to use as previous point for next one.
-    xp = x;
-    yp = y;
-  }
-  debugMessage("screenHelperGraph() end",1);
-}
-
-
-void screenHelperGraphNew(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, Measure<graphPoints> measure, uint8_t datatype, String xLabel)
+void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, Measure<graphPoints> measure, uint8_t datatype, String xLabel)
 {
   int i, stored, capacity;
   int8_t loop; // upper bound is graphPoints definition
@@ -735,7 +604,7 @@ void screenHelperGraphNew(uint16_t initialX, uint16_t initialY, uint16_t xWidth,
   uint16_t graphLineX; // dynamically defined below
   uint16_t graphLineY;
 
-  debugMessage("screenHelperGraphNew() start",1);
+  debugMessage("screenHelperGraph() start",1);
 
   stored   = measure.getStored();
   capacity = measure.getCapacity();
@@ -831,7 +700,7 @@ void screenHelperGraphNew(uint16_t initialX, uint16_t initialY, uint16_t xWidth,
     xp = x;
     yp = y;
   }
-  debugMessage("screenHelperGraphNew() end",1);
+  debugMessage("screenHelperGraph() end",1);
 }
 
 // Determine the right warning color to use for an arbitrary sensor data value given

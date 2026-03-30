@@ -105,8 +105,11 @@ hdweData hardwareData;
 OpenWeatherMapCurrentData owmCurrentData;
 OpenWeatherMapAirQuality owmAirQuality; 
 
-// Utility class used to streamline accumulating sensor values, averages, min/max &c.
-Measure totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
+// Utility class used to streamline accumulating sensor values, averages, min/max &c.  Each
+// instance contains storage to retain points for subsequent processing, which are used
+// here to graph recent data. The size of that retatined data is based on the
+// graphPoints value defined in config.h.
+Measure<graphPoints> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
 
 uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
 bool saveWFMConfig = false;
