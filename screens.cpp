@@ -314,10 +314,10 @@ void screenNOX()
   const uint16_t xLegend = (display.width() - xMargins - legendWidth);
   const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*legendHeight)));
   const uint16_t circleRadius = 100;
-  const uint16_t xVOCCircle = (display.width() / 2);
-  const uint16_t yVOCCircle = (display.height() / 2);
-  const uint16_t xVOCLabel = xVOCCircle - 35;
-  const uint16_t yVOCLabel = yVOCCircle + 35;
+  const uint16_t xNOxCircle = (display.width() / 2);
+  const uint16_t yNOxCircle = (display.height() / 2);
+  const uint16_t xNOxLabel = xNOxCircle - 35;
+  const uint16_t yNOxLabel = yNOxCircle + 35;
 
   debugMessage("screenNOX() start",1);
 
@@ -326,8 +326,8 @@ void screenNOX()
   display.setFreeFont(&FreeSans18pt7b);
 
   // NOx color circle
-  display.fillSmoothCircle(xVOCCircle,yVOCCircle,circleRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));
-  display.fillSmoothCircle(xVOCCircle,yVOCCircle,circleRadius*0.8,TFT_BLACK);
+  display.fillSmoothCircle(xNOxCircle,yNOxCircle,circleRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));
+  display.fillSmoothCircle(xNOxCircle,yNOxCircle,circleRadius*0.8,TFT_BLACK);
 
   // legend for NOx color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
@@ -336,7 +336,7 @@ void screenNOX()
 
   // NOx value and label (displayed inside circle)
   display.setTextColor(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));  // Use highlight color look-up 
-  display.setCursor(xVOCCircle-20,yVOCCircle);
+  display.setCursor(xNOxCircle-20,yNOxCircle);
   display.print(int(totalNOxIndex.getCurrent() +.5));
   display.setTextColor(TFT_WHITE);
   display.setCursor(xVOCLabel,yVOCLabel);
