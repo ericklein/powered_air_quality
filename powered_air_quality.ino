@@ -88,6 +88,7 @@ extern void screenAlert(String message);
 extern void screenSaver();
 extern void screenMain();
 extern void screenVOC();
+extern void screenNOX();
 extern void screenCO2();
 extern void screenPM25();
 extern void screenTempHumidity();

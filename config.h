@@ -26,8 +26,8 @@
 // Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
-// #define SENSOR_SEN66
-#define SENSOR_SEN54SCD40
+#define SENSOR_SEN66
+// #define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 

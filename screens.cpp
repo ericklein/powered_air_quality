@@ -80,7 +80,7 @@ void screenMain()
   display.drawString("VOC",display.width()/4,display.height()*3/4);
   #ifdef SENSOR_SEN66
     // NOx index
-    display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, getWarningColor(NOX_DATA,totalNOXIndex.getCurrent()) );
+    display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()) );
     display.drawString("NOx",display.width()*3/4,display.height()*3/4);
   #else
     // Temperature
