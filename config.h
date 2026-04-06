@@ -133,7 +133,7 @@ const uint16_t sensorNOxMax =   500;  // per SEN66 datasheet
 
 // timers
 // Internet and network endpoints
-const uint32_t timeNetworkTimeoutMS = 10000; // how long to attempt network connects before failing
+const uint32_t timeNetworkTimeoutSeconds = 10; // how long to attempt network connects before failing
 const uint32_t timeNetworkKeepAliveMS = 30000;
 const uint32_t timeOWMRenewMS = 1800000; // min time between OWM calls
 
@@ -165,8 +165,8 @@ const uint16_t touchscreenMaxY = 3800;
 static constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
 static constexpr uint8_t pinSDA = 22;
 static constexpr uint8_t pinSCL = 27;
-static constexpr uint8_t ledStrip1DataPin = 16;
-static constexpr uint8_t ledStripPixelCount = 17; // number of LEDs on each strip
+static constexpr uint8_t ledStrip1DataPin = 4;
+static constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
 static constexpr uint8_t pinAudio = 26;
 static constexpr uint8_t pinXPT2046_IRQ = 36;
 static constexpr uint8_t pinXPT2046_MOSI = 32;
@@ -180,3 +180,7 @@ static constexpr uint16_t MAX_DUTY = (1u << PWM_BITS) - 1u;
 // CYD Freenode FNK0103L_3P2 (3.2" TFT, usb-c)
 // static constexpr uint8_t CYD_SDA = 32;
 // static constexpr uint8_t CYD_SCL = 25;
+
+// JC2432W328
+// static constexpr uint8_t pinSDA = 22;
+// static constexpr uint8_t pinSCL = 21;

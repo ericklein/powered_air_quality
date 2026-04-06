@@ -20,6 +20,8 @@
 #include <XPT2046_Touchscreen.h>  // https://github.com/PaulStoffregen/XPT2046_Touchscreen
 #include <ArduinoJson.h>          // https://github.com/bblanchon/ArduinoJson, used by OWM retrieval routines
 
+// #include <ESPmDNS.h>
+
 // environment sensors
 #ifdef SENSOR_SEN66
   // Instanstiate SEN66 hardware object, if being used
@@ -88,8 +90,10 @@ XPT2046_Touchscreen touchscreen(pinXPT2046_CS,pinXPT2046_IRQ);
 // Arrange for the default unique device identifier to be automatically generated at runtime based
 // on ESP32 MAC address and hardware device type as specified in config.h.  This is done using a
 // custom function contained here (see below).
-extern String deviceGetID(String prefix);
-const String defaultDeviceID = deviceGetID(hardwareDeviceType);
+
+// extern String deviceGetID(String prefix);
+
+// const String defaultDeviceID = deviceGetID(hardwareDeviceType);
 
 // data structures defined in powered_air_quality.h
 networkEndpointConfig endpointPath;
@@ -128,6 +132,14 @@ void setup() {
   // generate truely random numbers
   randomSeed(esp_random());
 
+  Wire.begin(pinSDA, pinSCL);
+  // scanI2C();
+  // if (cst820Present(33, 32, 25)) {
+  //   Serial.println("CST820 detected");
+  // } else {
+  //   Serial.println("CST820 not detected");
+  // }
+
   // initialize touchscreen
   touchscreenSPI.begin(pinXPT2046_CLK, pinXPT2046_MISO, pinXPT2046_MOSI, pinXPT2046_CS); // setup the VSPI to use CYD touchscreen pins
   touchscreen.begin(touchscreenSPI);
@@ -139,8 +151,9 @@ void setup() {
 
   #ifndef HARDWARE_SIMULATE
     ledInit();
+    stripOne.setOneColor(CRGB::Red);
 
-    // load before sensorInit() to get altitude data for sensor setup
+    // execute before sensorInit() to load altitude
     loadNVConfig();
   #endif
 
@@ -677,7 +690,8 @@ void screenVOC()
   }
 
   // Update RGB LED based on VOC severity
-  // ledsOne.setOneColor(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);
+  CRGB ledColor = rgb565ToCRGB(warningColor[vocRange(sensorData.vocIndex[graphPoints - 1])]);
+  stripOne.setOneColor(ledColor);
 
   debugMessage("screenVOC() end",1);
 }
@@ -728,7 +742,8 @@ void screenCO2()
   }
 
   // Update RGB LED based on CO₂ severity
-  // ledsOne.setOneColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]);
+  CRGB ledColor = rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]);
+  stripOne.setOneColor(ledColor);
 
   debugMessage("screenCO2() end", 1);
 }
@@ -772,7 +787,8 @@ void screenNOX()
   display.print("NOx");
 
   // Update RGB LED based on NOx severity
-  // ledsOne.setOneColor(warningColor[noxRange(sensorData.noxIndex)]);
+  CRGB ledColor = rgb565ToCRGB(warningColor[noxRange(sensorData.noxIndex)]);
+  stripOne.setOneColor(ledColor);
 
   debugMessage("screenNOX() end",1);
 }
@@ -1255,14 +1271,17 @@ void sensorSEN6xSimulate()
   bool openWiFiManager()
   // Connect to WiFi network using WiFiManager
   {
-    bool connected = false;
-
     debugMessage("openWiFiManager begin",2);
+    // make sure Wi-Fi is fully stopped before setting hostname
+    WiFi.mode(WIFI_MODE_NULL);
+    // MDNS.begin(endpointPath.deviceID.c_str());
+    WiFi.setHostname(endpointPath.deviceID.c_str());
+    // bool ok = WiFi.setHostname(endpointPath.deviceID.c_str());
+    // Serial.printf("setHostname returned: %s\n", ok ? "true" : "false");
 
     // set WiFiManager parameters
-    wfm.setHostname(endpointPath.deviceID.c_str());
     wfm.setSaveConfigCallback(saveConfigCallback);
-    // wfm.setConnectTimeout(180); // how long to try to connect for before continuing
+    wfm.setConnectTimeout(timeNetworkTimeoutSeconds); // how long to try connecting before continuing
     wfm.setConfigPortalTimeout(180); // auto close configportal after n seconds
     // wifi scan settings
     // wm.setRemoveDuplicateAPs(false); // do not remove duplicate ap names (true)
@@ -1273,130 +1292,113 @@ void sensorSEN6xSimulate()
       wfm.setDebugOutput(false);
     #endif
 
-    // try and use stored credentials
-    WiFi.begin();
+    // set WiFiManager portal parameters
+    String parameterText = hardwareDeviceType + " setup";
 
-    uint32_t wifiStartConnectMS = millis();
-    while ((WiFi.status() != WL_CONNECTED) && (millis() - wifiStartConnectMS < timeNetworkTimeoutMS)) {
-      delay(500);
-    }
+    // note: parameter order determines on-screen order
 
-    if (WiFi.status() == WL_CONNECTED) {
-      connected = true;
-    }
-    else {
-      // no stored credentials or failed connect, use WiFiManager AP portal for WiFi setup
-      debugMessage("No stored credentials or failed connect, switching to WiFiManager",1);
-      String parameterText = hardwareDeviceType + " setup";
+    wfm.setTitle("Ola friend!");
+    WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
+    
+    wfm.addParameter(&hint_text);
 
+    // collect common parameters in AP portal mode
+    WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude","",9);
+    WiFiManagerParameter deviceLongitude("deviceLongitude", "device longitude","",9);
+    // String altitude = to_string(defaultAltitude);
+    WiFiManagerParameter deviceAltitude("deviceAltitude", "Meters above sea level",defaultAltitude.c_str(),5);
+    WiFiManagerParameter deviceID("deviceID", "unique name for device", endpointPath.deviceID.c_str(), 30);
+
+    wfm.addParameter(&deviceLatitude);
+    wfm.addParameter(&deviceLongitude);
+    wfm.addParameter(&deviceAltitude);
+    wfm.addParameter(&deviceID);
+
+
+    #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+      // collect network endpoint path in AP portal mode
+      WiFiManagerParameter deviceSite("deviceSite", "device site", defaultSite.c_str(), 20);
+      WiFiManagerParameter deviceLocation("deviceLocation", "indoor or outdoor", defaultLocation.c_str(), 20);
+      WiFiManagerParameter deviceRoom("deviceRoom", "what room is the device in", defaultRoom.c_str(), 20);
+
+      wfm.addParameter(&deviceSite);
+      wfm.addParameter(&deviceLocation);
+      wfm.addParameter(&deviceRoom);
+    #endif
+
+    #ifdef MQTT
+       // collect MQTT parameters in AP portal mode
+      WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",defaultMQTTBroker.c_str(),30);;
+      WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", defaultMQTTPort.c_str(), 5);
+      WiFiManagerParameter mqttUser("mqttUser", "MQTT username", defaultMQTTUser.c_str(), 20);
+      WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", defaultMQTTPassword.c_str(), 20);
+
+      wfm.addParameter(&mqttBroker);
+      wfm.addParameter(&mqttPort);
+      wfm.addParameter(&mqttUser);
+      wfm.addParameter(&mqttPassword);
+    #endif
+
+    #ifdef INFLUX
+      WiFiManagerParameter influxBroker("influxBroker","influxdb server address",defaultInfluxAddress.c_str(),30);;
+      WiFiManagerParameter influxPort("influxPort", "influxdb server port", defaultInfluxPort.c_str(), 5);
+      WiFiManagerParameter influxOrg("influxOrg", "influx organization name", defaultInfluxOrg.c_str(),20);
+      WiFiManagerParameter influxBucket("influxBucket", "influx bucket name", defaultInfluxBucket.c_str(),20);
+      WiFiManagerParameter influxEnvMeasurement("influxEnvMeasurement", "influx environment measurement", defaultInfluxEnvMeasurement.c_str(),20);
+      WiFiManagerParameter influxDevMeasurement("influxDevMeasurement", "influx device measurement", defaultInfluxDevMeasurement.c_str(),20);
+
+      wfm.addParameter(&influxBroker);
+      wfm.addParameter(&influxPort);
+      wfm.addParameter(&influxOrg);
+      wfm.addParameter(&influxBucket);
+      wfm.addParameter(&influxEnvMeasurement);
+      wfm.addParameter(&influxDevMeasurement);
+    #endif
+
+    bool connected = wfm.autoConnect(parameterText.c_str()); // anonymous ap
+      // connected = wfm.autoConnect(hardwareDeviceType + " AP","password"); // password protected AP
+
+    if(!connected) {
+      debugMessage("WiFi connection failure; local sensor data ONLY", 1);
       display.setFreeFont(&FreeSans18pt7b);
       // ALERT 
       screenHelperAlert(String("goto WiFi AP '") + parameterText + "'",TFT_WHITE,TFT_BLACK,TFT_WHITE);
+    } 
+    else {
+      if (saveWFMConfig) {
+        debugMessage("retreiving new parameters from AP portal",2);
+        hardwareData.altitude = (uint16_t)strtoul(deviceAltitude.getValue(), nullptr, 10);
+        hardwareData.latitude = atof(deviceLatitude.getValue());
+        hardwareData.longitude =  atof(deviceLongitude.getValue());
+        // endpointPath.deviceID = deviceID.getValue();
 
-      wfm.setTitle("Ola friend!");
-      // hint text (optional)
-      WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
-      
-      // order determines on-screen order
-      wfm.addParameter(&hint_text);
+        #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+          endpointPath.site = deviceSite.getValue();
+          endpointPath.location = deviceLocation.getValue();
+          endpointPath.room = deviceRoom.getValue();
+        #endif
 
-      // collect common parameters in AP portal mode
-      WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude","",9);
-      WiFiManagerParameter deviceLongitude("deviceLongitude", "device longitude","",9);
-      // String altitude = to_string(defaultAltitude);
-      WiFiManagerParameter deviceAltitude("deviceAltitude", "Meters above sea level",defaultAltitude.c_str(),5);
+        #ifdef MQTT
+          mqttBrokerConfig.host     = mqttBroker.getValue();
+          mqttBrokerConfig.port     = (uint16_t)strtoul(mqttPort.getValue(), nullptr, 10);
+          mqttBrokerConfig.user     = mqttUser.getValue();
+          mqttBrokerConfig.password = mqttPassword.getValue();
+        #endif
 
-      wfm.addParameter(&deviceLatitude);
-      wfm.addParameter(&deviceLongitude);
-      wfm.addParameter(&deviceAltitude);
+        #ifdef INFLUX
+          influxdbConfig.host       = influxBroker.getValue();
+          influxdbConfig.port       = (uint16_t)strtoul(influxPort.getValue(), nullptr, 10);
+          influxdbConfig.org        = influxOrg.getValue();
+          influxdbConfig.bucket     = influxBucket.getValue();
+          influxdbConfig.envMeasurement = influxEnvMeasurement.getValue();
+          influxdbConfig.devMeasurement = influxDevMeasurement.getValue();
+        #endif
 
-      #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-        // collect network endpoint path in AP portal mode
-        WiFiManagerParameter deviceSite("deviceSite", "device site", defaultSite.c_str(), 20);
-        WiFiManagerParameter deviceLocation("deviceLocation", "indoor or outdoor", defaultLocation.c_str(), 20);
-        WiFiManagerParameter deviceRoom("deviceRoom", "what room is the device in", defaultRoom.c_str(), 20);
-        WiFiManagerParameter deviceID("deviceID", "unique name for device", defaultDeviceID.c_str(), 30);
-
-        wfm.addParameter(&deviceSite);
-        wfm.addParameter(&deviceLocation);
-        wfm.addParameter(&deviceRoom);
-        wfm.addParameter(&deviceID);
-      #endif
-
-      #ifdef MQTT
-         // collect MQTT parameters in AP portal mode
-        WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",defaultMQTTBroker.c_str(),30);;
-        WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", defaultMQTTPort.c_str(), 5);
-        WiFiManagerParameter mqttUser("mqttUser", "MQTT username", defaultMQTTUser.c_str(), 20);
-        WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", defaultMQTTPassword.c_str(), 20);
-
-        wfm.addParameter(&mqttBroker);
-        wfm.addParameter(&mqttPort);
-        wfm.addParameter(&mqttUser);
-        wfm.addParameter(&mqttPassword);
-      #endif
-
-      #ifdef INFLUX
-        WiFiManagerParameter influxBroker("influxBroker","influxdb server address",defaultInfluxAddress.c_str(),30);;
-        WiFiManagerParameter influxPort("influxPort", "influxdb server port", defaultInfluxPort.c_str(), 5);
-        WiFiManagerParameter influxOrg("influxOrg", "influx organization name", defaultInfluxOrg.c_str(),20);
-        WiFiManagerParameter influxBucket("influxBucket", "influx bucket name", defaultInfluxBucket.c_str(),20);
-        WiFiManagerParameter influxEnvMeasurement("influxEnvMeasurement", "influx environment measurement", defaultInfluxEnvMeasurement.c_str(),20);
-        WiFiManagerParameter influxDevMeasurement("influxDevMeasurement", "influx device measurement", defaultInfluxDevMeasurement.c_str(),20);
-
-        wfm.addParameter(&influxBroker);
-        wfm.addParameter(&influxPort);
-        wfm.addParameter(&influxOrg);
-        wfm.addParameter(&influxBucket);
-        wfm.addParameter(&influxEnvMeasurement);
-        wfm.addParameter(&influxDevMeasurement);
-      #endif
-
-      connected = wfm.autoConnect(parameterText.c_str()); // anonymous ap
-      // connected = wfm.autoConnect(hardwareDeviceType + " AP","password"); // password protected AP
-
-      if(!connected) {
-        debugMessage("WiFi connection failure; local sensor data ONLY", 1);
-        // ESP.restart(); // if MQTT support is critical, make failure a stop gate
-      } 
-      else {
-        if (saveWFMConfig) {
-          debugMessage("retreiving new parameters from AP portal",2);
-          hardwareData.altitude = (uint16_t)strtoul(deviceAltitude.getValue(), nullptr, 10);
-          hardwareData.latitude = atof(deviceLatitude.getValue());
-          hardwareData.longitude =  atof(deviceLongitude.getValue());
-
-          #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-            endpointPath.site = deviceSite.getValue();
-            endpointPath.location = deviceLocation.getValue();
-            endpointPath.room = deviceRoom.getValue();
-            endpointPath.deviceID = deviceID.getValue();
-          #endif
-
-          #ifdef MQTT
-            mqttBrokerConfig.host     = mqttBroker.getValue();
-            mqttBrokerConfig.port     = (uint16_t)strtoul(mqttPort.getValue(), nullptr, 10);
-            mqttBrokerConfig.user     = mqttUser.getValue();
-            mqttBrokerConfig.password = mqttPassword.getValue();
-          #endif
-
-          #ifdef INFLUX
-            influxdbConfig.host       = influxBroker.getValue();
-            influxdbConfig.port       = (uint16_t)strtoul(influxPort.getValue(), nullptr, 10);
-            influxdbConfig.org        = influxOrg.getValue();
-            influxdbConfig.bucket     = influxBucket.getValue();
-            influxdbConfig.envMeasurement = influxEnvMeasurement.getValue();
-            influxdbConfig.devMeasurement = influxDevMeasurement.getValue();
-          #endif
-
-          saveNVConfig();
-          saveWFMConfig = false;
-        }
+        saveNVConfig();
+        saveWFMConfig = false;
       }
-    }
-    if (connected) {
       hardwareData.rssi = networkRSSIRead();
-      debugMessage(String("connected to " + WiFi.SSID() + ", ") + WiFi.localIP().toString() + ", " + hardwareData.rssi + "dBm RSSI", 1);
+      debugMessage(endpointPath.deviceID + " connected to " + WiFi.SSID() + ", " + WiFi.localIP().toString() + ", " + hardwareData.rssi + "dBm RSSI", 1);
     }
     debugMessage(String("openWiFiManager() end"), 2);
     return (connected);
@@ -1444,6 +1446,9 @@ void loadNVConfig() {
   debugMessage(String("Device latitude is ") + hardwareData.latitude,2);
   hardwareData.longitude = nvConfig.getFloat("longitude");
   debugMessage(String("Device longitude is ") + hardwareData.longitude,2);
+  // generate default unique device identifier based on ESP32 MAC address and hardware device type specified in config.h.
+  endpointPath.deviceID = nvConfig.getString("deviceID", deviceGetID(hardwareDeviceType));
+  debugMessage(String("Device ID is ") + endpointPath.deviceID,1);
 
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
     endpointPath.site = nvConfig.getString("site", defaultSite);
@@ -1452,8 +1457,6 @@ void loadNVConfig() {
     debugMessage(String("Device location is ") + endpointPath.location,2);
     endpointPath.room = nvConfig.getString("room", defaultRoom);
     debugMessage(String("Device room is ") + endpointPath.room,2);
-    endpointPath.deviceID = nvConfig.getString("deviceID", defaultDeviceID);
-    debugMessage(String("Device ID is ") + endpointPath.deviceID,1);
   #endif
 
   #ifdef MQTT
@@ -1495,12 +1498,12 @@ void saveNVConfig()
   nvConfig.putUShort("altitude", hardwareData.altitude);
   nvConfig.putFloat("latitude",hardwareData.latitude);
   nvConfig.putFloat("longitude", hardwareData.longitude);
+  nvConfig.putString("deviceID", endpointPath.deviceID);
 
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
     nvConfig.putString("site", endpointPath.site);
     nvConfig.putString("location", endpointPath.location);
     nvConfig.putString("room", endpointPath.room);
-    nvConfig.putString("deviceID", endpointPath.deviceID);
   #endif
 
   #ifdef MQTT
@@ -1885,7 +1888,7 @@ bool sensorRead()
       static char errorMessage[64];
       static int16_t error;
 
-      Wire.begin(pinSDA, pinSCL);
+      //Wire.begin(pinSDA, pinSCL);
       paqSensor.begin(Wire, SEN66_I2C_ADDR_6B);
 
       error = paqSensor.deviceReset();
@@ -2009,7 +2012,7 @@ bool sensorRead()
 
       // Wire.begin();
       // IMPROVEMENT: Do you need another Wire.begin() [see sensorSEN54Init()]?
-      Wire.begin(pinSDA, pinSCL);
+      //Wire.begin(pinSDA, pinSCL);
       pmSensor.begin(Wire);
 
       error = pmSensor.deviceReset();
@@ -2120,7 +2123,7 @@ bool sensorRead()
       uint16_t error;
 
       // IMPROVEMENT: Do you need another Wire.begin() [see sensorSEN54Init()]?
-      Wire.begin(pinSDA, pinSCL);
+      //Wire.begin(pinSDA, pinSCL);
       co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
 
       // stop potentially previously started measurement
@@ -2500,6 +2503,67 @@ void ledInit()
   debugMessage("ledInit() end",2);
 }
 
+CRGB rgb565ToCRGB(uint16_t c)
+{
+    uint8_t r5 = (c >> 11) & 0x1F;
+    uint8_t g6 = (c >> 5)  & 0x3F;
+    uint8_t b5 =  c        & 0x1F;
+
+    // Scale to 8-bit
+    uint8_t r8 = (r5 * 255) / 31;
+    uint8_t g8 = (g6 * 255) / 63;
+    uint8_t b8 = (b5 * 255) / 31;
+
+    return CRGB(r8, g8, b8);
+}
+
+#include <Wire.h>
+
+void scanI2C() {
+
+  Serial.println("\nI2C scan starting...");
+
+  uint8_t count = 0;
+
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    Wire.beginTransmission(addr);
+    uint8_t err = Wire.endTransmission();
+
+    if (err == 0) {
+      Serial.printf("Found device at 0x%02X\n", addr);
+      count++;
+    } else if (err == 4) {
+      Serial.printf("Unknown error at 0x%02X\n", addr);
+    }
+  }
+
+  if (count == 0) {
+    Serial.println("No I2C devices found");
+  } else {
+    Serial.printf("Done. %d device(s) found\n", count);
+  }
+
+  Serial.println("------------------------");
+}
+
+bool cst820Present(uint8_t sda, uint8_t scl, int rstPin) {
+  pinMode(rstPin, OUTPUT);
+  digitalWrite(rstPin, LOW);
+  delay(10);
+  digitalWrite(rstPin, HIGH);
+  delay(100);
+
+  Wire.begin(sda, scl);
+
+  Wire.beginTransmission(0x15);
+  Wire.write(0xA7);              // chip ID register
+  if (Wire.endTransmission(false) != 0) return false;
+  if (Wire.requestFrom(0x15, 1) != 1) return false;
+
+  uint8_t id = Wire.read();
+  Serial.printf("CST820 chip id: 0x%02X\n", id);
+  return id == 0xB7;
+}
 
 void debugMessage(String messageText, uint8_t messageLevel)
 // wraps Serial.println as #define conditional
