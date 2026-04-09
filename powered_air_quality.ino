@@ -12,15 +12,24 @@
 
 #include <HTTPClient.h>           // used to access Open Weather Map
 #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
+// #include <ESPmDNS.h>
 #include <Measure.hpp>            // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
 #include <Preferences.h>          // read-write to ESP32 persistent storage
 #include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
 #include <LEDControl.h>           // multi LED strip async control
 #include <TFT_eSPI.h>             // https://github.com/Bodmer/TFT_eSPI
-#include <XPT2046_Touchscreen.h>  // https://github.com/PaulStoffregen/XPT2046_Touchscreen
+// CYD touchscreen
+// CYD 2432S028R -> XPT2046
+// #include <XPT2046_Touchscreen.h>  // https://github.com/PaulStoffregen/XPT2046_Touchscreen
+// CYD JC2432W328 -> CST820
+#include <CST820.h>
+#include <CST820_Helper.h>
+// CYD XXXXX - TFT_eSPI handles it
 #include <ArduinoJson.h>          // https://github.com/bblanchon/ArduinoJson, used by OWM retrieval routines
 
-// #include <ESPmDNS.h>
+// CYD JC2432W328 i2c setup
+TwoWire TouchWire(0);
+TwoWire SensorWire(1);
 
 // environment sensors
 #ifdef SENSOR_SEN66
@@ -58,8 +67,12 @@ TFT_eSPI display = TFT_eSPI();
 #include "glyphs.h"
 
 // CYD touchscreen
-SPIClass touchscreenSPI = SPIClass(VSPI);
-XPT2046_Touchscreen touchscreen(pinXPT2046_CS,pinXPT2046_IRQ);
+// CYD 2432S028R -> XPT2046
+// SPIClass touchscreenSPI = SPIClass(VSPI);
+// XPT2046_Touchscreen touchscreen(pinTouchCS,pinTouchIRQ);
+// CYD JC2432W328 -> CST820
+CST820 touchscreen(pinTouchSDA, pinTouchSCL, pinTouchRST, pinTouchIRQ);
+CST820Helper touchHelper(touchscreen);
 
 #ifdef THINGSPEAK
   extern bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, 
@@ -132,18 +145,16 @@ void setup() {
   // generate truely random numbers
   randomSeed(esp_random());
 
-  Wire.begin(pinSDA, pinSCL);
-  // scanI2C();
-  // if (cst820Present(33, 32, 25)) {
-  //   Serial.println("CST820 detected");
-  // } else {
-  //   Serial.println("CST820 not detected");
-  // }
+  TouchWire.begin(pinTouchSDA, pinTouchSCL);
+  SensorWire.begin(pinSensorSDA, pinSensorSCL);
 
-  // initialize touchscreen
-  touchscreenSPI.begin(pinXPT2046_CLK, pinXPT2046_MISO, pinXPT2046_MOSI, pinXPT2046_CS); // setup the VSPI to use CYD touchscreen pins
-  touchscreen.begin(touchscreenSPI);
-  touchscreen.setRotation(screenRotation);
+  // CYD 2432S028R -> XPT2046
+  //Wire.begin(pinSensorSDA, pinSensorSCL);
+  // touchscreenSPI.begin(pinTouchCLK, pinTouchMISO, pinTouchMOSI, pinTouchCS); // setup the VSPI to use CYD touchscreen pins
+  // touchscreen.begin(touchscreenSPI);
+  // touchscreen.setRotation(screenRotation);
+  // CST820
+  touchscreen.begin(&TouchWire);
 
   // initialize GPIO
   pinMode(pinButton, INPUT_PULLUP);
@@ -224,10 +235,23 @@ void loop() {
   }
 
   // is there user input to process?
-  // cyd 2.8 touchscreen from XPT2046
-  if (touchscreen.tirqTouched() && touchscreen.touched()) {
-  // cyd 3.2 usb-c touchscreen from TFT_eSPI
+  // CYD 2432S028R -> XPT2046
+  // if (touchscreen.tirqTouched() && touchscreen.touched()) {
+  //   // get raw 12bit touchscreen x,y and then calibrate to screen size
+  //   TS_Point p = touchscreen.getPoint();
+  //   calibratedX = map(p.x, touchscreenMinX, touchscreenMaxX, 1, display.width());
+  //   calibratedY = map(p.y, touchscreenMinY, touchscreenMaxY, 1, display.height());
+    // alternate conversion
+    // uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
+    // uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
+  // CYD 3.2 usb-c touchscreen from TFT_eSPI
   // if (display.getTouch(&calibratedX,&calibratedY)) {
+  // CYD JC2432W328 -> CST820
+  CST820TouchEvent ev = touchHelper.poll(display.width(), display.height(), screenRotation);
+  if (ev.valid)
+  {
+    calibratedX = ev.end.x;
+    calibratedY = ev.end.y;
     // If screen saver active, switch to master screen
     switch (screenCurrent) {
       case sSaver :
@@ -235,13 +259,6 @@ void loop() {
         screenCurrent = sMain;
         break;
       case sMain : {
-        // get raw 12bit touchscreen x,y and then calibrate to screen size
-        TS_Point p = touchscreen.getPoint();
-        calibratedX = map(p.x, touchscreenMinX, touchscreenMaxX, 1, display.width());
-        calibratedY = map(p.y, touchscreenMinY, touchscreenMaxY, 1, display.height());
-        // alternate conversion
-        // uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
-        // uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
         debugMessage(String("input: touchpoint x=") + calibratedX + ", y=" + calibratedY,2);
         // transition to appropriate component screen
         if ((calibratedX < display.width()/2) && (calibratedY < display.height()/2)) {
@@ -1888,8 +1905,10 @@ bool sensorRead()
       static char errorMessage[64];
       static int16_t error;
 
-      //Wire.begin(pinSDA, pinSCL);
-      paqSensor.begin(Wire, SEN66_I2C_ADDR_6B);
+      // CYD 2432S028R 
+      // paqSensor.begin(Wire, SEN66_I2C_ADDR_6B);
+      // CYD JC2432W328
+      paqSensor.begin(SensorWire);
 
       error = paqSensor.deviceReset();
       if (error != 0) {
@@ -2010,10 +2029,10 @@ bool sensorRead()
       uint16_t error;
       char errorMessage[256];
 
-      // Wire.begin();
-      // IMPROVEMENT: Do you need another Wire.begin() [see sensorSEN54Init()]?
-      //Wire.begin(pinSDA, pinSCL);
-      pmSensor.begin(Wire);
+      // CYD 2432S028R 
+      //pmSensor.begin(Wire);
+      // CYD JC2432W328
+      pmSensor.begin(SensorWire);
 
       error = pmSensor.deviceReset();
       if (error) {
@@ -2122,9 +2141,10 @@ bool sensorRead()
       char errorMessage[256];
       uint16_t error;
 
-      // IMPROVEMENT: Do you need another Wire.begin() [see sensorSEN54Init()]?
-      //Wire.begin(pinSDA, pinSCL);
-      co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
+      // CYD 2432S028R 
+      // co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
+      // CYD JC2432W328
+      co2Sensor.begin(SensorWire, SCD41_I2C_ADDR_62);
 
       // stop potentially previously started measurement
       error = co2Sensor.stopPeriodicMeasurement();
@@ -2515,54 +2535,6 @@ CRGB rgb565ToCRGB(uint16_t c)
     uint8_t b8 = (b5 * 255) / 31;
 
     return CRGB(r8, g8, b8);
-}
-
-#include <Wire.h>
-
-void scanI2C() {
-
-  Serial.println("\nI2C scan starting...");
-
-  uint8_t count = 0;
-
-  for (uint8_t addr = 1; addr < 127; addr++) {
-    Wire.beginTransmission(addr);
-    uint8_t err = Wire.endTransmission();
-
-    if (err == 0) {
-      Serial.printf("Found device at 0x%02X\n", addr);
-      count++;
-    } else if (err == 4) {
-      Serial.printf("Unknown error at 0x%02X\n", addr);
-    }
-  }
-
-  if (count == 0) {
-    Serial.println("No I2C devices found");
-  } else {
-    Serial.printf("Done. %d device(s) found\n", count);
-  }
-
-  Serial.println("------------------------");
-}
-
-bool cst820Present(uint8_t sda, uint8_t scl, int rstPin) {
-  pinMode(rstPin, OUTPUT);
-  digitalWrite(rstPin, LOW);
-  delay(10);
-  digitalWrite(rstPin, HIGH);
-  delay(100);
-
-  Wire.begin(sda, scl);
-
-  Wire.beginTransmission(0x15);
-  Wire.write(0xA7);              // chip ID register
-  if (Wire.endTransmission(false) != 0) return false;
-  if (Wire.requestFrom(0x15, 1) != 1) return false;
-
-  uint8_t id = Wire.read();
-  Serial.printf("CST820 chip id: 0x%02X\n", id);
-  return id == 0xB7;
 }
 
 void debugMessage(String messageText, uint8_t messageLevel)

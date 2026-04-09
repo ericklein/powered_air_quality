@@ -162,25 +162,36 @@ const uint16_t touchscreenMaxY = 3800;
 
 // CYD variations
 // CYD ESP32-2432S028R (2.8" TFT, micro-USB)
+// static constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
+// // static constexpr uint8_t pinSensorSDA = 22;
+// // static constexpr uint8_t pinSensorSCL = 27;
+// static constexpr uint8_t pinTouchIRQ = 36;
+// static constexpr uint8_t pinTouchMOSI = 32;
+// static constexpr uint8_t pinTouchMISO = 39;
+// static constexpr uint8_t pinTouchCLK = 25;
+// static constexpr uint8_t pinTouchCS = 33;
+// static constexpr uint8_t ledStrip1DataPin = 4;
+// static constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
+// static constexpr uint8_t pinAudio = 26;
+// static constexpr uint32_t PWM_FREQ = 5000; // Hz
+// static constexpr uint8_t  PWM_BITS = 8;    // 0..255
+// static constexpr uint16_t MAX_DUTY = (1u << PWM_BITS) - 1u;
+
+// CYD Freenode FNK0103L_3P2 (3.2" TFT, usb-c)
+// static constexpr uint8_t pinSensorSDA = 32;
+// static constexpr uint8_t pinSensorSCL = 25;
+
+// JC2432W328
 static constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
-static constexpr uint8_t pinSDA = 22;
-static constexpr uint8_t pinSCL = 27;
+static constexpr uint8_t pinSensorSDA = 22;
+static constexpr uint8_t pinSensorSCL = 21;
+static constexpr uint8_t pinTouchSDA = 33;
+static constexpr uint8_t pinTouchSCL = 32;
+static constexpr uint8_t pinTouchRST = 25;
+static constexpr uint8_t pinTouchIRQ = -1;
 static constexpr uint8_t ledStrip1DataPin = 4;
 static constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
 static constexpr uint8_t pinAudio = 26;
-static constexpr uint8_t pinXPT2046_IRQ = 36;
-static constexpr uint8_t pinXPT2046_MOSI = 32;
-static constexpr uint8_t pinXPT2046_MISO = 39;
-static constexpr uint8_t pinXPT2046_CLK = 25;
-static constexpr uint8_t pinXPT2046_CS = 33;
 static constexpr uint32_t PWM_FREQ = 5000; // Hz
 static constexpr uint8_t  PWM_BITS = 8;    // 0..255
 static constexpr uint16_t MAX_DUTY = (1u << PWM_BITS) - 1u;
-
-// CYD Freenode FNK0103L_3P2 (3.2" TFT, usb-c)
-// static constexpr uint8_t CYD_SDA = 32;
-// static constexpr uint8_t CYD_SCL = 25;
-
-// JC2432W328
-// static constexpr uint8_t pinSDA = 22;
-// static constexpr uint8_t pinSCL = 21;
