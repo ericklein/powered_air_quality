@@ -185,7 +185,7 @@ void setup() {
   }
 
   #ifndef HARDWARE_SIMULATE
-    openWiFiManager();
+    networkOpenWiFiManager();
 
     // Explicit start-up delay
     // SEN66 takes 5-6 seconds to return valid CO2 readings, 10-11 seconds for valid NOx index values
@@ -1110,19 +1110,19 @@ void samplePost(uint8_t& numSamples)
         debugMessage("No network, endpoint reporting skipped",1);
       }
     #endif
-    // Reset sample counters
-    totalTemperatureF.clear();
-    totalHumidity.clear();
-    totalCO2.clear();
-    totalVOCIndex.clear();
-    totalPM25.clear();
-    totalNOxIndex.clear();
   }      
   else {
     // ALERT for sustained sensor read problem
     debugMessage("No samples to process this cycle",1);
   }
+  // Reset sample counters
   numSamples = 0;
+  totalTemperatureF.clear();
+  totalHumidity.clear();
+  totalCO2.clear();
+  totalVOCIndex.clear();
+  totalPM25.clear();
+  totalNOxIndex.clear();
   debugMessage(String("samplePost() end"),2);
 }
 
@@ -1279,16 +1279,16 @@ void sensorSEN6xSimulate()
 // hardware routines tied to HARDWARE_SIMULATE
 #ifndef HARDWARE_SIMULATE
   // WiFiManager portal functions
-  void saveConfigCallback() 
+  void networkWiFiMgrPortalCallback() 
   //callback notifying us of the need to save config from WiFi Manager AP mode
   {
     saveWFMConfig = true;
   }
 
-  bool openWiFiManager()
-  // Connect to WiFi network using WiFiManager
+  bool networkOpenWiFiManager()
+  // Connect to WiFi network using WiFiManager library
   {
-    debugMessage("openWiFiManager begin",2);
+    debugMessage("networkOpenWiFiManager begin",2);
     // make sure Wi-Fi is fully stopped before setting hostname
     WiFi.mode(WIFI_MODE_NULL);
     // MDNS.begin(endpointPath.deviceID.c_str());
@@ -1297,7 +1297,7 @@ void sensorSEN6xSimulate()
     // Serial.printf("setHostname returned: %s\n", ok ? "true" : "false");
 
     // set WiFiManager parameters
-    wfm.setSaveConfigCallback(saveConfigCallback);
+    wfm.setSaveConfigCallback(networkWiFiMgrPortalCallback);
     wfm.setConnectTimeout(timeNetworkTimeoutSeconds); // how long to try connecting before continuing
     wfm.setConfigPortalTimeout(180); // auto close configportal after n seconds
     // wifi scan settings
@@ -1417,11 +1417,11 @@ void sensorSEN6xSimulate()
       hardwareData.rssi = networkRSSIRead();
       debugMessage(endpointPath.deviceID + " connected to " + WiFi.SSID() + ", " + WiFi.localIP().toString() + ", " + hardwareData.rssi + "dBm RSSI", 1);
     }
-    debugMessage(String("openWiFiManager() end"), 2);
+    debugMessage(String("networkOpenWiFiManager() end"), 2);
     return (connected);
   }
 
-  void startWebPortal()
+  void networkStartWiFiMgrPortal()
   {
     display.setFreeFont(&FreeSans18pt7b);
     // ALERT
@@ -1568,7 +1568,7 @@ void checkButtonPress() {
 
       if (heldMS >= timeStartPortalHoldMS) {
         portalTriggered = true;
-        startWebPortal();
+        networkStartWiFiMgrPortal();
       }
     }
   } 
