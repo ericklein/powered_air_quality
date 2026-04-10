@@ -1278,11 +1278,19 @@ void sensorSEN6xSimulate()
 
 // hardware routines tied to HARDWARE_SIMULATE
 #ifndef HARDWARE_SIMULATE
-  // WiFiManager portal functions
   void networkWiFiMgrPortalCallback() 
   //callback notifying us of the need to save config from WiFi Manager AP mode
   {
     saveWFMConfig = true;
+  }
+
+  void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
+    debugMessage(String("networkWiFiMgrAPCallback() start"),2);
+    debugMessage(String("did not connect to stored AP, starting WiFi Manager config portal"),1);
+    display.setFreeFont(&FreeSans18pt7b);
+    // ALERT 
+    screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP(),TFT_WHITE,TFT_BLACK,TFT_WHITE);
+    debugMessage(String("networkWiFiMgrAPCallback() end"),2);
   }
 
   bool networkOpenWiFiManager()
@@ -1297,6 +1305,7 @@ void sensorSEN6xSimulate()
     // Serial.printf("setHostname returned: %s\n", ok ? "true" : "false");
 
     // set WiFiManager parameters
+    wfm.setAPCallback(networkWiFiMgrAPCallback);
     wfm.setSaveConfigCallback(networkWiFiMgrPortalCallback);
     wfm.setConnectTimeout(timeNetworkTimeoutSeconds); // how long to try connecting before continuing
     wfm.setConfigPortalTimeout(180); // auto close configportal after n seconds
@@ -1310,8 +1319,6 @@ void sensorSEN6xSimulate()
     #endif
 
     // set WiFiManager portal parameters
-    String parameterText = hardwareDeviceType + " setup";
-
     // note: parameter order determines on-screen order
 
     wfm.setTitle("Ola friend!");
@@ -1372,18 +1379,16 @@ void sensorSEN6xSimulate()
       wfm.addParameter(&influxDevMeasurement);
     #endif
 
+    String parameterText = hardwareDeviceType + " setup";
     bool connected = wfm.autoConnect(parameterText.c_str()); // anonymous ap
       // connected = wfm.autoConnect(hardwareDeviceType + " AP","password"); // password protected AP
 
     if(!connected) {
       debugMessage("WiFi connection failure; local sensor data ONLY", 1);
-      display.setFreeFont(&FreeSans18pt7b);
-      // ALERT 
-      screenHelperAlert(String("goto WiFi AP '") + parameterText + "'",TFT_WHITE,TFT_BLACK,TFT_WHITE);
     } 
     else {
       if (saveWFMConfig) {
-        debugMessage("retreiving new parameters from AP portal",2);
+        debugMessage("getting new parameters from WiFi Mgr portal",2);
         hardwareData.altitude = (uint16_t)strtoul(deviceAltitude.getValue(), nullptr, 10);
         hardwareData.latitude = atof(deviceLatitude.getValue());
         hardwareData.longitude =  atof(deviceLongitude.getValue());
