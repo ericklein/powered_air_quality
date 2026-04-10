@@ -339,7 +339,7 @@ void screenNOX()
   display.setCursor(xNOxCircle-20,yNOxCircle);
   display.print(int(totalNOxIndex.getCurrent() +.5));
   display.setTextColor(TFT_WHITE);
-  display.setCursor(xVOCLabel,yVOCLabel);
+  display.setCursor(xNOxLabel,yNOxLabel);
   display.print("NOx");
 
   debugMessage("screenNOX() end",1);

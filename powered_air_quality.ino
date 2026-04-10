@@ -790,40 +790,56 @@ void retainVOC(float voc)
     return (connected);
   }
 
+  /*
+   * On-board hardwdare button is used to initiate device resets, of which there are two 
+   * types.  A shorter press (defined by timeDeviceStartPortalHoldMS in config.h) means
+   * re-launch the WiFi Manager web portal but retain the current configuration values
+   * held in non-volatile storage. A longer press (defined by timeDeviceResetHoldMS in
+   * config.h) means erase non-volatile storage and re-launch the WiFiManager web
+   * portal -- effectively initiating a device factory reset.
+   */
   void checkButtonPress() {
     static uint32_t pressStartMS = 0;
     static bool portalTriggered = false;
 
     const uint8_t buttonState = digitalRead(hardwareButton);
+    uint32_t heldMS;
     const uint32_t now = millis();
 
+    // Hardware button is low when pressed, so check for that
     if (buttonState == LOW) {
+      // Pressed. If the first detected press instance start timing now
       if (pressStartMS == 0) {
         pressStartMS = now;
-        portalTriggered = false;
       }
-
-      const uint32_t heldMS = now - pressStartMS;
-      debugMessage(String("button pressed for ") + (heldMS / 1000) + " seconds", 2);
-
-      // Once portal is triggered for this press, do NOT allow escalation to reset
-      if (!portalTriggered) {
-        if (heldMS >= timeDeviceResetHoldMS) {
-          wipePrefsAndReboot(); // typically does not return
-          return;
-        }
-
-        if (heldMS >= timeStartPortalHoldMS) {
-          portalTriggered = true;
-          startWebPortal();
-        }
+      else {
+        // Not the first press, so how long has the button been down?
+        heldMS = now - pressStartMS;
+        debugMessage(String("button pressed for ") + (heldMS / 1000) + " seconds", 2);
       }
     } 
     else {
+      // Button currently not pressed, but has it been? If so figure out whether
+      // any reset operation is called for.
       if (pressStartMS != 0) {
-        debugMessage("button released", 2);
-        pressStartMS = 0;
-        portalTriggered = false;
+        heldMS = now - pressStartMS;
+        debugMessage(String("button released after ") + (heldMS / 1000) + " seconds", 2);
+        pressStartMS = 0;  // Reset for next time
+
+        // Is a reset needed? If so, launch it.  Check for the longer one first
+        if(heldMS >= timeDeviceResetHoldMS) {
+          debugMessage("Initiating full device reset...",2);
+          wipePrefsAndReboot(); // typically does not return
+          return;
+        }
+        else {
+          // Not the longer one, but long enough to be the shorter one?
+          if(heldMS >= timeStartPortalHoldMS) {
+            debugMessage("Relaunching WiFi Manager web portal...",2);
+            startWebPortal();
+            return;
+          }
+        }
       }
     }
   }
