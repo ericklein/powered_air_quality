@@ -1435,10 +1435,10 @@ void sensorSEN6xSimulate()
     screenUpdate(screenCurrent);
   }
 
-  void wipePrefsAndReboot() 
+  void deviceErasePrefsAndReboot() 
   // Wipes all ESP, WiFiManager preferences and reboots device
   {
-    debugMessage("wipePrefsAndReboot begin",2);
+    debugMessage("deviceErasePrefsAndReboot() begin",2);
 
     // Clear nv storage
     nvConfig.begin("config", false);
@@ -1452,7 +1452,7 @@ void sensorSEN6xSimulate()
     WiFiManager wm;
     wm.resetSettings();
 
-    debugMessage("wipePrefsAndReboot end, rebooting...",2);
+    debugMessage("deviceErasePrefsAndReboot() end, rebooting...",2);
     ESP.restart();
   }
 #endif
@@ -1548,43 +1548,51 @@ void saveNVConfig()
   debugMessage("saveNVConfig end",2);
 }
 
-void checkButtonPress() {
-  static uint32_t pressStartMS = 0;
-  static bool portalTriggered = false;
+  void checkButtonPress() {
+    static uint32_t pressStartMS = 0;
+    static bool portalTriggered = false;
 
-  const uint8_t buttonState = digitalRead(pinButton);
-  const uint32_t now = millis();
+    const uint8_t buttonState = digitalRead(pinButton);
+    uint32_t heldMS;
+    const uint32_t now = millis();
 
-  if (buttonState == LOW) {
-    if (pressStartMS == 0) {
-      pressStartMS = now;
-      portalTriggered = false;
-    }
-
-    const uint32_t heldMS = now - pressStartMS;
-    debugMessage(String("button pressed for ") + (heldMS / 1000) + " seconds", 2);
-
-    // Once portal is triggered for this press, do NOT allow escalation to reset
-    if (!portalTriggered) {
-      if (heldMS >= timeDeviceResetHoldMS) {
-        wipePrefsAndReboot(); // typically does not return
-        return;
+    // Hardware button is low when pressed, so check for that
+    if (buttonState == LOW) {
+      // Pressed. If the first detected press instance start timing now
+      if (pressStartMS == 0) {
+        pressStartMS = now;
       }
-
-      if (heldMS >= timeStartPortalHoldMS) {
-        portalTriggered = true;
-        networkStartWiFiMgrPortal();
+      else {
+        // Not the first press, so how long has the button been down?
+        heldMS = now - pressStartMS;
+        debugMessage(String("button pressed for ") + (heldMS / 1000) + " seconds", 2);
       }
-    }
-  } 
-  else {
-    if (pressStartMS != 0) {
-      debugMessage("button released", 2);
-      pressStartMS = 0;
-      portalTriggered = false;
+    } 
+    else {
+      // Button currently not pressed, but has it been? If so figure out whether
+      // any reset operation is called for.
+      if (pressStartMS != 0) {
+        heldMS = now - pressStartMS;
+        debugMessage(String("button released after ") + (heldMS / 1000) + " seconds", 2);
+        pressStartMS = 0;  // Reset for next time
+
+        // Is a reset needed? If so, launch it.  Check for the longer one first
+        if(heldMS >= timeDeviceResetHoldMS) {
+          debugMessage("Initiating full device reset...",2);
+          deviceErasePrefsAndReboot(); // typically does not return
+          return;
+        }
+        else {
+          // Not the longer one, but long enough to be the shorter one?
+          if(heldMS >= timeStartPortalHoldMS) {
+            debugMessage("Relaunching WiFi Manager web portal...",2);
+            networkStartWiFiMgrPortal();
+            return;
+          }
+        }
+      }
     }
   }
-}
 
 /**
  * @brief retreives current weather data from Open Weather Maps.
@@ -1875,7 +1883,7 @@ bool sensorInit()
 bool sensorRead()
 // Generalized entry point for reading sensor values
 {
-  bool status = true;
+  bool status = false;  // default setting for the final #ifndef
 
   #ifdef SENSOR_SEN66
     status = sensorSEN6xRead();
@@ -1901,14 +1909,17 @@ bool sensorRead()
       // ALERT
       debugMessage("SCD4x read failed",1);
       screenHelperAlert("CO2 sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
-      status = false;
 
+    }
     if (!pmStatus)
       status = false;
     }
   #endif // SENSOR_SEN54SCD40
 
-  debugMessage("Read failed: no sensor(s) defined!",1);
+  #ifndef SENSOR_SEN66 && #ifndef SENSOR_SEN54SCD40
+    debugMessage("Read failed: no sensor(s) defined!",1);
+  #endif
+
   return status;
 }
 
