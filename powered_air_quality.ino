@@ -162,7 +162,6 @@ void setup() {
 
   #ifndef HARDWARE_SIMULATE
     ledInit();
-    stripOne.setOneColor(CRGB::Red);
 
     // execute before sensorInit() to load altitude
     loadNVConfig();
@@ -1287,16 +1286,17 @@ void sensorSEN6xSimulate()
   void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
     debugMessage(String("networkWiFiMgrAPCallback() start"),2);
     debugMessage(String("did not connect to stored AP, starting WiFi Manager config portal"),1);
-    display.setFreeFont(&FreeSans18pt7b);
-    // ALERT 
-    screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP(),TFT_WHITE,TFT_BLACK,TFT_WHITE);
+    display.setFreeFont(&FreeSans12pt7b);
+    // This alert is intentionally a UI blocker
+    display.fillScreen(TFT_BLACK);
+    screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_WHITE);
     debugMessage(String("networkWiFiMgrAPCallback() end"),2);
   }
 
   bool networkOpenWiFiManager()
   // Connect to WiFi network using WiFiManager library
   {
-    debugMessage("networkOpenWiFiManager begin",2);
+    debugMessage("networkOpenWiFiManager() begin",2);
     // make sure Wi-Fi is fully stopped before setting hostname
     WiFi.mode(WIFI_MODE_NULL);
     // MDNS.begin(endpointPath.deviceID.c_str());
@@ -2014,7 +2014,7 @@ bool sensorRead()
 
         debugMessage(String("SEN66 temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
         debugMessage(String("SEN66 humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
-        debugMessage(String("SEN66 CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total: " + totalCO2.getTotal(),2);
+        debugMessage(String("SEN66 CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total across samples: " + totalCO2.getTotal(),2);
         debugMessage(String("SEN66 PM25 ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
         debugMessage(String("SEN66 VOC index ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
         debugMessage(String("SEN66 NOx index ") + sensorData.noxIndex + ", total: " + totalNOxIndex.getTotal(),2);
@@ -2220,7 +2220,6 @@ bool sensorRead()
         if (!isDataReady) {
             continue; // Back to the top of the loop
         }
-        debugMessage("SCD4X data available",2);
 
         error = co2Sensor.readMeasurement(co2, temperatureC, humidity);
         if (error) {
@@ -2452,7 +2451,7 @@ uint8_t co2Range(float co2)
     (co2 <= sensorCO2Poor) ? 1 :
     (co2 <= sensorCO2Bad)  ? 2 : 3;
 
-  debugMessage(String("CO2 input of ") + co2 + " yields " + co2Range + " CO2 band", 2);
+  debugMessage(String("CO2 input of ") + co2 + " yields CO2 band " + co2Range, 2);
   return co2Range;
 }
 
@@ -2476,7 +2475,7 @@ uint8_t vocRange(float vocIndex)
   (vocIndex <= sensorVOCPoor) ? 1 :
   (vocIndex <= sensorVOCBad)  ? 2 : 3;
 
-  debugMessage(String("VOC index input of ") + vocIndex + " yields " + vocRange + " VOC band",2);
+  debugMessage(String("VOC index input of ") + vocIndex + " yields VOC band " + vocRange,2);
   return vocRange;
 }
 
@@ -2488,7 +2487,7 @@ uint8_t noxRange(float noxIndex)
   (noxIndex <= sensorNOxPoor) ? 1 :
   (noxIndex <= sensorNOxBad)  ? 2 : 3;
 
-  debugMessage(String("NOx index input of ") + noxIndex + " yields " + noxRange + " NOx band",2);
+  debugMessage(String("NOx index input of ") + noxIndex + " yields NOx band " + noxRange,2);
   return noxRange;
 }
 
@@ -2504,7 +2503,7 @@ float pm25toAQI_US(float pm25)
   else if(pm25 <= 225.4) aqiValue = (fmap(pm25,125.5,225.4,201.0,300.0)); // "Very Unhealthy"
   else if(pm25 <= 500.0) aqiValue = (fmap(pm25,225.5,500.0,301.0,500.0)); // "Hazardous"
   else aqiValue = (501.0); // AQI above 500 not recognized
-  debugMessage(String("PM2.5 value of ") + pm25 + " converts to US AQI value of " + aqiValue, 2);
+  debugMessage(String("PM2.5 value of ") + pm25 + " converts to US AQI value " + aqiValue, 2);
 
   return aqiValue;
 }
