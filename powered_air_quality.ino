@@ -1289,7 +1289,7 @@ void sensorSEN6xSimulate()
     display.setFreeFont(&FreeSans12pt7b);
     // This alert is intentionally a UI blocker
     display.fillScreen(TFT_BLACK);
-    screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_WHITE);
+    screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_GREEN);
     debugMessage(String("networkWiFiMgrAPCallback() end"),2);
   }
 
@@ -1430,7 +1430,7 @@ void sensorSEN6xSimulate()
   {
     display.setFreeFont(&FreeSans18pt7b);
     // ALERT
-    screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_WHITE);
+    screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_GREEN);
     wfm.startWebPortal();
     screenUpdate(screenCurrent);
   }
@@ -1875,31 +1875,41 @@ bool sensorInit()
 bool sensorRead()
 // Generalized entry point for reading sensor values
 {
+  bool status = true;
+
   #ifdef SENSOR_SEN66
-    return(sensorSEN6xRead());
+    status = sensorSEN6xRead();
+    if (!status) {
+      // ALERT
+      debugMessage("SEN66 read failed",1);
+      screenHelperAlert("AQ sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
+
+    }
   #endif // SENSOR_SEN66
 
   #ifdef SENSOR_SEN54SCD40
-    bool status = true;
-    if (!sensorSEN554Read())
-    {
+    bool pmStatus = sensorSEN554Read();
+    if (!pmStatus) {
       // ALERT
       debugMessage("PM sensor read failed",1);
-      status = false;
+      screenHelperAlert("PM sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
+
     }
 
-    if (!sensorSCD4xRead())
-    {
+    status = sensorSCD4xRead();
+    if (!status) {
       // ALERT
-      screenHelperAlert("CO2 read fail", TFT_WHITE,TFT_BLACK,TFT_WHITE);
-      debugMessage("CO2 sensor read failed",1);
+      debugMessage("SCD4x read failed",1);
+      screenHelperAlert("CO2 sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
+      status = false;
+
+    if (!pmStatus)
       status = false;
     }
-    return(status);
   #endif // SENSOR_SEN54SCD40
 
   debugMessage("Read failed: no sensor(s) defined!",1);
-  return false;
+  return status;
 }
 
 // Functions to be compiled in and used with the SEN66-based configuration
