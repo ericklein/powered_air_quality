@@ -100,14 +100,6 @@ CST820Helper touchHelper(touchscreen);
 
 // global variables
 
-// Arrange for the default unique device identifier to be automatically generated at runtime based
-// on ESP32 MAC address and hardware device type as specified in config.h.  This is done using a
-// custom function contained here (see below).
-
-// extern String deviceGetID(String prefix);
-
-// const String defaultDeviceID = deviceGetID(hardwareDeviceType);
-
 // data structures defined in powered_air_quality.h
 networkEndpointConfig endpointPath;
 envData sensorData;
@@ -121,6 +113,8 @@ Measure<graphPoints> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, 
 uint32_t timeLastReportMS       = 0;  // timestamp for last report to network endpoints
 bool saveWFMConfig = false;
 enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
+
+bool alertSoundActive, alertLEDActive, alertScreenActive = false;
 
 void setup() {
   // config Serial first for debugMessage()
@@ -169,9 +163,9 @@ void setup() {
 
   // initialize sensor(s)
   if( !sensorInit()) {
-    debugMessage("setup(): sensor initialization failure",1); // error often occurs after firmware flash/reset
+    // error often occurs after firmware flash/reset
     display.setFreeFont(&FreeSans18pt7b);
-    deviceReboot(6000, "Sensor failure, rebooting");
+    deviceReboot("Sensor failure, rebooting", 5000);
   }
 
   // initialize variables
@@ -207,13 +201,18 @@ void loop() {
   uint16_t calibratedX, calibratedY;
 
   // order of operation
-  //  feed alerts cycles
-  //  check for touchscreen input
-  //  read sensor
-  //  update screen saver
-  //  check for button press
-  //  network endpoint(s) write?
-  //  feed web portal cycles
+  // 0 - update current alerts
+  // 1 - feed cycles to LEDControl
+  // 2 - feed cycles to web portal
+  // 3 - handle touchscreen input
+  // 4 - handle button press
+  // ------------------------- interupts and cycles fed
+  // 5 - read sensor
+  // 6 - update screen saver
+  // 7 - network endpoint(s) write?
+
+  // update current alerts
+  //alertHandle();
 
   // is it time to read the sensor?
   if ((millis() - timeLastSampleMS) >= timeSensorSampleMS) {
@@ -221,13 +220,17 @@ void loop() {
     if (sensorRead()) {
       numSamples++;
       sampleEvaluate();
-      // this would be a good place to evaluate whether the screen actually needs updated based on data change
+      // IMPROVEMENT: evaluate whether the screen actually needs updated based on changed data
       screenUpdate(screenCurrent);
     }
     else {
+      // no sound
+      // blink leds for 5 seconds then return to previous color
+      // screen alert for 5 seconds then dismiss
       // ALERT
-      // TODO: what else to do here?; detailed error message comes from sensorRead()
-      // debugMessage("Sensor read failed!",1);
+      alertScreenActive = true;
+      screenHelperAlert("AQ sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
+
     }
     // Save last sample time
     timeLastSampleMS = millis();
@@ -251,39 +254,30 @@ void loop() {
   {
     calibratedX = ev.end.x;
     calibratedY = ev.end.y;
-    // If screen saver active, switch to master screen
-    switch (screenCurrent) {
-      case sSaver :
-        // always go to the main screen when returning from screenSaver;
-        screenCurrent = sMain;
-        break;
-      case sMain : {
-        debugMessage(String("input: touchpoint x=") + calibratedX + ", y=" + calibratedY,2);
-        // transition to appropriate component screen
-        if ((calibratedX < display.width()/2) && (calibratedY < display.height()/2)) {
-          // upper left quandrant
-          screenCurrent = sCO2;
+    if (screenCurrent == sMain) {
+      debugMessage(String("input: touchpoint x=") + calibratedX + ", y=" + calibratedY,2);
+      // transition to appropriate component screen
+      if ((calibratedX < display.width()/2) && (calibratedY < display.height()/2)) {
+        // upper left quandrant
+        screenCurrent = sCO2;
+      }
+      else
+        if ((calibratedX < display.width()/2) && (calibratedY > display.height()/2)) {
+          // lower left quandrant
+          screenCurrent = sVOC;
         }
         else
-          if ((calibratedX < display.width()/2) && (calibratedY > display.height()/2)) {
-            // lower left quandrant
-            screenCurrent = sVOC;
+          if ((calibratedX > display.width()/2) && (calibratedY < display.height()/2)) {
+            // upper right quandrant
+            screenCurrent = sPM25;
           }
           else
-            if ((calibratedX > display.width()/2) && (calibratedY < display.height()/2)) {
-              // upper right quandrant
-              screenCurrent = sPM25;
-            }
-            else
-            // lower right quandrant, either temp/humidity (SCD40/SEN55) or NOx Index (SEN66)
-            screenCurrent = sNOX;
-        break;
+          // lower right quandrant, either temp/humidity (SCD40/SEN55) or NOx Index (SEN66)
+          screenCurrent = sNOX;
       }
-      default:
-        // switch back to main from component screen
-        screenCurrent = sMain;
-        break;
-    }
+    else
+      // return to the main screen
+      screenCurrent = sMain;
     screenUpdate(screenCurrent);
     timeLastInputMS = millis();
   }
@@ -319,30 +313,35 @@ void screenUpdate(uint8_t screenCurrent)
 {
   switch(screenCurrent) {
     case sSaver:
+      // update screen
       screenSaver();
+      // update leds
+      stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]));
       break;
     case sMain:
       screenMain();
+      stripOne.setOneColor(CRGB::Black);
       break;
     case sVOC:
       screenVOC();
+      stripOne.setOneColor(rgb565ToCRGB(warningColor[vocRange(sensorData.vocIndex[graphPoints - 1])]));
       break;
     case sCO2:
       screenCO2();
+      stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]));
       break;
     case sPM25:
       screenPM25();
+      stripOne.setOneColor(rgb565ToCRGB(warningColor[pm25Range(sensorData.pm25)]));
       break;
     case sNOX:
       #ifdef SENSOR_SEN66  
         screenNOX();
+        stripOne.setOneColor(rgb565ToCRGB(warningColor[noxRange(sensorData.noxIndex)]));
       #else
         screenTempHumidity();
+        stripOne.setOneColor(CRGB::Black);
       #endif
-      break;
-    default:
-      // if on a component screen, go back to main
-      screenMain();
       break;
   }
 }
@@ -353,7 +352,7 @@ void screenUpdate(uint8_t screenCurrent)
  * The message is split using pixel width measurements and word boundaries. If the message
  * is too long, truncation is applied at the end of the overall message (ellipsis on line 2
  * only, or on line 1 if it must be single-line). The rounded rectangle and text are constrained
- * to stay within the display and within a horizontal safe region defined by @p xMargins.
+ * to stay within the display and within a horizontal safe region defined by @p kXMargins.
  *
  * Vertical centering behavior:
  * - If two lines are drawn, the vertical gap between the lines is centered on the screen.
@@ -363,7 +362,7 @@ void screenUpdate(uint8_t screenCurrent)
  * @param textColor   Text color.
  * @param fillColor   Bubble fill color (also used as text background color).
  * @param borderColor Bubble outline color.
- * @param xMargins    Horizontal safe margin in pixels applied to both left and right edges.
+ * @param kXMargins    Horizontal safe margin in pixels applied to both left and right edges.
  *
  * @note Set the desired font and text size on @p display before calling this function.
  */
@@ -380,8 +379,8 @@ void screenHelperAlert(
   const int16_t screenH = (int16_t)display.height();
   const int16_t centerY = screenH / 2;
 
-  const int16_t safeLeft  = (int16_t)xMargins;
-  const int16_t safeRight = (int16_t)(screenW - 1 - (int16_t)xMargins);
+  const int16_t safeLeft  = (int16_t)kXMargins;
+  const int16_t safeRight = (int16_t)(screenW - 1 - (int16_t)kXMargins);
   const int16_t safeW     = safeRight - safeLeft + 1;
   if (safeW <= 0) return;
 
@@ -473,7 +472,7 @@ void screenSaver()
   uint16_t textWidth = display.textWidth(String(sensorData.ambientCO2[graphPoints-1]));
 
   // Display CO2 value in random, valid location
-  display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints-1])), random(xMargins,display.width()-xMargins-textWidth), random(yMargins, display.height() - yMargins - display.fontHeight()));
+  display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints-1])), random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
   
   debugMessage("screenSaver() end",1);
 }
@@ -485,7 +484,8 @@ void screenMain()
 // Improvement: ?
 {
   // screen assists
-  const uint8_t halfBorderWidth = 2;
+  constexpr uint8_t halfBorderWidth = 2;
+  constexpr uint8_t cornerRoundRadius = 4;
 
   debugMessage("screenMain start",1);
 
@@ -609,7 +609,7 @@ void screenPM25()
 {
   // screen layout assists in pixels
   const uint8_t   yStatusRegion = display.height()/8;
-  const uint16_t  xOutdoorMargin = ((display.width() / 2) + xMargins);
+  const uint16_t  xOutdoorMargin = ((display.width() / 2) + kXMargins);
   // temp & humidity
   const uint16_t  yPollution = 210;
   // pm25 rings
@@ -684,7 +684,7 @@ void screenVOC()
 // Improvement: ?
 {
   // screen layout assists in pixels
-  const uint16_t xLegend =      display.width() - xMargins - 5 - legendWidth;
+  const uint16_t xLegend =      display.width() - kXMargins - 5 - legendWidth;
   const uint16_t yLegend =      ((display.height()/3) + (uint8_t(3.5*legendHeight)));
   const uint16_t yValue =       display.width()/6;
 
@@ -698,16 +698,12 @@ void screenVOC()
   display.setTextColor(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);  // Use highlight color look-up table
   display.drawString(String(uint16_t(sensorData.vocIndex[graphPoints-1])), (display.width()/2), yValue);
 
-  screenHelperGraph(xMargins, display.height()/3, (display.width()-(2*xMargins)-legendWidth-10),((display.height()*2/3)-yMargins), sensorData.vocIndex, "Recent values");
+  screenHelperGraph(kXMargins, display.height()/3, (display.width()-(2*kXMargins)-legendWidth-10),((display.height()*2/3)-kYMargins), sensorData.vocIndex, "Recent values");
 
   // legend for CO2 color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
     display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
   }
-
-  // Update RGB LED based on VOC severity
-  CRGB ledColor = rgb565ToCRGB(warningColor[vocRange(sensorData.vocIndex[graphPoints - 1])]);
-  stripOne.setOneColor(ledColor);
 
   debugMessage("screenVOC() end",1);
 }
@@ -727,7 +723,7 @@ void screenVOC()
  *
  * @note This function relies on global display state, sensor data,
  *       and layout constants (e.g. `display`, `sensorData`,
- *       `xMargins`, `yMargins`, `graphPoints`).
+ *       `kXMargins`, `kYMargins`, `graphPoints`).
  *
  * @warning Assumes `sensorData.ambientCO2` contains at least
  *          `graphPoints` valid samples.
@@ -735,7 +731,7 @@ void screenVOC()
 void screenCO2()
 {
   // screen layout assists in pixels
-  const uint16_t xLegend     =  display.width() - xMargins - 5 - legendWidth;
+  const uint16_t xLegend     =  display.width() - kXMargins - 5 - legendWidth;
   const uint16_t yLegend     =  ((display.height() / 3) + (uint8_t(3.5 * legendHeight)));
   const uint16_t yValue      =  display.width() / 6;
 
@@ -750,16 +746,12 @@ void screenCO2()
   display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints - 1])),(display.width() / 2),yValue);
 
   // recent CO₂ graph
-  screenHelperGraph(xMargins, display.height() / 3, (display.width() - (2 * xMargins) - legendWidth - 10), ((display.height() * 2 / 3) - yMargins), sensorData.ambientCO2, "Recent values");
+  screenHelperGraph(kXMargins, display.height() / 3, (display.width() - (2 * kXMargins) - legendWidth - 10), ((display.height() * 2 / 3) - kYMargins), sensorData.ambientCO2, "Recent values");
 
   // CO₂ severity color legend
   for (uint8_t loop = 0; loop < 4; loop++) {
     display.fillRect(xLegend, (yLegend - (loop * legendHeight)), legendWidth, legendHeight, warningColor[loop]);
   }
-
-  // Update RGB LED based on CO₂ severity
-  CRGB ledColor = rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]);
-  stripOne.setOneColor(ledColor);
 
   debugMessage("screenCO2() end", 1);
 }
@@ -771,7 +763,7 @@ void screenNOX()
 // Improvement: ?
 {
   // screen layout assists in pixels
-  const uint16_t xLegend = (display.width() - xMargins - legendWidth);
+  const uint16_t xLegend = (display.width() - kXMargins - legendWidth);
   const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*legendHeight)));
   const uint16_t circleRadius = 100;
   const uint16_t xNOxCircle = (display.width() / 2);
@@ -801,10 +793,6 @@ void screenNOX()
   display.setTextColor(TFT_WHITE);
   display.setCursor(xNOxLabel,yNOxLabel);
   display.print("NOx");
-
-  // Update RGB LED based on NOx severity
-  CRGB ledColor = rgb565ToCRGB(warningColor[noxRange(sensorData.noxIndex)]);
-  stripOne.setOneColor(ledColor);
 
   debugMessage("screenNOX() end",1);
 }
@@ -979,15 +967,18 @@ void screenHelperComponentSetup(String header)
   // screen layout assists in pixels
   const uint8_t   yStatusRegion = display.height()/8;
   const uint8_t   yStatusRegionFloor = yStatusRegion - 7;  
-  const uint8_t   helperXSpacing = 15;
+  constexpr uint8_t   helperXSpacing = 15;
+  constexpr uint8_t wifiBarHeightIncrement = 3;
+  constexpr uint8_t wifiBarWidth = 3;
+  constexpr uint8_t wifiBarSpacing = 5;
 
   debugMessage("screenHelperStatusBar() start",1);
 
   display.fillScreen(TFT_BLACK);
   display.fillRect(0,0,display.width(),yStatusRegion,TFT_DARKGREY);
   // screen helpers in status region
-  screenHelperWiFiStatus((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), yStatusRegionFloor, wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
-  screenHelperReportStatus(((display.width() - xMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-helperXSpacing), (yStatusRegionFloor-15));
+  screenHelperWiFiStatus((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), yStatusRegionFloor, wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
+  screenHelperReportStatus(((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-helperXSpacing), (yStatusRegionFloor-15));
 
   //label
   display.setFreeFont(&FreeSans12pt7b);
@@ -1548,51 +1539,50 @@ void saveNVConfig()
   debugMessage("saveNVConfig end",2);
 }
 
-  void checkButtonPress() {
-    static uint32_t pressStartMS = 0;
-    static bool portalTriggered = false;
+void checkButtonPress() {
+  static uint32_t pressStartMS = 0;
 
-    const uint8_t buttonState = digitalRead(pinButton);
-    uint32_t heldMS;
-    const uint32_t now = millis();
+  const uint8_t buttonState = digitalRead(pinButton);
+  uint32_t heldMS;
+  const uint32_t now = millis();
 
-    // Hardware button is low when pressed, so check for that
-    if (buttonState == LOW) {
-      // Pressed. If the first detected press instance start timing now
-      if (pressStartMS == 0) {
-        pressStartMS = now;
+  // Hardware button is low when pressed, so check for that
+  if (buttonState == LOW) {
+    // Pressed. If the first detected press instance start timing now
+    if (pressStartMS == 0) {
+      pressStartMS = now;
+    }
+    else {
+      // Not the first press, so how long has the button been down?
+      heldMS = now - pressStartMS;
+      debugMessage(String("button pressed for ") + (heldMS / 1000) + " seconds", 2);
+    }
+  } 
+  else {
+    // Button currently not pressed, but has it been? If so figure out whether
+    // any reset operation is called for.
+    if (pressStartMS != 0) {
+      heldMS = now - pressStartMS;
+      debugMessage(String("button released after ") + (heldMS / 1000) + " seconds", 2);
+      pressStartMS = 0;  // Reset for next time
+
+      // Is a reset needed? If so, launch it.  Check for the longer one first
+      if(heldMS >= timeDeviceResetHoldMS) {
+        debugMessage("Initiating full device reset...",2);
+        deviceErasePrefsAndReboot(); // typically does not return
+        return;
       }
       else {
-        // Not the first press, so how long has the button been down?
-        heldMS = now - pressStartMS;
-        debugMessage(String("button pressed for ") + (heldMS / 1000) + " seconds", 2);
-      }
-    } 
-    else {
-      // Button currently not pressed, but has it been? If so figure out whether
-      // any reset operation is called for.
-      if (pressStartMS != 0) {
-        heldMS = now - pressStartMS;
-        debugMessage(String("button released after ") + (heldMS / 1000) + " seconds", 2);
-        pressStartMS = 0;  // Reset for next time
-
-        // Is a reset needed? If so, launch it.  Check for the longer one first
-        if(heldMS >= timeDeviceResetHoldMS) {
-          debugMessage("Initiating full device reset...",2);
-          deviceErasePrefsAndReboot(); // typically does not return
+        // Not the longer one, but long enough to be the shorter one?
+        if(heldMS >= timeStartPortalHoldMS) {
+          debugMessage("Relaunching WiFi Manager web portal...",2);
+          networkStartWiFiMgrPortal();
           return;
-        }
-        else {
-          // Not the longer one, but long enough to be the shorter one?
-          if(heldMS >= timeStartPortalHoldMS) {
-            debugMessage("Relaunching WiFi Manager web portal...",2);
-            networkStartWiFiMgrPortal();
-            return;
-          }
         }
       }
     }
   }
+}
 
 /**
  * @brief retreives current weather data from Open Weather Maps.
@@ -1858,69 +1848,59 @@ bool sensorInit()
 // Generalized entry point for sensor initialization
 {
   // Conditionally compiled based on the sensor configuration as defined in config.h
+  bool success = false;
+
   #ifdef SENSOR_SEN66
-    return(sensorSEN6xInit());
+    success = sensorSEN6xInit();
   #endif
 
   #ifdef SENSOR_SEN54SCD40
-    bool success = true;
-    // Initialize PM25 sensor (SEN54)
-    if (!sensorSEN54Init()) {
+    bool pmSuccess = sensorSEN54Init();
+    success = sensorSCD4xInit();
+    if (!success) {
+      debugMessage(String("SCD4x init failed"),1);
+    }
+    if (!pmSuccess) {
+      debugMessage(String("PM sensor init failed"),1);
       success = false;
     }
-
-    // Initialize CO2 Sensor (SCD4X)
-    if (!sensorSCD4xInit()) {
-      success = false;
-    }
-    return(success);
   #endif // SENSOR_SEN54SCD40
 
-  debugMessage("Initialization failed: no sensor(s) defined!",1);
-  return false;
+  #if !defined(SENSOR_SEN66) && !defined(SENSOR_SEN54SCD40)
+    debugMessage("Sensor init failed: no sensor(s) defined",1);
+  #endif
+
+  return success;
 }
 
 bool sensorRead()
 // Generalized entry point for reading sensor values
 {
-  bool status = false;  // default setting for the final #ifndef
+  bool success = false;  // default setting for the final #ifndef
 
   #ifdef SENSOR_SEN66
-    status = sensorSEN6xRead();
-    if (!status) {
-      // ALERT
+    success = sensorSEN6xRead();
+    if (!success)
       debugMessage("SEN66 read failed",1);
-      screenHelperAlert("AQ sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
-
-    }
   #endif // SENSOR_SEN66
 
   #ifdef SENSOR_SEN54SCD40
-    bool pmStatus = sensorSEN554Read();
-    if (!pmStatus) {
-      // ALERT
+    bool pmSuccess = sensorSEN554Read();
+    if (!pmSuccess)
       debugMessage("PM sensor read failed",1);
-      screenHelperAlert("PM sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
 
-    }
-
-    status = sensorSCD4xRead();
-    if (!status) {
-      // ALERT
+    success = sensorSCD4xRead();
+    if (!success)
       debugMessage("SCD4x read failed",1);
-      screenHelperAlert("CO2 sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
-
-    }
-    if (!pmStatus)
-      status = false;
-    }
+    if (!pmSuccess)
+      success = false;
   #endif // SENSOR_SEN54SCD40
 
-  #ifndef SENSOR_SEN66 && #ifndef SENSOR_SEN54SCD40
-    debugMessage("Read failed: no sensor(s) defined!",1);
+  #if !defined(SENSOR_SEN66) && !defined(SENSOR_SEN54SCD40)
+    debugMessage("Sensor read failed: no sensor(s) defined",1);
   #endif
 
-  return status;
+  return success;
 }
 
 // Functions to be compiled in and used with the SEN66-based configuration
@@ -2302,7 +2282,7 @@ String deviceGetID(String prefix)
   }
 }
 
-void deviceReboot(uint16_t timeAlertMS, String messageText)
+void deviceReboot(String messageText, uint16_t timeAlertMS)
 {
   debugMessage("deviceReboot() start",1);
   display.setFreeFont(&FreeSans18pt7b);
@@ -2314,8 +2294,8 @@ void deviceReboot(uint16_t timeAlertMS, String messageText)
   while (millis() - timeRebootStartMS < timeAlertMS)
   {
     #ifndef HARDWARE_SIMULATE
-      // quick and dirty, no ledControl since we are rebooting anyway
-      ledsOne[0] = CRGB::Red;
+      stripOne.setOneColor(CRGB::Red);
+      stripOne.update();
       FastLED.show();
       // ledcWriteTone(pinAudio, 2000);
       delay(500);
@@ -2543,7 +2523,7 @@ float randomFloatRange(uint16_t min, uint16_t max) {
 void ledInit()
 {
   debugMessage("ledInit() begin",2);  
-  FastLED.addLeds<WS2812B, ledStrip1DataPin, GRB>(ledsOne,ledStripPixelCount);
+  FastLED.addLeds<WS2812B, pinLEDStripOne, GRB>(ledsOne,ledStripPixelCount);
   FastLED.setBrightness(200);
   debugMessage("ledInit() end",2);
 }
