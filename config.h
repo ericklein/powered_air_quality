@@ -173,9 +173,8 @@ constexpr uint16_t touchscreenMaxY = 3800;
 // constexpr uint8_t pinLEDStripOne = 4;
 // constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
 // constexpr uint8_t pinAudio = 26;
-// constexpr uint32_t PWM_FREQ = 5000; // Hz
-// constexpr uint8_t  PWM_BITS = 8;    // 0..255
-// constexpr uint16_t MAX_DUTY = (1u << PWM_BITS) - 1u;
+// constexpr uint32_t audioFrequency = 2000; // Hz
+// constexpr uint8_t  audioResolution = 8;    // bit
 
 // CYD Freenode FNK0103L_3P2 (3.2" TFT, usb-c)
 // constexpr uint8_t pinSensorSDA = 32;
@@ -192,6 +191,6 @@ constexpr int8_t pinTouchIRQ = -1;
 constexpr uint8_t pinLEDStripOne = 4;
 constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
 constexpr int8_t pinAudio = 26;
-constexpr uint32_t PWM_FREQ = 5000; // Hz
-constexpr uint8_t  PWM_BITS = 8;    // 0..255
-constexpr uint16_t MAX_DUTY = (1u << PWM_BITS) - 1u;
+constexpr uint8_t audioPWMChannel = 0;
+constexpr uint32_t audioFrequency = 1000; // Hz
+constexpr uint8_t  audioResolution = 8;    // bit

@@ -10,6 +10,8 @@
 #include "secrets.h"              // private credentials for network, MQTT
 #include "data.h"
 
+// #include "Tone32.hpp"
+
 #include <HTTPClient.h>           // used to access Open Weather Map
 #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
 // #include <ESPmDNS.h>
@@ -114,7 +116,8 @@ uint32_t timeLastReportMS       = 0;  // timestamp for last report to network en
 bool saveWFMConfig = false;
 enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
 
-bool alertSoundActive, alertLEDActive, alertScreenActive = false;
+uint32_t alertStartMS, alertLengthMS;
+bool alertScreen, alertLED, alertSound = false;
 
 void setup() {
   // config Serial first for debugMessage()
@@ -152,14 +155,14 @@ void setup() {
 
   // initialize GPIO
   pinMode(pinButton, INPUT_PULLUP);
-  ledcAttach(pinAudio, 2000, 10);
 
-  #ifndef HARDWARE_SIMULATE
-    ledInit();
+  // Tone32 tone(pinAudio,audioPWMChannel);
+  // Tone32 tone(pinAudio,audioFrequency, audioResolution);
 
-    // execute before sensorInit() to load altitude
-    loadNVConfig();
-  #endif
+  ledcAttach(pinAudio, audioFrequency, audioResolution);
+
+  // execute before sensorInit() to load altitude
+  loadNVConfig();    
 
   // initialize sensor(s)
   if( !sensorInit()) {
@@ -178,6 +181,7 @@ void setup() {
   }
 
   #ifndef HARDWARE_SIMULATE
+    ledInit();
     networkOpenWiFiManager();
 
     // Explicit start-up delay
@@ -212,7 +216,7 @@ void loop() {
   // 7 - network endpoint(s) write?
 
   // update current alerts
-  //alertHandle();
+  alertHandle();
 
   // is it time to read the sensor?
   if ((millis() - timeLastSampleMS) >= timeSensorSampleMS) {
@@ -224,16 +228,26 @@ void loop() {
       screenUpdate(screenCurrent);
     }
     else {
-      // no sound
-      // blink leds for 5 seconds then return to previous color
-      // screen alert for 5 seconds then dismiss
-      // ALERT
-      alertScreenActive = true;
+      // ALERT: no sound or LEDs, screen alert for 5 seconds then dismiss
+      alertScreen = true;
+      alertLengthMS = 5000;
+      alertStartMS = millis();
       screenHelperAlert("AQ sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
-
     }
     // Save last sample time
     timeLastSampleMS = millis();
+
+    // TEST CODE
+    alertScreen = true;
+    // alertSound = true;
+    alertLED = true;
+    alertLengthMS = 5000;
+    alertStartMS = millis();
+    stripOne.setBreathe(CRGB::Blue);
+    // ledcWriteTone(pinAudio, audioFrequency);
+    //tone.playTone(audioFrequency); // could set duration, depends on if we add duration to ledControl?
+    display.setFreeFont(&FreeSans18pt7b);
+    screenHelperAlert("Test Alert", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
   }
 
   // is there user input to process?
@@ -292,15 +306,14 @@ void loop() {
   // (reset) button press that needs to be handled?
   checkButtonPress();
 
-  // give processor cycles to WiFiManager web portal if active
+  // feed processor cycles to those who need it
   if (wfm.getWebPortalActive()) {
     wfm.process();
   }
-
-  // give processor cycles to ledControl
+  // tone.update();
   stripOne.update();
   FastLED.show();
-  delay(100);          // 10Hz clock for driving animations
+  delay(100); // 10Hz clock for driving animations
 
   // is it time to write to the network endpoints?
   if ((millis() - timeLastReportMS) >= timeReportMS) {
@@ -483,7 +496,7 @@ void screenMain()
 // Returns: NA (void)
 // Improvement: ?
 {
-  // screen assists
+  // screen assists in pixels
   constexpr uint8_t halfBorderWidth = 2;
   constexpr uint8_t cornerRoundRadius = 4;
 
@@ -731,9 +744,9 @@ void screenVOC()
 void screenCO2()
 {
   // screen layout assists in pixels
-  const uint16_t xLegend     =  display.width() - kXMargins - 5 - legendWidth;
-  const uint16_t yLegend     =  ((display.height() / 3) + (uint8_t(3.5 * legendHeight)));
-  const uint16_t yValue      =  display.width() / 6;
+  const uint16_t xLegend = display.width() - kXMargins - 5 - legendWidth;
+  const uint16_t yLegend = ((display.height() / 3) + (uint8_t(3.5 * legendHeight)));
+  const uint16_t yValue = display.width() / 6;
 
   debugMessage("screenCO2() start", 1);
 
@@ -2297,11 +2310,11 @@ void deviceReboot(String messageText, uint16_t timeAlertMS)
       stripOne.setOneColor(CRGB::Red);
       stripOne.update();
       FastLED.show();
-      // ledcWriteTone(pinAudio, 2000);
+      ledcWriteTone(pinAudio, audioFrequency);
       delay(500);
       ledsOne[0] = CRGB::Black;
       FastLED.show();
-      // ledcWriteTone(pinAudio,0);
+      ledcWriteTone(pinAudio,0);
       delay(500);
     #endif
   }
@@ -2525,6 +2538,7 @@ void ledInit()
   debugMessage("ledInit() begin",2);  
   FastLED.addLeds<WS2812B, pinLEDStripOne, GRB>(ledsOne,ledStripPixelCount);
   FastLED.setBrightness(200);
+  stripOne.setOneColor(CRGB::Black);
   debugMessage("ledInit() end",2);
 }
 
@@ -2540,6 +2554,30 @@ CRGB rgb565ToCRGB(uint16_t c)
     uint8_t b8 = (b5 * 255) / 31;
 
     return CRGB(r8, g8, b8);
+}
+
+void alertHandle() {
+  // is there an alert to handle?
+  if (alertLengthMS) {
+    // has the alert ended
+    if (millis() - alertStartMS > alertLengthMS) {
+      // clear the alert and reset alert variables
+      if ((alertScreen) || (alertLED)) {
+        // return screen to previous state
+        screenUpdate(screenCurrent);
+        alertScreen = false;
+        // this only works because screenUpdate also changes LED status
+        alertLED = false;
+      }
+      if (alertSound) {
+        //tone.stopPlaying();
+        ledcWriteTone(pinAudio, 0);
+        alertSound = false;
+      }
+      alertLengthMS = 0;
+      alertStartMS = 0;
+    }
+  }
 }
 
 void debugMessage(String messageText, uint8_t messageLevel)
