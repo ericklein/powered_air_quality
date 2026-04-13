@@ -48,11 +48,8 @@ enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX};
 // screen layout assists in pixels
 constexpr uint8_t kXMargins = 5;
 constexpr uint8_t kYMargins = 5;
-constexpr uint8_t legendHeight =  20;
-constexpr uint8_t legendWidth =   10;
-
-constexpr uint8_t screenRotation = 3; // CYD 2.8; horizontal orientation with USB port on left side
-// constexpr uint8_t screenRotation = 1; // CYD 3.2; horizontal orientation with USB port on right side
+constexpr uint8_t kLegendHeight =  20;
+constexpr uint8_t kLegendWidth =   10;
 
 // How many data samples are retained for graphing
 constexpr uint8_t graphPoints = 10;
@@ -67,8 +64,34 @@ constexpr uint16_t warningColor[4] = {
     0xF800  // Red = "Bad"
   };
 
+// timers
+// Internet and network endpoints
+constexpr uint32_t timeNetworkTimeoutSeconds = 10; // how long to attempt network connects before failing
+constexpr uint32_t timeNetworkKeepAliveMS = 30000;
+constexpr uint32_t timeOWMRenewMS = 1800000; // min time between OWM calls
+
+constexpr uint32_t timeHardwareSleepTimeμS = 10000000;  // sleep time if hardware error occurs
+// button
+constexpr uint16_t timeStartPortalHoldMS = 5000;  // long-press duration to start config portal
+constexpr uint16_t timeDeviceResetHoldMS = 10000; // Long-press duration to wipe config
+
+constexpr uint32_t timeScreenSaverStartMS = 300000; // switch to screen saver if no input after this period
+
+// sampling and reporting intervals
+#ifdef DEBUG
+  constexpr uint32_t timeSensorSampleMS = 30000;  // time between samples
+  constexpr uint32_t timeReportMS = 90000;        // time between reports
+#else
+  constexpr uint32_t timeSensorSampleMS = 60000;
+  constexpr uint32_t timeReportMS = 900000;
+#endif
+constexpr uint8_t reportFailureThreshold = 3; // report attempt failures before UI alert starts
+
 // hardware
 const String hardwareDeviceType = "AirQuality";
+
+constexpr uint8_t screenRotation = 3; // CYD 2.8; horizontal orientation with USB port on left side
+// constexpr uint8_t screenRotation = 1; // CYD 3.2; horizontal orientation with USB port on right side
 
 // sensors
 // simulation boundary values
@@ -131,36 +154,8 @@ constexpr uint16_t sensorNOxPoor =  150;
 constexpr uint16_t sensorNOxBad =   300;
 constexpr uint16_t sensorNOxMax =   500;  // per SEN66 datasheet
 
-// timers
-// Internet and network endpoints
-constexpr uint32_t timeNetworkTimeoutSeconds = 10; // how long to attempt network connects before failing
-constexpr uint32_t timeNetworkKeepAliveMS = 30000;
-constexpr uint32_t timeOWMRenewMS = 1800000; // min time between OWM calls
-
-constexpr uint32_t timeHardwareSleepTimeμS = 10000000;  // sleep time if hardware error occurs
-// button
-constexpr uint16_t timeStartPortalHoldMS = 5000;  // long-press duration to start config portal
-constexpr uint16_t timeDeviceResetHoldMS = 10000; // Long-press duration to wipe config
-
-constexpr uint32_t timeScreenSaverStartMS = 300000; // switch to screen saver if no input after this period
-
-// sampling and reporting intervals
-#ifdef DEBUG
-  constexpr uint32_t timeSensorSampleMS = 30000;  // time between samples
-  constexpr uint32_t timeReportMS = 90000;        // time between reports
-#else
-  constexpr uint32_t timeSensorSampleMS = 60000;
-  constexpr uint32_t timeReportMS = 900000;
-#endif
-constexpr uint8_t reportFailureThreshold = 3; // report attempt failures before UI alert starts
-
-// touchscreen calibration
-constexpr uint16_t touchscreenMinX = 200;
-constexpr uint16_t touchscreenMaxX = 3700;
-constexpr uint16_t touchscreenMinY = 240;
-constexpr uint16_t touchscreenMaxY = 3800;
-
 // CYD variations
+
 // CYD ESP32-2432S028R (2.8" TFT, micro-USB)
 // constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
 // constexpr uint8_t pinSensorSDA = 22;
@@ -175,6 +170,11 @@ constexpr uint16_t touchscreenMaxY = 3800;
 // constexpr uint8_t pinAudio = 26;
 // constexpr uint32_t audioFrequency = 2000; // Hz
 // constexpr uint8_t  audioResolution = 8;    // bit
+// touchscreen calibration
+// constexpr uint16_t touchscreenMinX = 200;
+// constexpr uint16_t touchscreenMaxX = 3700;
+// constexpr uint16_t touchscreenMinY = 240;
+// constexpr uint16_t touchscreenMaxY = 3800;
 
 // CYD Freenode FNK0103L_3P2 (3.2" TFT, usb-c)
 // constexpr uint8_t pinSensorSDA = 32;
@@ -191,6 +191,5 @@ constexpr int8_t pinTouchIRQ = -1;
 constexpr uint8_t pinLEDStripOne = 4;
 constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
 constexpr int8_t pinAudio = 26;
-constexpr uint8_t audioPWMChannel = 0;
 constexpr uint32_t audioFrequency = 1000; // Hz
 constexpr uint8_t  audioResolution = 8;    // bit

@@ -679,8 +679,8 @@ void screenVOC()
 // Improvement: ?
 {
   // screen layout assists in pixels
-  const uint16_t xLegend =      display.width() - kXMargins - 5 - legendWidth;
-  const uint16_t yLegend =      ((display.height()/3) + (uint8_t(3.5*legendHeight)));
+  const uint16_t xLegend =      display.width() - kXMargins - 5 - kLegendWidth;
+  const uint16_t yLegend =      ((display.height()/3) + (uint8_t(3.5*kLegendHeight)));
   const uint16_t yValue =       display.width()/6;
 
   debugMessage("screenVOC() start",1);
@@ -693,11 +693,11 @@ void screenVOC()
   display.setTextColor(warningColor[vocRange(sensorData.vocIndex[graphPoints-1])]);  // Use highlight color look-up table
   display.drawString(String(uint16_t(sensorData.vocIndex[graphPoints-1])), (display.width()/2), yValue);
 
-  screenHelperGraph(kXMargins, display.height()/3, (display.width()-(2*kXMargins)-legendWidth-10),((display.height()*2/3)-kYMargins), sensorData.vocIndex, "Recent values");
+  screenHelperGraph(kXMargins, display.height()/3, (display.width()-(2*kXMargins)-kLegendWidth-10),((display.height()*2/3)-kYMargins), sensorData.vocIndex, "Recent values");
 
   // legend for CO2 color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
-    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
+    display.fillRect(xLegend,(yLegend-(loop*kLegendHeight)),kLegendWidth,kLegendHeight,warningColor[loop]);
   }
 
   debugMessage("screenVOC() end",1);
@@ -726,8 +726,8 @@ void screenVOC()
 void screenCO2()
 {
   // screen layout assists in pixels
-  const uint16_t xLegend = display.width() - kXMargins - 5 - legendWidth;
-  const uint16_t yLegend = ((display.height() / 3) + (uint8_t(3.5 * legendHeight)));
+  const uint16_t xLegend = display.width() - kXMargins - 5 - kLegendWidth;
+  const uint16_t yLegend = ((display.height() / 3) + (uint8_t(3.5 * kLegendHeight)));
   const uint16_t yValue = display.width() / 6;
 
   debugMessage("screenCO2() start", 1);
@@ -741,11 +741,11 @@ void screenCO2()
   display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints - 1])),(display.width() / 2),yValue);
 
   // recent CO₂ graph
-  screenHelperGraph(kXMargins, display.height() / 3, (display.width() - (2 * kXMargins) - legendWidth - 10), ((display.height() * 2 / 3) - kYMargins), sensorData.ambientCO2, "Recent values");
+  screenHelperGraph(kXMargins, display.height() / 3, (display.width() - (2 * kXMargins) - kLegendWidth - 10), ((display.height() * 2 / 3) - kYMargins), sensorData.ambientCO2, "Recent values");
 
   // CO₂ severity color legend
   for (uint8_t loop = 0; loop < 4; loop++) {
-    display.fillRect(xLegend, (yLegend - (loop * legendHeight)), legendWidth, legendHeight, warningColor[loop]);
+    display.fillRect(xLegend, (yLegend - (loop * kLegendHeight)), kLegendWidth, kLegendHeight, warningColor[loop]);
   }
 
   debugMessage("screenCO2() end", 1);
@@ -758,8 +758,8 @@ void screenNOX()
 // Improvement: ?
 {
   // screen layout assists in pixels
-  const uint16_t xLegend = (display.width() - kXMargins - legendWidth);
-  const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*legendHeight)));
+  const uint16_t xLegend = (display.width() - kXMargins - kLegendWidth);
+  const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*kLegendHeight)));
   const uint16_t circleRadius = 100;
   const uint16_t xNOxCircle = (display.width() / 2);
   const uint16_t yNOxCircle = (display.height() / 2);
@@ -778,7 +778,7 @@ void screenNOX()
 
   // legend for NOx color wheel
   for(uint8_t loop = 0; loop < 4; loop++){
-    display.fillRect(xLegend,(yLegend-(loop*legendHeight)),legendWidth,legendHeight,warningColor[loop]);
+    display.fillRect(xLegend,(yLegend-(loop*kLegendHeight)),kLegendWidth,kLegendHeight,warningColor[loop]);
   }
 
   // NOx value and label (displayed inside circle)
