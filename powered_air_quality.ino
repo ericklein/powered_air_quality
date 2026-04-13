@@ -212,38 +212,13 @@ void loop() {
   // update current alerts
   alertHandle();
 
-  // is it time to read the sensor?
-  if ((millis() - timeLastSampleMS) >= timeSensorSampleMS) {
-    // Read sensor(s)
-    if (sensorRead()) {
-      numSamples++;
-      sampleEvaluate();
-      // IMPROVEMENT: evaluate whether the screen actually needs updated based on changed data
-      screenUpdate(screenCurrent);
-    }
-    else {
-      // ALERT: 5 second screen alert, no sound or LEDs
-      alertScreen = true;
-      alertLengthMS = 5000;
-      alertStartMS = millis();
-      display.setFreeFont(&FreeSans18pt7b);
-      screenHelperAlert("AQ sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
-    }
-    // Save last sample time
-    timeLastSampleMS = millis();
-
-    // TEST code
-    // ALERT: 5 second, sound, LED, and screen
-    alertScreen = true;
-    // alertSound = true;
-    alertLED = true;
-    alertLengthMS = 5000;
-    alertStartMS = millis();
-    stripOne.setBreathe(CRGB::Blue);
-    // ledcWriteTone(pinAudio, audioFrequency);
-    display.setFreeFont(&FreeSans18pt7b);
-    screenHelperAlert("Test Alert", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
+  // feed processor cycles to those who need it
+  if (wfm.getWebPortalActive()) {
+    wfm.process();
   }
+  stripOne.update();
+  FastLED.show();
+  delay(100); // 10Hz clock for driving animations
 
   // is there user input to process?
   // CYD 2432S028R -> XPT2046
@@ -291,23 +266,36 @@ void loop() {
     timeLastInputMS = millis();
   }
 
+  // (reset) button press that needs to be handled?
+  checkButtonPress();
+
+    // is it time to read the sensor?
+  if ((millis() - timeLastSampleMS) >= timeSensorSampleMS) {
+    // Read sensor(s)
+    if (sensorRead()) {
+      numSamples++;
+      sampleEvaluate();
+      // IMPROVEMENT: evaluate whether the screen actually needs updated based on changed data
+      screenUpdate(screenCurrent);
+    }
+    else {
+      // ALERT: 5 second screen alert, no sound or LEDs
+      alertScreen = true;
+      alertLengthMS = 5000;
+      alertStartMS = millis();
+      display.setFreeFont(&FreeSans18pt7b);
+      screenHelperAlert("AQ sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
+    }
+    // Save last sample time
+    timeLastSampleMS = millis();
+  }
+
   // is it time to enable the screensaver AND we're not in screen saver mode already?
   if ((screenCurrent != sSaver) && ((millis() - timeLastInputMS) > timeScreenSaverStartMS)) {
     screenCurrent = sSaver;
     debugMessage(String("Screen saver engaged"),1);
     screenUpdate(screenCurrent);
   }
-
-  // (reset) button press that needs to be handled?
-  checkButtonPress();
-
-  // feed processor cycles to those who need it
-  if (wfm.getWebPortalActive()) {
-    wfm.process();
-  }
-  stripOne.update();
-  FastLED.show();
-  delay(100); // 10Hz clock for driving animations
 
   // is it time to write to the network endpoints?
   if ((millis() - timeLastReportMS) >= timeReportMS) {
