@@ -10,11 +10,8 @@
 #include "secrets.h"              // private credentials for network, MQTT
 #include "data.h"
 
-// #include "Tone32.hpp"
-
 #include <HTTPClient.h>           // used to access Open Weather Map
 #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
-// #include <ESPmDNS.h>
 #include <Measure.hpp>            // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
 #include <Preferences.h>          // read-write to ESP32 persistent storage
 #include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
@@ -156,9 +153,6 @@ void setup() {
   // initialize GPIO
   pinMode(pinButton, INPUT_PULLUP);
 
-  // Tone32 tone(pinAudio,audioPWMChannel);
-  // Tone32 tone(pinAudio,audioFrequency, audioResolution);
-
   ledcAttach(pinAudio, audioFrequency, audioResolution);
 
   // execute before sensorInit() to load altitude
@@ -228,16 +222,18 @@ void loop() {
       screenUpdate(screenCurrent);
     }
     else {
-      // ALERT: no sound or LEDs, screen alert for 5 seconds then dismiss
+      // ALERT: 5 second screen alert, no sound or LEDs
       alertScreen = true;
       alertLengthMS = 5000;
       alertStartMS = millis();
+      display.setFreeFont(&FreeSans18pt7b);
       screenHelperAlert("AQ sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
     }
     // Save last sample time
     timeLastSampleMS = millis();
 
-    // TEST CODE
+    // TEST code
+    // ALERT: 5 second, sound, LED, and screen
     alertScreen = true;
     // alertSound = true;
     alertLED = true;
@@ -245,7 +241,6 @@ void loop() {
     alertStartMS = millis();
     stripOne.setBreathe(CRGB::Blue);
     // ledcWriteTone(pinAudio, audioFrequency);
-    //tone.playTone(audioFrequency); // could set duration, depends on if we add duration to ledControl?
     display.setFreeFont(&FreeSans18pt7b);
     screenHelperAlert("Test Alert", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
   }
@@ -310,7 +305,6 @@ void loop() {
   if (wfm.getWebPortalActive()) {
     wfm.process();
   }
-  // tone.update();
   stripOne.update();
   FastLED.show();
   delay(100); // 10Hz clock for driving animations
@@ -1115,8 +1109,18 @@ void samplePost(uint8_t& numSamples)
     #endif
   }      
   else {
-    // ALERT for sustained sensor read problem
-    debugMessage("No samples to process this cycle",1);
+    // ALERT: 5 second, sound, LED, and screen
+    alertScreen = true;
+    alertSound = true;
+    alertLED = true;
+    alertLengthMS = 5000;
+    alertStartMS = millis();
+    stripOne.setOneColor(CRGB::Red);
+    ledcWriteTone(pinAudio, audioFrequency);
+    display.setFreeFont(&FreeSans18pt7b);
+    screenHelperAlert("No samples available", TFT_WHITE,TFT_BLACK,TFT_RED);
+
+    debugMessage("Warning, no samples to process this cycle",1);
   }
   // Reset sample counters
   numSamples = 0;
@@ -1291,7 +1295,7 @@ void sensorSEN6xSimulate()
     debugMessage(String("networkWiFiMgrAPCallback() start"),2);
     debugMessage(String("did not connect to stored AP, starting WiFi Manager config portal"),1);
     display.setFreeFont(&FreeSans12pt7b);
-    // This alert is intentionally a UI blocker
+    // This alert is intentionally a UI blocker, handled by WiFiManager, not alertHandle()
     display.fillScreen(TFT_BLACK);
     screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_GREEN);
     debugMessage(String("networkWiFiMgrAPCallback() end"),2);
@@ -1303,10 +1307,7 @@ void sensorSEN6xSimulate()
     debugMessage("networkOpenWiFiManager() begin",2);
     // make sure Wi-Fi is fully stopped before setting hostname
     WiFi.mode(WIFI_MODE_NULL);
-    // MDNS.begin(endpointPath.deviceID.c_str());
     WiFi.setHostname(endpointPath.deviceID.c_str());
-    // bool ok = WiFi.setHostname(endpointPath.deviceID.c_str());
-    // Serial.printf("setHostname returned: %s\n", ok ? "true" : "false");
 
     // set WiFiManager parameters
     wfm.setAPCallback(networkWiFiMgrAPCallback);
@@ -1433,7 +1434,7 @@ void sensorSEN6xSimulate()
   void networkStartWiFiMgrPortal()
   {
     display.setFreeFont(&FreeSans18pt7b);
-    // ALERT
+    // ALERT handled by WiFiManager, not alertHandle()
     screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_GREEN);
     wfm.startWebPortal();
     screenUpdate(screenCurrent);
@@ -2570,7 +2571,6 @@ void alertHandle() {
         alertLED = false;
       }
       if (alertSound) {
-        //tone.stopPlaying();
         ledcWriteTone(pinAudio, 0);
         alertSound = false;
       }
