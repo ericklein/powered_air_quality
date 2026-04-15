@@ -5,7 +5,10 @@
 
 // Configuration Step 0: Create and/or configure secrets.h. Use secrets_template.h as guide to create secrets.h
 
-// [TESTING] Configuration Step 1: Is this a Climatron or PAQ unit? Currently, only difference is LED strip
+// Configuration Step 0.5: Change User_Setup_Select.h to either PAQ or Climatron
+
+// Configuration Step 1: Base hardware platform
+// this is needed until we branch PAQ and Climatron
 // #define PAQ
 #define CLIMATRON
 
@@ -88,10 +91,7 @@ constexpr uint32_t timeScreenSaverStartMS = 300000; // switch to screen saver if
 constexpr uint8_t reportFailureThreshold = 3; // report attempt failures before UI alert starts
 
 // hardware
-const String hardwareDeviceType = "AirQuality";
-
 constexpr uint8_t screenRotation = 3; // CYD 2.8; horizontal orientation with USB port on left side
-// constexpr uint8_t screenRotation = 1; // CYD 3.2; horizontal orientation with USB port on right side
 
 // sensors
 // simulation boundary values
@@ -156,40 +156,40 @@ constexpr uint16_t sensorNOxMax =   500;  // per SEN66 datasheet
 
 // CYD variations
 
-// CYD ESP32-2432S028R (2.8" TFT, micro-USB)
-// constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
-// constexpr uint8_t pinSensorSDA = 22;
-// constexpr uint8_t pinSensorSCL = 27;
-// constexpr uint8_t pinTouchIRQ = 36;
-// constexpr uint8_t pinTouchMOSI = 32;
-// constexpr uint8_t pinTouchMISO = 39;
-// constexpr uint8_t pinTouchCLK = 25;
-// constexpr uint8_t pinTouchCS = 33;
-// constexpr uint8_t pinLEDStripOne = 4;
-// constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
-// constexpr uint8_t pinAudio = 26;
-// constexpr uint32_t audioFrequency = 2000; // Hz
-// constexpr uint8_t  audioResolution = 8;    // bit
-// touchscreen calibration
-// constexpr uint16_t touchscreenMinX = 200;
-// constexpr uint16_t touchscreenMaxX = 3700;
-// constexpr uint16_t touchscreenMinY = 240;
-// constexpr uint16_t touchscreenMaxY = 3800;
+#ifdef PAQ
+  // CYD ESP32-2432S028R (2.8" TFT, micro-USB)
+  const String hardwareDeviceType = "AirQuality";
+  constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
+  constexpr uint8_t pinSensorSDA = 22;
+  constexpr uint8_t pinSensorSCL = 27;
+  constexpr uint8_t pinTouchIRQ = 36;
+  constexpr uint8_t pinTouchMOSI = 32;
+  constexpr uint8_t pinTouchMISO = 39;
+  constexpr uint8_t pinTouchCLK = 25;
+  constexpr uint8_t pinTouchCS = 33;
+  constexpr uint8_t pinAudio = 26;
+  constexpr uint32_t audioFrequency = 2000; // Hz
+  constexpr uint8_t  audioResolution = 8;    // bit
+  // touchscreen calibration
+  constexpr uint16_t touchscreenMinX = 200;
+  constexpr uint16_t touchscreenMaxX = 3700;
+  constexpr uint16_t touchscreenMinY = 240;
+  constexpr uint16_t touchscreenMaxY = 3800;
+#endif
 
-// CYD Freenode FNK0103L_3P2 (3.2" TFT, usb-c)
-// constexpr uint8_t pinSensorSDA = 32;
-// constexpr uint8_t pinSensorSCL = 25;
-
-// JC2432W328
-constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
-constexpr uint8_t pinSensorSDA = 22;
-constexpr uint8_t pinSensorSCL = 21;
-constexpr uint8_t pinTouchSDA = 33;
-constexpr uint8_t pinTouchSCL = 32;
-constexpr uint8_t pinTouchRST = 25;
-constexpr int8_t pinTouchIRQ = -1;
-constexpr uint8_t pinLEDStripOne = 4;
-constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
-constexpr int8_t pinAudio = 26;
-constexpr uint32_t audioFrequency = 1000; // Hz
-constexpr uint8_t  audioResolution = 8;    // bit
+#ifdef CLIMATRON
+  // JC2432W328
+  const String hardwareDeviceType = "Climatron";
+  constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
+  constexpr uint8_t pinSensorSDA = 22;
+  constexpr uint8_t pinSensorSCL = 21;
+  constexpr uint8_t pinTouchSDA = 33;
+  constexpr uint8_t pinTouchSCL = 32;
+  constexpr uint8_t pinTouchRST = 25;
+  constexpr int8_t pinTouchIRQ = -1;
+  constexpr uint8_t pinLEDStripOne = 4;
+  constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
+  constexpr int8_t pinAudio = 26;
+  constexpr uint32_t audioFrequency = 1000; // Hz
+  constexpr uint8_t  audioResolution = 8;    // bit
+#endif

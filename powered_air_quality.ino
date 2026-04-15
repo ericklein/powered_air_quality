@@ -14,21 +14,29 @@
 #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
 #include <Measure.hpp>            // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
 #include <Preferences.h>          // read-write to ESP32 persistent storage
-#include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
-#include <LEDControl.h>           // multi LED strip async control
 #include <TFT_eSPI.h>             // https://github.com/Bodmer/TFT_eSPI
-// CYD touchscreen
-// CYD 2432S028R -> XPT2046
-// #include <XPT2046_Touchscreen.h>  // https://github.com/PaulStoffregen/XPT2046_Touchscreen
-// CYD JC2432W328 -> CST820
-#include <CST820.h>
-#include <CST820_Helper.h>
-// CYD XXXXX - TFT_eSPI handles it
+#ifdef CLIMATRON
+  #include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
+  #include <LEDControl.h>           // multi LED strip async control
+  // CYD JC2432W328 -> CST820 capacitive touchscreen controller
+  #include <CST820.h>               // https://github.com/ericklein/CST820_Arduino_Library
+  #include <CST820_Helper.h>        // https://github.com/ericklein/CST820_Arduino_Library
+#endif
+#ifdef PAQ
+  // CYD 2432S028R -> XPT2046 resistive touchscreen controller
+  #include <XPT2046_Touchscreen.h>  // https://github.com/PaulStoffregen/XPT2046_Touchscreen
+#endif
 #include <ArduinoJson.h>          // https://github.com/bblanchon/ArduinoJson, used by OWM retrieval routines
 
-// CYD JC2432W328 i2c setup
-TwoWire TouchWire(0);
-TwoWire SensorWire(1);
+#ifdef CLIMATRON
+  // CYD JC2432W328 i2c setup
+  TwoWire TouchWire(0);
+  TwoWire SensorWire(1);
+
+  // Instantiate LED strips
+  CRGB ledsOne[ledStripPixelCount];
+  LEDControl stripOne(ledStripPixelCount,ledsOne); 
+#endif
 
 // environment sensors
 #ifdef SENSOR_SEN66
@@ -52,10 +60,6 @@ Preferences nvConfig;
 WiFiClient client;   // WiFiManager loads WiFi.h, which is used by OWM and MQTT
 WiFiManager wfm;
 
-// Instantiate LED strips
-CRGB ledsOne[ledStripPixelCount];
-LEDControl stripOne(ledStripPixelCount,ledsOne); 
-
 // 2.8″ 320x240 color TFT
 TFT_eSPI display = TFT_eSPI();
 
@@ -65,13 +69,16 @@ TFT_eSPI display = TFT_eSPI();
 #include "Fonts/meteocons24pt7b.h"
 #include "glyphs.h"
 
-// CYD touchscreen
-// CYD 2432S028R -> XPT2046
-// SPIClass touchscreenSPI = SPIClass(VSPI);
-// XPT2046_Touchscreen touchscreen(pinTouchCS,pinTouchIRQ);
-// CYD JC2432W328 -> CST820
-CST820 touchscreen(pinTouchSDA, pinTouchSCL, pinTouchRST, pinTouchIRQ);
-CST820Helper touchHelper(touchscreen);
+#ifdef PAQ
+  // CYD 2432S028R -> XPT2046
+  SPIClass touchscreenSPI = SPIClass(VSPI);
+  XPT2046_Touchscreen touchscreen(pinTouchCS,pinTouchIRQ);
+#endif
+#ifdef CLIMATRON
+  // CYD JC2432W328 -> CST820
+  CST820 touchscreen(pinTouchSDA, pinTouchSCL, pinTouchRST, pinTouchIRQ);
+  CST820Helper touchHelper(touchscreen);
+#endif
 
 #ifdef THINGSPEAK
   extern bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, 
@@ -139,21 +146,29 @@ void setup() {
   // generate truely random numbers
   randomSeed(esp_random());
 
-  TouchWire.begin(pinTouchSDA, pinTouchSCL);
-  SensorWire.begin(pinSensorSDA, pinSensorSCL);
+  #ifdef CLIMATRON
+    TouchWire.begin(pinTouchSDA, pinTouchSCL);
+    SensorWire.begin(pinSensorSDA, pinSensorSCL);
+    // CST820
+    touchscreen.begin(&TouchWire);
+  #endif
 
-  // CYD 2432S028R -> XPT2046
-  //Wire.begin(pinSensorSDA, pinSensorSCL);
-  // touchscreenSPI.begin(pinTouchCLK, pinTouchMISO, pinTouchMOSI, pinTouchCS); // setup the VSPI to use CYD touchscreen pins
-  // touchscreen.begin(touchscreenSPI);
-  // touchscreen.setRotation(screenRotation);
-  // CST820
-  touchscreen.begin(&TouchWire);
+  #ifdef PAQ
+    // CYD 2432S028R -> XPT2046
+    Wire.begin(pinSensorSDA, pinSensorSCL);
+    touchscreenSPI.begin(pinTouchCLK, pinTouchMISO, pinTouchMOSI, pinTouchCS); // setup the VSPI to use CYD touchscreen pins
+    touchscreen.begin(touchscreenSPI);
+    touchscreen.setRotation(screenRotation);
+  #endif
 
   // initialize GPIO
   pinMode(pinButton, INPUT_PULLUP);
 
   ledcAttach(pinAudio, audioFrequency, audioResolution);
+
+  #ifdef CLIMATRON
+    ledInit();
+  #endif
 
   // execute before sensorInit() to load altitude
   loadNVConfig();    
@@ -174,10 +189,9 @@ void setup() {
     sensorData.vocIndex[loop] = -1.0f;
   }
 
-  #ifndef HARDWARE_SIMULATE
-    ledInit();
-    networkOpenWiFiManager();
+  networkOpenWiFiManager();
 
+  #ifndef HARDWARE_SIMULATE
     // Explicit start-up delay
     // SEN66 takes 5-6 seconds to return valid CO2 readings, 10-11 seconds for valid NOx index values
     // SEN554 takes up to 6 seconds to return valid NOx index values.
@@ -187,8 +201,6 @@ void setup() {
     #ifdef SENSOR_SEN54SCD40
       delay(7000);
     #endif
-  #else
-    networkSimulate();
   #endif
 }
 
@@ -216,28 +228,37 @@ void loop() {
   if (wfm.getWebPortalActive()) {
     wfm.process();
   }
-  stripOne.update();
-  FastLED.show();
+  #ifdef CLIMATRON
+    stripOne.update();
+    FastLED.show();
+  #endif
   delay(100); // 10Hz clock for driving animations
 
   // is there user input to process?
-  // CYD 2432S028R -> XPT2046
-  // if (touchscreen.tirqTouched() && touchscreen.touched()) {
-  //   // get raw 12bit touchscreen x,y and then calibrate to screen size
-  //   TS_Point p = touchscreen.getPoint();
-  //   calibratedX = map(p.x, touchscreenMinX, touchscreenMaxX, 1, display.width());
-  //   calibratedY = map(p.y, touchscreenMinY, touchscreenMaxY, 1, display.height());
-    // alternate conversion
-    // uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
-    // uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
-  // CYD 3.2 usb-c touchscreen from TFT_eSPI
-  // if (display.getTouch(&calibratedX,&calibratedY)) {
-  // CYD JC2432W328 -> CST820
-  CST820TouchEvent ev = touchHelper.poll(display.width(), display.height(), screenRotation);
-  if (ev.valid)
-  {
-    calibratedX = ev.end.x;
-    calibratedY = ev.end.y;
+  bool touchEvent = false;
+  #ifdef PAQ
+    // CYD 2432S028R -> XPT2046
+    if (touchscreen.tirqTouched() && touchscreen.touched()) {
+      // get raw 12bit touchscreen x,y and then calibrate to screen size
+      TS_Point p = touchscreen.getPoint();
+      calibratedX = map(p.x, touchscreenMinX, touchscreenMaxX, 1, display.width());
+      calibratedY = map(p.y, touchscreenMinY, touchscreenMaxY, 1, display.height());
+      // alternate conversion
+      // uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
+      // uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
+      touchEvent = true;
+    }
+  #endif
+  #ifdef CLIMATRON
+    // CYD JC2432W328 -> CST820
+    CST820TouchEvent ev = touchHelper.poll(display.width(), display.height(), screenRotation);
+    if (ev.valid) {
+      calibratedX = ev.end.x;
+      calibratedY = ev.end.y;
+      touchEvent = true;
+    }
+  #endif
+  if (touchEvent) {
     if (screenCurrent == sMain) {
       debugMessage(String("input: touchpoint x=") + calibratedX + ", y=" + calibratedY,2);
       // transition to appropriate component screen
@@ -1098,12 +1119,14 @@ void samplePost(uint8_t& numSamples)
   }      
   else {
     // ALERT: 5 second, sound, LED, and screen
-    alertScreen = true;
-    alertSound = true;
-    alertLED = true;
     alertLengthMS = 5000;
     alertStartMS = millis();
-    stripOne.setOneColor(CRGB::Red);
+    alertScreen = true;
+    alertSound = true;
+    #ifdef CLIMATRON
+      alertLED = true;
+      stripOne.setOneColor(CRGB::Red);
+    #endif
     ledcWriteTone(pinAudio, audioFrequency);
     display.setFreeFont(&FreeSans18pt7b);
     screenHelperAlert("No samples available", TFT_WHITE,TFT_BLACK,TFT_RED);
@@ -1271,184 +1294,163 @@ void sensorSEN6xSimulate()
   debugMessage(String("SIMULATED SEN66 noxIndex: ") + sensorData.noxIndex,1);
 }
 
-// hardware routines tied to HARDWARE_SIMULATE
-#ifndef HARDWARE_SIMULATE
-  void networkWiFiMgrPortalCallback() 
-  //callback notifying us of the need to save config from WiFi Manager AP mode
-  {
-    saveWFMConfig = true;
-  }
+void networkWiFiMgrPortalCallback() 
+//callback notifying us of the need to save config from WiFi Manager AP mode
+{
+  saveWFMConfig = true;
+}
 
-  void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
-    debugMessage(String("networkWiFiMgrAPCallback() start"),2);
-    debugMessage(String("did not connect to stored AP, starting WiFi Manager config portal"),1);
-    display.setFreeFont(&FreeSans12pt7b);
-    // This alert is intentionally a UI blocker, handled by WiFiManager, not alertHandle()
-    display.fillScreen(TFT_BLACK);
-    screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_GREEN);
-    debugMessage(String("networkWiFiMgrAPCallback() end"),2);
-  }
+void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
+  debugMessage(String("networkWiFiMgrAPCallback() start"),2);
+  debugMessage(String("did not connect to stored AP, starting WiFi Manager config portal"),1);
+  display.setFreeFont(&FreeSans12pt7b);
+  // This alert is intentionally a UI blocker, handled by WiFiManager, not alertHandle()
+  display.fillScreen(TFT_BLACK);
+  screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_GREEN);
+  debugMessage(String("networkWiFiMgrAPCallback() end"),2);
+}
 
-  bool networkOpenWiFiManager()
-  // Connect to WiFi network using WiFiManager library
-  {
-    debugMessage("networkOpenWiFiManager() begin",2);
-    // make sure Wi-Fi is fully stopped before setting hostname
-    WiFi.mode(WIFI_MODE_NULL);
-    WiFi.setHostname(endpointPath.deviceID.c_str());
+bool networkOpenWiFiManager()
+// Connect to WiFi network using WiFiManager library
+{
+  debugMessage("networkOpenWiFiManager() begin",2);
+  // make sure Wi-Fi is fully stopped before setting hostname
+  WiFi.mode(WIFI_MODE_NULL);
+  WiFi.setHostname(endpointPath.deviceID.c_str());
 
-    // set WiFiManager parameters
-    wfm.setAPCallback(networkWiFiMgrAPCallback);
-    wfm.setSaveConfigCallback(networkWiFiMgrPortalCallback);
-    wfm.setConnectTimeout(timeNetworkTimeoutSeconds); // how long to try connecting before continuing
-    wfm.setConfigPortalTimeout(180); // auto close configportal after n seconds
-    // wifi scan settings
-    // wm.setRemoveDuplicateAPs(false); // do not remove duplicate ap names (true)
-    // wm.setMinimumSignalQuality(20);  // set min RSSI (percentage) to show in scans, null = 8%
-    // wm.setShowInfoErase(false);      // do not show erase button on info page
-    // wm.setScanDispPerc(true);       // show RSSI as percentage not graph icons
-    #ifndef DEBUG
-      wfm.setDebugOutput(false);
+  // set WiFiManager parameters
+  wfm.setAPCallback(networkWiFiMgrAPCallback);
+  wfm.setSaveConfigCallback(networkWiFiMgrPortalCallback);
+  wfm.setConnectTimeout(timeNetworkTimeoutSeconds); // how long to try connecting before continuing
+  wfm.setConfigPortalTimeout(180); // auto close configportal after n seconds
+  // wifi scan settings
+  // wm.setRemoveDuplicateAPs(false); // do not remove duplicate ap names (true)
+  // wm.setMinimumSignalQuality(20);  // set min RSSI (percentage) to show in scans, null = 8%
+  // wm.setShowInfoErase(false);      // do not show erase button on info page
+  // wm.setScanDispPerc(true);       // show RSSI as percentage not graph icons
+  #ifndef DEBUG
+    wfm.setDebugOutput(false);
+  #endif
+
+  // set WiFiManager portal parameters
+  // note: parameter order determines on-screen order
+
+  wfm.setTitle("Ola friend!");
+  WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
+  
+  wfm.addParameter(&hint_text);
+
+  // collect common parameters in AP portal mode
+  WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude","",9);
+  WiFiManagerParameter deviceLongitude("deviceLongitude", "device longitude","",9);
+  // String altitude = to_string(defaultAltitude);
+  WiFiManagerParameter deviceAltitude("deviceAltitude", "Meters above sea level",defaultAltitude.c_str(),5);
+  WiFiManagerParameter deviceID("deviceID", "unique name for device", endpointPath.deviceID.c_str(), 30);
+
+  wfm.addParameter(&deviceLatitude);
+  wfm.addParameter(&deviceLongitude);
+  wfm.addParameter(&deviceAltitude);
+  wfm.addParameter(&deviceID);
+
+
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+    // collect network endpoint path in AP portal mode
+    WiFiManagerParameter deviceSite("deviceSite", "device site", defaultSite.c_str(), 20);
+    WiFiManagerParameter deviceLocation("deviceLocation", "indoor or outdoor", defaultLocation.c_str(), 20);
+    WiFiManagerParameter deviceRoom("deviceRoom", "what room is the device in", defaultRoom.c_str(), 20);
+
+    wfm.addParameter(&deviceSite);
+    wfm.addParameter(&deviceLocation);
+    wfm.addParameter(&deviceRoom);
+  #endif
+
+  #ifdef MQTT
+     // collect MQTT parameters in AP portal mode
+    WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",defaultMQTTBroker.c_str(),30);;
+    WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", defaultMQTTPort.c_str(), 5);
+    WiFiManagerParameter mqttUser("mqttUser", "MQTT username", defaultMQTTUser.c_str(), 20);
+    WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", defaultMQTTPassword.c_str(), 20);
+
+    wfm.addParameter(&mqttBroker);
+    wfm.addParameter(&mqttPort);
+    wfm.addParameter(&mqttUser);
+    wfm.addParameter(&mqttPassword);
+  #endif
+
+  #ifdef INFLUX
+    WiFiManagerParameter influxBroker("influxBroker","influxdb server address",defaultInfluxAddress.c_str(),30);;
+    WiFiManagerParameter influxPort("influxPort", "influxdb server port", defaultInfluxPort.c_str(), 5);
+    WiFiManagerParameter influxOrg("influxOrg", "influx organization name", defaultInfluxOrg.c_str(),20);
+    WiFiManagerParameter influxBucket("influxBucket", "influx bucket name", defaultInfluxBucket.c_str(),20);
+    WiFiManagerParameter influxEnvMeasurement("influxEnvMeasurement", "influx environment measurement", defaultInfluxEnvMeasurement.c_str(),20);
+    WiFiManagerParameter influxDevMeasurement("influxDevMeasurement", "influx device measurement", defaultInfluxDevMeasurement.c_str(),20);
+
+    wfm.addParameter(&influxBroker);
+    wfm.addParameter(&influxPort);
+    wfm.addParameter(&influxOrg);
+    wfm.addParameter(&influxBucket);
+    wfm.addParameter(&influxEnvMeasurement);
+    wfm.addParameter(&influxDevMeasurement);
+  #endif
+
+  String parameterText = hardwareDeviceType + " setup";
+  bool connected = wfm.autoConnect(parameterText.c_str()); // anonymous ap
+    // connected = wfm.autoConnect(hardwareDeviceType + " AP","password"); // password protected AP
+
+  if(!connected) {
+    debugMessage("WiFi connection failure; local sensor data ONLY", 1);
+    #ifdef HARDWARE_SIMULATE
+      networkRSSISimulate();
     #endif
+  } 
+  else {
+    if (saveWFMConfig) {
+      debugMessage("getting new parameters from WiFi Mgr portal",2);
+      hardwareData.altitude = (uint16_t)strtoul(deviceAltitude.getValue(), nullptr, 10);
+      hardwareData.latitude = atof(deviceLatitude.getValue());
+      hardwareData.longitude =  atof(deviceLongitude.getValue());
+      // endpointPath.deviceID = deviceID.getValue();
 
-    // set WiFiManager portal parameters
-    // note: parameter order determines on-screen order
+      #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+        endpointPath.site = deviceSite.getValue();
+        endpointPath.location = deviceLocation.getValue();
+        endpointPath.room = deviceRoom.getValue();
+      #endif
 
-    wfm.setTitle("Ola friend!");
-    WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
-    
-    wfm.addParameter(&hint_text);
+      #ifdef MQTT
+        mqttBrokerConfig.host     = mqttBroker.getValue();
+        mqttBrokerConfig.port     = (uint16_t)strtoul(mqttPort.getValue(), nullptr, 10);
+        mqttBrokerConfig.user     = mqttUser.getValue();
+        mqttBrokerConfig.password = mqttPassword.getValue();
+      #endif
 
-    // collect common parameters in AP portal mode
-    WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude","",9);
-    WiFiManagerParameter deviceLongitude("deviceLongitude", "device longitude","",9);
-    // String altitude = to_string(defaultAltitude);
-    WiFiManagerParameter deviceAltitude("deviceAltitude", "Meters above sea level",defaultAltitude.c_str(),5);
-    WiFiManagerParameter deviceID("deviceID", "unique name for device", endpointPath.deviceID.c_str(), 30);
+      #ifdef INFLUX
+        influxdbConfig.host       = influxBroker.getValue();
+        influxdbConfig.port       = (uint16_t)strtoul(influxPort.getValue(), nullptr, 10);
+        influxdbConfig.org        = influxOrg.getValue();
+        influxdbConfig.bucket     = influxBucket.getValue();
+        influxdbConfig.envMeasurement = influxEnvMeasurement.getValue();
+        influxdbConfig.devMeasurement = influxDevMeasurement.getValue();
+      #endif
 
-    wfm.addParameter(&deviceLatitude);
-    wfm.addParameter(&deviceLongitude);
-    wfm.addParameter(&deviceAltitude);
-    wfm.addParameter(&deviceID);
-
-
-    #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-      // collect network endpoint path in AP portal mode
-      WiFiManagerParameter deviceSite("deviceSite", "device site", defaultSite.c_str(), 20);
-      WiFiManagerParameter deviceLocation("deviceLocation", "indoor or outdoor", defaultLocation.c_str(), 20);
-      WiFiManagerParameter deviceRoom("deviceRoom", "what room is the device in", defaultRoom.c_str(), 20);
-
-      wfm.addParameter(&deviceSite);
-      wfm.addParameter(&deviceLocation);
-      wfm.addParameter(&deviceRoom);
-    #endif
-
-    #ifdef MQTT
-       // collect MQTT parameters in AP portal mode
-      WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",defaultMQTTBroker.c_str(),30);;
-      WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", defaultMQTTPort.c_str(), 5);
-      WiFiManagerParameter mqttUser("mqttUser", "MQTT username", defaultMQTTUser.c_str(), 20);
-      WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", defaultMQTTPassword.c_str(), 20);
-
-      wfm.addParameter(&mqttBroker);
-      wfm.addParameter(&mqttPort);
-      wfm.addParameter(&mqttUser);
-      wfm.addParameter(&mqttPassword);
-    #endif
-
-    #ifdef INFLUX
-      WiFiManagerParameter influxBroker("influxBroker","influxdb server address",defaultInfluxAddress.c_str(),30);;
-      WiFiManagerParameter influxPort("influxPort", "influxdb server port", defaultInfluxPort.c_str(), 5);
-      WiFiManagerParameter influxOrg("influxOrg", "influx organization name", defaultInfluxOrg.c_str(),20);
-      WiFiManagerParameter influxBucket("influxBucket", "influx bucket name", defaultInfluxBucket.c_str(),20);
-      WiFiManagerParameter influxEnvMeasurement("influxEnvMeasurement", "influx environment measurement", defaultInfluxEnvMeasurement.c_str(),20);
-      WiFiManagerParameter influxDevMeasurement("influxDevMeasurement", "influx device measurement", defaultInfluxDevMeasurement.c_str(),20);
-
-      wfm.addParameter(&influxBroker);
-      wfm.addParameter(&influxPort);
-      wfm.addParameter(&influxOrg);
-      wfm.addParameter(&influxBucket);
-      wfm.addParameter(&influxEnvMeasurement);
-      wfm.addParameter(&influxDevMeasurement);
-    #endif
-
-    String parameterText = hardwareDeviceType + " setup";
-    bool connected = wfm.autoConnect(parameterText.c_str()); // anonymous ap
-      // connected = wfm.autoConnect(hardwareDeviceType + " AP","password"); // password protected AP
-
-    if(!connected) {
-      debugMessage("WiFi connection failure; local sensor data ONLY", 1);
-    } 
-    else {
-      if (saveWFMConfig) {
-        debugMessage("getting new parameters from WiFi Mgr portal",2);
-        hardwareData.altitude = (uint16_t)strtoul(deviceAltitude.getValue(), nullptr, 10);
-        hardwareData.latitude = atof(deviceLatitude.getValue());
-        hardwareData.longitude =  atof(deviceLongitude.getValue());
-        // endpointPath.deviceID = deviceID.getValue();
-
-        #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-          endpointPath.site = deviceSite.getValue();
-          endpointPath.location = deviceLocation.getValue();
-          endpointPath.room = deviceRoom.getValue();
-        #endif
-
-        #ifdef MQTT
-          mqttBrokerConfig.host     = mqttBroker.getValue();
-          mqttBrokerConfig.port     = (uint16_t)strtoul(mqttPort.getValue(), nullptr, 10);
-          mqttBrokerConfig.user     = mqttUser.getValue();
-          mqttBrokerConfig.password = mqttPassword.getValue();
-        #endif
-
-        #ifdef INFLUX
-          influxdbConfig.host       = influxBroker.getValue();
-          influxdbConfig.port       = (uint16_t)strtoul(influxPort.getValue(), nullptr, 10);
-          influxdbConfig.org        = influxOrg.getValue();
-          influxdbConfig.bucket     = influxBucket.getValue();
-          influxdbConfig.envMeasurement = influxEnvMeasurement.getValue();
-          influxdbConfig.devMeasurement = influxDevMeasurement.getValue();
-        #endif
-
-        saveNVConfig();
-        saveWFMConfig = false;
-      }
-      hardwareData.rssi = networkRSSIRead();
-      debugMessage(endpointPath.deviceID + " connected to " + WiFi.SSID() + ", " + WiFi.localIP().toString() + ", " + hardwareData.rssi + "dBm RSSI", 1);
+      saveNVConfig();
+      saveWFMConfig = false;
     }
-    debugMessage(String("networkOpenWiFiManager() end"), 2);
-    return (connected);
+    hardwareData.rssi = networkRSSIRead();
+    debugMessage(endpointPath.deviceID + " connected to " + WiFi.SSID() + ", " + WiFi.localIP().toString() + ", " + hardwareData.rssi + "dBm RSSI", 1);
   }
+  debugMessage(String("networkOpenWiFiManager() end"), 2);
+  return (connected);
+}
 
-  void networkStartWiFiMgrPortal()
-  {
-    display.setFreeFont(&FreeSans18pt7b);
-    // ALERT handled by WiFiManager, not alertHandle()
-    screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_GREEN);
-    wfm.startWebPortal();
-    screenUpdate(screenCurrent);
-  }
-
-  void deviceErasePrefsAndReboot() 
-  // Wipes all ESP, WiFiManager preferences and reboots device
-  {
-    debugMessage("deviceErasePrefsAndReboot() begin",2);
-
-    // Clear nv storage
-    nvConfig.begin("config", false);
-    nvConfig.clear();
-    nvConfig.end();
-
-    // disconnect and clear (via true) stored Wi-Fi credentials
-    WiFi.disconnect(true);
-
-    // Clear WiFiManager settings (AP config)
-    WiFiManager wm;
-    wm.resetSettings();
-
-    debugMessage("deviceErasePrefsAndReboot() end, rebooting...",2);
-    ESP.restart();
-  }
-#endif
+void networkStartWiFiMgrPortal()
+{
+  display.setFreeFont(&FreeSans18pt7b);
+  // ALERT handled by WiFiManager, not alertHandle()
+  screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_GREEN);
+  wfm.startWebPortal();
+  screenUpdate(screenCurrent);
+}
 
 // Preferences helper routines
 void loadNVConfig() {
@@ -1540,6 +1542,26 @@ void saveNVConfig()
   nvConfig.end();
   debugMessage("saveNVConfig end",2);
 }
+
+  void deviceErasePrefsAndReboot() 
+  // Wipes all ESP, WiFiManager preferences and reboots device
+  {
+    debugMessage("deviceErasePrefsAndReboot() begin",2);
+
+    // Clear nv storage
+    nvConfig.begin("config", false);
+    nvConfig.clear();
+    nvConfig.end();
+
+    // disconnect and clear (via true) stored Wi-Fi credentials
+    WiFi.disconnect(true);
+
+    // Clear WiFiManager settings (AP config)
+    wfm.resetSettings();
+
+    debugMessage("deviceErasePrefsAndReboot() end, rebooting...",2);
+    ESP.restart();
+  }
 
 void checkButtonPress() {
   static uint32_t pressStartMS = 0;
@@ -2288,7 +2310,7 @@ void deviceReboot(String messageText, uint16_t timeAlertMS)
 {
   debugMessage("deviceReboot() start",1);
   display.setFreeFont(&FreeSans18pt7b);
-  screenHelperAlert(messageText,TFT_WHITE,TFT_BLACK,TFT_WHITE);
+  screenHelperAlert(messageText,TFT_WHITE,TFT_BLACK,TFT_RED);
   networkDisconnect();
 
   uint32_t timeRebootStartMS = millis();
