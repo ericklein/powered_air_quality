@@ -69,9 +69,14 @@ constexpr uint16_t warningColor[4] = {
 
 // timers
 // Internet and network endpoints
-constexpr uint32_t timeNetworkTimeoutSeconds = 10; // how long to attempt network connects before failing
-constexpr uint32_t timeNetworkKeepAliveMS = 30000;
+constexpr uint8_t timeConnectTimeoutSeconds = 10; // how long WFM attempts network connect before failing
 constexpr uint32_t timeOWMRenewMS = 1800000; // min time between OWM calls
+#ifdef DEBUG
+  constexpr uint8_t timeConfigPortalTimeOutSeconds = 120;
+#else
+  constexpr uint8_t timeConfigPortalTimeOutSeconds = 180;
+#endif
+
 
 constexpr uint32_t timeHardwareSleepTimeμS = 10000000;  // sleep time if hardware error occurs
 // button
