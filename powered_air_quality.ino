@@ -1168,30 +1168,6 @@ void retainVOC(float voc)
   sensorData.vocIndex[graphPoints-1] = voc;
 }
 
-void OWMCurrentWeatherSimulate()
-// Description : Simulates Open Weather Map (OWM) Current Weather data
-// Parameters: NA
-// Return : NA
-// Improvement : variable city name and weather condition/icon
-{
-  owmCurrentData.cityName = "Pleasantville";
-  owmCurrentData.tempF = randomFloatRange(sensorTempFMin, sensorTempFMax);
-  owmCurrentData.humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-  strncpy(owmCurrentData.icon, "09d", sizeof(owmCurrentData.icon));
-  debugMessage(String("SIMULATED OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
-}
-
-void OWMAirPollutionSimulate()
-// Description : Simulates Open Weather Map (OWM) Air Pollution data
-// Parameters: NA
-// Return : NA
-// Improvement : NA
-{
-  owmAirQuality.aqi = random(OWMAQIMin, OWMAQIMax);
-  owmAirQuality.pm25 = randomFloatRange(OWMPM25Min, OWMPM25Max);
-  debugMessage(String("SIMULATED OWM Air Pollution PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
-}
-
 uint8_t networkRSSISimulate()
 // Description : returns simulated WiFi RSSI value from hardware or simulation value
 // Parameters: NA
@@ -1201,97 +1177,6 @@ uint8_t networkRSSISimulate()
   uint8_t rssi = random(networkRSSIMin, networkRSSIMax);
   debugMessage(String("SIMULATED WiFi RSSI: -") + rssi + "db",1);
   return(rssi);
-}
-
-void sensorSEN54Simulate()
-// Description: Simulates sensor reading from SEN54 sensor
-// Parameters: NA
-// Return: NA
-// Improvement: mode 1 from CO2 for VOC
-// Note: tempF and humidity come from SCD4X simulation
-{
-  sensorData.pm1 = randomFloatRange(sensorPMMin, sensorPMMax);
-  sensorData.pm10 = randomFloatRange(sensorPMMin, sensorPMMax);
-  sensorData.pm25 = randomFloatRange(sensorPMMin, sensorPMMax);
-  sensorData.pm4 = randomFloatRange(sensorPMMin, sensorPMMax);
-  retainVOC(randomFloatRange(sensorVOCMin, sensorVOCMax));
-
-  debugMessage(String("SIMULATED PM2.5: ") + sensorData.pm25 + " ppm, VOC index: " + sensorData.vocIndex[graphPoints-1],1);
-}
-
-void sensorSCD4xSimulate(uint8_t mode = 0, uint8_t cycles = 0)
-// Description: Simulates temp, humidity, and CO2 values from Sensirion SCD4X sensor
-// Parameters:
-//  mode
-//    default = random values, ignores cycles parameter
-//    1 = random values, slightly +/- per cycle
-//  cycles = If used, determines how many times the current mode executes before resetting
-// Output : NA
-// Improvement : implement edge value mode, rapid CO2 rise mode 
-{
-  static uint8_t currentMode = 0;
-  static uint8_t cycleCount = 0;
-  static float simulatedTempF;
-  static float simulatedHumidity;
-  static uint16_t simulatedCO2;
-
-  if (mode != currentMode) {
-    cycleCount = 0;
-    currentMode = mode;
-  }
-  switch (currentMode) {
-  case 0: // 0 = random values, ignores cycles value
-    simulatedTempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
-    simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-    simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
-    break;    
-  case 1: // 1 = random values, slightly +/- per cycle
-    if (cycleCount == cycles) {
-      cycleCount = 0;
-    }
-    if (!cycleCount) {
-      // create new base values
-      simulatedTempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
-      simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-      simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
-      cycleCount++;
-    }
-    else
-    {
-      // slightly +/- CO2 value
-      int8_t sign = random(0, 2) == 0 ? -1 : 1;
-      simulatedCO2 = simulatedCO2 + (sign * random(0, sensorCO2VariabilityRange));
-      // slightly +/- temp value
-      // slightly +/- humidity value
-      cycleCount++;
-    }
-    break;
-  default: // should not occur; random values, ignores cycles value
-    simulatedTempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
-    simulatedHumidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-    simulatedCO2 = random(sensorCO2Min, sensorCO2Max);
-    break;
-  }
-  sensorData.ambientTemperatureF = simulatedTempF;
-  sensorData.ambientHumidity = simulatedHumidity;
-  retainCO2(simulatedCO2);
-
-  debugMessage(String("Simulated temp: ") + sensorData.ambientTemperatureF + "F, humidity: " + sensorData.ambientHumidity
-    + "%, CO2: " + uint16_t(sensorData.ambientCO2[graphPoints-1]) + "ppm",1);
-}
-
-void sensorSEN6xSimulate()
-// Description: Simulates sensor reading from SEN66 sensor
-//  leveraging other sensor simulations
-// Parameters: NA
-// Return: NA
-// Improvement: implement mode passthrough for other sensorSimulate APIs
-{
-  sensorSCD4xSimulate(1,3); // tempF, humidity, and CO2 values
-  sensorSEN54Simulate(); // pm25, VOCIndex values
-  sensorData.noxIndex = randomFloatRange(sensorNOxMin, sensorNOxMax);
-
-  debugMessage(String("SIMULATED SEN66 noxIndex: ") + sensorData.noxIndex,1);
 }
 
 void networkWiFiMgrPortalCallback() 
@@ -1452,6 +1337,41 @@ void networkStartWiFiMgrPortal()
   screenUpdate(screenCurrent);
 }
 
+uint8_t networkRSSIRead()
+{
+  uint8_t rssi;
+  #ifdef HARDWARE_SIMULATE
+    rssi = networkRSSISimulate();
+  #else
+    // attemot to reconnect to WiFi if needed
+    if (WiFi.status() != WL_CONNECTED) {
+      WiFi.reconnect();
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+      rssi = abs(WiFi.RSSI());
+      debugMessage(String("WiFi RSSI: -") + rssi + "db",1);
+    }
+    else
+      rssi = 255; // no network connection
+  #endif
+  return(rssi);
+}
+
+void networkDisconnect()
+// Disconnect from WiFi network
+{
+  #ifdef HARDWARE_SIMULATE
+    debugMessage("power off: SIMULATED WiFi",1);
+    return;
+  #else
+    // IMPROVEMENT: What if disconnect call fails?
+    WiFi.disconnect();
+    WiFi.mode(WIFI_OFF);
+    debugMessage("power off: WiFi",1);
+  #endif
+}
+
 // Preferences helper routines
 void loadNVConfig() {
   debugMessage("loadNVConfig begin",2);
@@ -1608,6 +1528,19 @@ void checkButtonPress() {
   }
 }
 
+void OWMCurrentWeatherSimulate()
+// Description : Simulates Open Weather Map (OWM) Current Weather data
+// Parameters: NA
+// Return : NA
+// Improvement : variable city name and weather condition/icon
+{
+  owmCurrentData.cityName = "Pleasantville";
+  owmCurrentData.tempF = randomFloatRange(sensorTempFMin, sensorTempFMax);
+  owmCurrentData.humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+  strncpy(owmCurrentData.icon, "09d", sizeof(owmCurrentData.icon));
+  debugMessage(String("SIMULATED OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
+}
+
 /**
  * @brief retreives current weather data from Open Weather Maps.
  *
@@ -1704,6 +1637,17 @@ bool OWMCurrentWeatherRead()
     }
   #endif
   return true;
+}
+
+void OWMAirPollutionSimulate()
+// Description : Simulates Open Weather Map (OWM) Air Pollution data
+// Parameters: NA
+// Return : NA
+// Improvement : NA
+{
+  owmAirQuality.aqi = random(OWMAQIMin, OWMAQIMax);
+  owmAirQuality.pm25 = randomFloatRange(OWMPM25Min, OWMPM25Max);
+  debugMessage(String("SIMULATED OWM Air Pollution PM2.5: ") + owmAirQuality.pm25 + ", AQI: " + owmAirQuality.aqi,1);
 }
 
 bool OWMAirPollutionRead()
@@ -1833,41 +1777,6 @@ char OWMtoMeteoconIcon(const char* icon)
   return '?'; // error handling for calling function
 }
 
-uint8_t networkRSSIRead()
-{
-  uint8_t rssi;
-  #ifdef HARDWARE_SIMULATE
-    rssi = networkRSSISimulate();
-  #else
-    // attemot to reconnect to WiFi if needed
-    if (WiFi.status() != WL_CONNECTED) {
-      WiFi.reconnect();
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-      rssi = abs(WiFi.RSSI());
-      debugMessage(String("WiFi RSSI: -") + rssi + "db",1);
-    }
-    else
-      rssi = 255; // no network connection
-  #endif
-  return(rssi);
-}
-
-void networkDisconnect()
-// Disconnect from WiFi network
-{
-  #ifdef HARDWARE_SIMULATE
-    debugMessage("power off: SIMULATED WiFi",1);
-    return;
-  #else
-    // IMPROVEMENT: What if disconnect call fails?
-    WiFi.disconnect();
-    WiFi.mode(WIFI_OFF);
-    debugMessage("power off: WiFi",1);
-  #endif
-}
-
 bool sensorInit()
 // Generalized entry point for sensor initialization
 {
@@ -1961,6 +1870,26 @@ bool sensorRead()
       return true;
   }
 
+  void sensorSEN6xSimulate(float& simulatedTemperatureF, float& simulatedHumidity, uint16_t& simulatedCO2, float& pm25, float& simulatedVOCIndex, float& simulatedNOxIndex)
+  // Description: Simulates sensor reading from SEN66 sensor
+  //  leveraging other sensor simulations
+  // Parameters: NA
+  // Return: simulated values
+  // Improvement: implement mode passthrough for other sensorSimulate APIs
+  {
+    debugMessage (String("sensorSEN6xSimulate() start"),2);
+
+    simulatedPM25, simulatedTemperatureF, simulatedHumidity, simulatedVOCIndex, simulatedNOxIndex = 0.0f;
+    uint16_t simulatedCO2 = 0;
+
+    sensorSCD4xSimulate(2,3, simulatedTemperatureF, simulatedHumidity,simulatedCO2);
+    sensorSEN54Simulate(simulatedPM25, simulatedVOCIndex);
+    simulatedNOxIndex = randomFloatRange(sensorNOxMin, sensorNOxMax);
+    debugMessage(String("returning simulated noxIndex: ") + simulatedNOxIndex,1);
+    
+    debugMessage (String("sensorSEN6xSimulate() end"),2);
+  }
+
   bool sensorSEN6xRead()
   // Description: Retrieves values from SEN66 sensor
   // Parameters: none
@@ -1968,15 +1897,16 @@ bool sensorRead()
   // Improvement : Add support for checking isDataReady flag (see SCD40 read)
   {
     bool success = false;
+    float pm25, temperatureF, humidity, VOCIndex, NOxIndex = 0.0f;
+    uint16_t co2 = 0;
 
     #ifdef HARDWARE_SIMULATE
-      sensorSEN6xSimulate();
+      sensorSEN6xSimulate(temperatureF, humidity, co2, pm25, VOCIndex, NOxIndex);
       success = true;
     #else
       uint16_t error;
       char errorMessage[256];
-      float pm1, pm25, pm4, pm10, temperatureC, temperatureF, humidity, VOCIndex, NOxIndex = 0.0f;
-      uint16_t co2 = 0;
+      float pm1, pm4, pm10, temperatureC = 0.0f; // read and discard
 
       error = paqSensor.readMeasuredValues(pm1, pm25, pm4, pm10, humidity, temperatureC , VOCIndex,
         NOxIndex, co2);
@@ -1985,66 +1915,66 @@ bool sensorRead()
         errorToString(error, errorMessage, 256);
         debugMessage(String(errorMessage) + " error during SEN6x read",1);
       }
-      else
+      else {
         success = true;
-
-      // range valid returned sensor values
-      temperatureF = (temperatureC*1.8)+32;
-
-      if (co2 < sensorCO2Min || co2 > sensorCO2Max) {
-        success = false;
-        debugMessage(String("SEN66 CO2 reading: ") + co2 + " is out of datasheet range",1);
-      }
-
-      if (temperatureF < sensorTempFMin || temperatureF > sensorTempFMax) {
-        success = false;
-        debugMessage(String("SEN66 temperatureF reading: ") + temperatureF + " is out of datasheet range",1);
-      }
-
-      if (humidity < sensorHumidityMin || humidity > sensorHumidityMax) {
-        success = false;
-        debugMessage(String("SEN66 humidity reading: ") + humidity + " is out of datasheet range",1);
-      }
-
-      if (pm25 < sensorPMMin || pm25 > sensorPMMax) {
-        success = false;
-        debugMessage(String("SEN66 PM2.5 reading: ") + pm25 + " is out of datasheet range",1);
-      }
-
-      if (VOCIndex < sensorVOCMin || VOCIndex > sensorVOCMax) {
-        success = false;
-        debugMessage(String("SEN66 VOC index reading: ") + VOCIndex + " is out of datasheet range",1);
-      }
-
-      if (NOxIndex < sensorNOxMin || NOxIndex > sensorNOxMax) {
-        success = false;
-        debugMessage(String("SEN66 NOx index reading: ") + NOxIndex + " is out of datasheet range",1);
-      }
-
-      // valid measurement, update globals
-      if (success) {
-
-        sensorData.ambientTemperatureF = temperatureF;
-        totalTemperatureF.include(sensorData.ambientTemperatureF);
-        sensorData.ambientHumidity = humidity;
-        totalHumidity.include(sensorData.ambientHumidity);
-        retainCO2(co2);
-        totalCO2.include(co2);
-        sensorData.pm25 = pm25;
-        totalPM25.include(sensorData.pm25);
-        retainVOC(VOCIndex);
-        totalVOCIndex.include(VOCIndex);
-        sensorData.noxIndex = NOxIndex;
-        totalNOxIndex.include(sensorData.noxIndex);
-
-        debugMessage(String("SEN66 temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
-        debugMessage(String("SEN66 humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
-        debugMessage(String("SEN66 CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total across samples: " + totalCO2.getTotal(),2);
-        debugMessage(String("SEN66 PM25 ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
-        debugMessage(String("SEN66 VOC index ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
-        debugMessage(String("SEN66 NOx index ") + sensorData.noxIndex + ", total: " + totalNOxIndex.getTotal(),2);
+        temperatureF = (temperatureC*1.8)+32;
       }
     #endif
+
+    // range valid returned sensor values, even simulation values can be OOB
+    if (co2 < sensorCO2Min || co2 > sensorCO2Max) {
+      success = false;
+      debugMessage(String("SEN66 CO2 reading: ") + co2 + " is out of datasheet range",1);
+    }
+
+    if (temperatureF < sensorTempFMin || temperatureF > sensorTempFMax) {
+      success = false;
+      debugMessage(String("SEN66 temperatureF reading: ") + temperatureF + " is out of datasheet range",1);
+    }
+
+    if (humidity < sensorHumidityMin || humidity > sensorHumidityMax) {
+      success = false;
+      debugMessage(String("SEN66 humidity reading: ") + humidity + " is out of datasheet range",1);
+    }
+
+    if (pm25 < sensorPMMin || pm25 > sensorPMMax) {
+      success = false;
+      debugMessage(String("SEN66 PM2.5 reading: ") + pm25 + " is out of datasheet range",1);
+    }
+
+    if (VOCIndex < sensorVOCMin || VOCIndex > sensorVOCMax) {
+      success = false;
+      debugMessage(String("SEN66 VOC index reading: ") + VOCIndex + " is out of datasheet range",1);
+    }
+
+    if (NOxIndex < sensorNOxMin || NOxIndex > sensorNOxMax) {
+      success = false;
+      debugMessage(String("SEN66 NOx index reading: ") + NOxIndex + " is out of datasheet range",1);
+    }
+
+    // valid measurement, update globals
+    if (success) {
+
+      sensorData.ambientTemperatureF = temperatureF;
+      totalTemperatureF.include(sensorData.ambientTemperatureF);
+      sensorData.ambientHumidity = humidity;
+      totalHumidity.include(sensorData.ambientHumidity);
+      retainCO2(co2);
+      totalCO2.include(co2);
+      sensorData.pm25 = pm25;
+      totalPM25.include(sensorData.pm25);
+      retainVOC(VOCIndex);
+      totalVOCIndex.include(VOCIndex);
+      sensorData.noxIndex = NOxIndex;
+      totalNOxIndex.include(sensorData.noxIndex);
+
+      debugMessage(String("SEN66 temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
+      debugMessage(String("SEN66 humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
+      debugMessage(String("SEN66 CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total across samples: " + totalCO2.getTotal(),2);
+      debugMessage(String("SEN66 PM25 ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
+      debugMessage(String("SEN66 VOC index ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
+      debugMessage(String("SEN66 NOx index ") + sensorData.noxIndex + ", total: " + totalNOxIndex.getTotal(),2);
+    }
     return (success);
   }
 #endif // SENSOR_SEN66
@@ -2109,6 +2039,27 @@ bool sensorRead()
     #endif
   }
 
+  void sensorSEN54Simulate(float& simulatedPM25, float& simulatedVOCIndex)
+  // Description: Simulates sensor reading from SEN54 sensor
+  // Parameters: NA
+  // Return: NA
+  // Improvement: mode 1 from CO2 for VOC
+  // Note: tempF and humidity come from SCD4X simulation
+  {
+    //float pm1, pm10, pm4 = 0.0f;
+
+    debugMessage(String("sensorSEN54Simulate() start"),2);
+
+    simulatedPM25 = randomFloatRange(sensorPMMin, sensorPMMax);
+    // pm1 = randomFloatRange(sensorPMMin, sensorPMMax);
+    // pm10 = randomFloatRange(sensorPMMin, sensorPMMax);
+    // pm4 = randomFloatRange(sensorPMMin, sensorPMMax);
+    simulatedVOCIndex = randomFloatRange(sensorVOCMin, sensorVOCMax);
+
+    debugMessage(String("returning simulated PM2.5: ") + simulatedPM25 + " ppm, VOC index: " + simulatedVOCIndex,1);
+    debugMessage(String("sensorSEN54Simulate() end"),2);
+  }
+
   bool sensorSEN554Read() 
   // Description: Retrieves values from SEN54 sensor
   // Parameters: none
@@ -2116,14 +2067,15 @@ bool sensorRead()
   // Improvement : Add support for checking isDataReady flag (see SCD40 read) 
   {
     bool success = false;
+    float pm25, VOCIndex, NOxIndex = 0.0f;
 
     #ifdef HARDWARE_SIMULATE
-      sensorSEN54Simulate();
+      sensorSEN54Simulate(pm25, VOCIndex);
       success = true;
     #else
       uint16_t error;
       char errorMessage[256];
-      float pm1, pm25, pm4, pm10, temperatureC, humidity, VOCIndex, NOxIndex = 0.0f;
+      float pm1, pm4, pm10, temperatureC, humidity = 0.0f; // read and discard
 
       debugMessage("SEN5X read initiated",1);
 
@@ -2134,31 +2086,31 @@ bool sensorRead()
       }
       else
         success = true;
-
-      // range valid returned sensor values
-      if (pm25 < sensorPMMin || pm25 > sensorPMMax) {
-        success = false;
-        debugMessage(String("SEN5x PM2.5 reading: ") + pm25 + " is out of datasheet range",1);
-      }
-
-      if (VOCIndex < sensorVOCMin || VOCIndex > sensorVOCMax) {
-        success = false;
-        debugMessage(String("SEN5x VOC index reading: ") + VOCIndex + " is out of datasheet range",1);
-      }
-
-      // valid measurement, update globals
-      if (success) {
-        sensorData.pm25 = pm25;
-        totalPM25.include(sensorData.pm25);
-        retainVOC(VOCIndex);
-        totalVOCIndex.include(VOCIndex);
-        sensorData.noxIndex = NOxIndex;
-        totalNOxIndex.include(sensorData.noxIndex);
-
-        debugMessage(String("SEN54 PM25 ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
-        debugMessage(String("SEN54 VOC index ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
-      }
     #endif
+
+    // range valid returned sensor values, even simulation values can be OOB
+    if (pm25 < sensorPMMin || pm25 > sensorPMMax) {
+      success = false;
+      debugMessage(String("SEN5x PM2.5 reading: ") + pm25 + " is out of datasheet range",1);
+    }
+
+    if (VOCIndex < sensorVOCMin || VOCIndex > sensorVOCMax) {
+      success = false;
+      debugMessage(String("SEN5x VOC index reading: ") + VOCIndex + " is out of datasheet range",1);
+    }
+
+    // valid measurement, update globals
+    if (success) {
+      sensorData.pm25 = pm25;
+      totalPM25.include(sensorData.pm25);
+      retainVOC(VOCIndex);
+      totalVOCIndex.include(VOCIndex);
+      sensorData.noxIndex = NOxIndex;
+      totalNOxIndex.include(sensorData.noxIndex);
+
+      debugMessage(String("SEN54 PM25 ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
+      debugMessage(String("SEN54 VOC index ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
+    }
     return(success);
   }
 
@@ -2211,6 +2163,88 @@ bool sensorRead()
     #endif
   }
 
+  // Description: Simulates temp, humidity, and CO2 values from Sensirion SCD4X sensor
+  // Parameters:
+  //  mode
+  //    default = random values, ignores cycles parameter
+  //    1 = random values, slightly +/- per cycle
+  //    2 = out of bounds, "bad" values designed to activate alert modes
+  //  cycles = If used, determines how many times the current mode executes before resetting
+  // Output : NA
+  // Improvement : rapid CO2 rise mode to test sampleEvaluate()
+  void sensorSCD4xSimulate(
+    uint8_t mode,
+    uint8_t cycles,
+    float& simulatedTempF,
+    float& simulatedHumidity,
+    uint16_t& simulatedCO2)
+  {
+    static uint8_t currentMode = 0;
+    static uint8_t cycleCount = 0;
+    static float tempF, humidity = 0.0f;
+    static uint16_t co2 = 0;
+
+    debugMessage(String("sensorSCD4xSimulate() start"),2);
+
+    if (mode != currentMode) {
+      cycleCount = 0;
+      currentMode = mode;
+    }
+    switch (currentMode) {
+    case 0: // 0 = random values, ignores cycles value
+      tempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
+      humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+      co2 = random(sensorCO2Min, sensorCO2Max);
+      break;    
+    case 1: // 1 = random values, slightly +/- per cycle
+      if (cycleCount == cycles) {
+        cycleCount = 0;
+      }
+      if (!cycleCount) {
+        // create new base values
+        tempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
+        humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+        co2 = random(sensorCO2Min, sensorCO2Max);
+        cycleCount++;
+      }
+      else
+      {
+        // slightly +/- CO2 value
+        int8_t sign = random(0, 2) == 0 ? -1 : 1;
+        co2 = co2 + (sign * random(0, sensorCO2VariabilityRange));
+        // IMPROVEMENT: slightly +/- temp value
+        // IMPROVEMENT: slightly +/- humidity value
+        cycleCount++;
+      }
+      break;
+    case 2: // 2 = out of bounds, "bad" values designed to activate alert modes
+      tempF = (random(0,2)) ? sensorTempFMin-2 : sensorTempFMax+2;
+      humidity = (random(0,2)) ? sensorHumidityMin-2 : sensorHumidityMax+2;
+      co2 = (random(0,2)) ? sensorCO2Min-2 : sensorCO2Max+2;
+      break;
+    default: // should not occur; random values, ignores cycles value
+      tempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
+      humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+      co2 = random(sensorCO2Min, sensorCO2Max);
+      break;
+    }
+    simulatedTempF = tempF;
+    simulatedHumidity = humidity;
+    simulatedCO2 = co2;
+    debugMessage(String("returning simulated temp: ") + simulatedTempF + "F, humidity: " + simulatedHumidity
+      + "%, CO2: " + simulatedCO2 + "ppm",1);
+
+    debugMessage(String("sensorSCD4xSimulate() end"),2);
+  }
+
+  void sensorSCD4xSimulate(
+    float& simulatedTempF,
+    float& simulatedHumidity,
+    uint16_t& simulatedCO2)
+  {
+    sensorSCD4xSimulate(0, 0, simulatedTempF, simulatedHumidity, simulatedCO2);
+  }
+
   bool sensorSCD4xRead()
   // Description: Retrieves values from SCD4x sensor
   // Parameters: none
@@ -2218,16 +2252,17 @@ bool sensorRead()
   // Improvement : NA  
   {
     bool success = false;
+    float temperatureF, humidity = 0.0f;
+    uint16_t co2 = 0;
 
     #ifdef HARDWARE_SIMULATE
       success = true;
-      sensorSCD4xSimulate(1,3);
+      sensorSCD4xSimulate(2, 3, temperatureF, humidity, co2);
     #else
       uint16_t error;
       uint8_t errorCount = 0;
       char errorMessage[256];
-      float temperatureC, temperatureF, humidity = 0.0f;
-      uint16_t co2 = 0;
+      float temperatureC = 0.0f;
 
       // Loop attempting to read Measurement
       debugMessage("CO2 sensor read initiated",1);
@@ -2250,46 +2285,44 @@ bool sensorRead()
         if (error) {
             errorToString(error, errorMessage, 256);
             debugMessage(String("SCD40 executing readMeasurement(): ") + errorMessage,1);
-            // Implicitly continues back to the top of the loop
         }
-        else
+        else {
           success = true;
-      }
-
-      // range valid returned sensor values
-      temperatureF = (temperatureC*1.8)+32;
-
-      if (co2 < sensorCO2Min || co2 > sensorCO2Max) {
-        success = false;
-        debugMessage(String("SCD4x CO2 reading: ") + co2 + " is out of datasheet range",1);
-      }
-
-      if (temperatureF < sensorTempFMin || temperatureF > sensorTempFMax) {
-        success = false;
-        debugMessage(String("SCD4x temperatureF reading: ") + temperatureF + " is out of datasheet range",1);
-      }
-
-      if (humidity < sensorHumidityMin || humidity > sensorHumidityMax) {
-        success = false;
-        debugMessage(String("SCD4x humidity reading: ") + humidity + " is out of datasheet range",1);
-      }
-
-      // valid measurement, update globals
-      if (success) {
-        retainCO2(co2);
-
-        sensorData.ambientTemperatureF = temperatureF;
-        totalTemperatureF.include(sensorData.ambientTemperatureF);
-        sensorData.ambientHumidity = humidity;
-        totalHumidity.include(sensorData.ambientHumidity);
-        retainCO2(co2);
-        totalCO2.include(co2);
-
-        debugMessage(String("SCD4x temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
-        debugMessage(String("SCD4x humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
-        debugMessage(String("SCD4x CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total: " + totalCO2.getTotal(),2);
+          temperatureF = (temperatureC*1.8)+32;
+        }
       }
     #endif
+
+    // validate returned sensor values, even simulation can generate OOB values
+
+    if (co2 < sensorCO2Min || co2 > sensorCO2Max) {
+      success = false;
+      debugMessage(String("SCD4x CO2 reading: ") + co2 + " is out of datasheet range",1);
+    }
+
+    if (temperatureF < sensorTempFMin || temperatureF > sensorTempFMax) {
+      success = false;
+      debugMessage(String("SCD4x temperatureF reading: ") + temperatureF + " is out of datasheet range",1);
+    }
+
+    if (humidity < sensorHumidityMin || humidity > sensorHumidityMax) {
+      success = false;
+      debugMessage(String("SCD4x humidity reading: ") + humidity + " is out of datasheet range",1);
+    }
+
+    // valid measurement, update globals
+    if (success) {
+      sensorData.ambientTemperatureF = temperatureF;
+      totalTemperatureF.include(sensorData.ambientTemperatureF);
+      sensorData.ambientHumidity = humidity;
+      totalHumidity.include(sensorData.ambientHumidity);
+      retainCO2(co2);
+      totalCO2.include(co2);
+
+      debugMessage(String("SCD4x temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
+      debugMessage(String("SCD4x humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
+      debugMessage(String("SCD4x CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total: " + totalCO2.getTotal(),2);
+    }
     return(success);
   }
 #endif // SENSOR_SEN54SCD40
