@@ -186,7 +186,7 @@ void setup() {
   owmAirQuality.aqi = 255; // 255 indicates no data
   hardwareData.rssi = 255; // 255 indicates no WiFi connection
   for(uint8_t loop=0;loop<graphPoints;loop++) {
-    sensorData.ambientCO2[loop] = -1.0f;
+    sensorData.ambientCO2[loop] = 6000.0f; // OOB value that means no data, will also warningColor to red
     sensorData.vocIndex[loop] = -1.0f;
   }
 
@@ -482,16 +482,21 @@ void screenSaver()
   debugMessage("screenSaver() start",2);
 
   display.fillScreen(TFT_BLACK);
-
-  display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(TL_DATUM);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
 
-  uint16_t textWidth = display.textWidth(String(sensorData.ambientCO2[graphPoints-1]));
-
-  // Display CO2 value in random, valid location
-  display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints-1])), random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
-
+  if (sensorData.ambientCO2[graphPoints-1] == 6000) {
+    display.setFreeFont(&FreeSans18pt7b);
+    display.setTextColor(TFT_RED);
+    uint16_t textWidth = display.textWidth("Not available");
+    display.drawString("Not available", random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
+  }
+  else {
+    display.setFreeFont(&FreeSans24pt7b);
+    display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints-1])]);
+    uint16_t textWidth = display.textWidth(String(sensorData.ambientCO2[graphPoints-1]));
+    // Display CO2 value in random, valid location
+    display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints-1])), random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
+  }
   debugMessage("screenSaver() end",2);
 }
 
@@ -760,8 +765,14 @@ void screenCO2()
   // CO₂ numeric value
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
-  display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]);
-  display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints - 1])),(display.width() / 2),yValue);
+  if (sensorData.ambientCO2[graphPoints - 1] = 6000) {
+    display.setTextColor(TFT_RED);
+    display.drawString("NA", (display.width() / 2), yValue);
+  }
+  else {
+    display.setTextColor(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]);
+    display.drawString(String(uint16_t(sensorData.ambientCO2[graphPoints - 1])), (display.width() / 2), yValue);
+  }
 
   // recent CO₂ graph
   screenHelperGraph(kXMargins, display.height() / 3, (display.width() - (2 * kXMargins) - kLegendWidth - 10), ((display.height() * 2 / 3) - kYMargins), sensorData.ambientCO2, "Recent values");
@@ -919,7 +930,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
 
   // Find actual min/max from valid samples.
   for (loop = 0; loop < graphPoints; loop++) {
-    if (values[loop] == -1.0f) continue;
+    if (values[loop] == 6000) continue;
 
     noData = false;
 
@@ -984,7 +995,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   yp = graphLineY;
 
   for (loop = 0; loop < graphPoints; loop++) {
-    if (values[loop] == -1.0f) continue;
+    if (values[loop] == 6000) continue;
 
     x = graphLineX + yAxisPadding + (loop * deltaX);
 
