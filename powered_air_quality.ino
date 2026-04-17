@@ -132,7 +132,7 @@ void setup() {
     while (!Serial);
     // Display key configuration parameters
     debugMessage(String("Starting Powered Air Quality with ") + (timeSensorSampleMS/1000) + String(" second sample interval"),1);
-    #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
+    #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
       debugMessage(String("Report interval is ") + (timeReportMS/60000) + " minutes",1);
     #endif
   #endif
@@ -322,7 +322,6 @@ void loop() {
   // is it time to write to the network endpoints?
   if ((millis() - timeLastReportMS) >= timeReportMS) {
     samplePost(numSamples);
-    debugMessage(String("timeLastReportMS: ") + timeLastReportMS, 1);
     timeLastReportMS = millis();
   }
 }
