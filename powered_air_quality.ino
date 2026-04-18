@@ -850,7 +850,7 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
 
   hardwareData.rssi = networkRSSIRead();
 
-  if (hardwareData.rssi !=255) {
+  if (hardwareData.rssi != 255) {
     uint8_t barCount;
     if (hardwareData.rssi < 55) barCount = 5;
     if (hardwareData.rssi < 67) barCount = 4;
@@ -883,7 +883,7 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
 // 
 {
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-    if ((!timeLastReportMS) || ((millis() - timeLastReportMS) >= (timeReportMS * reportFailureThreshold)))
+    if (((!timeLastReportMS) || ((millis() - timeLastReportMS) >= (timeReportMS * reportFailureThreshold)))) && (hardwareData.rssi != 255)
         // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
         display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_RED);
       else
@@ -1124,7 +1124,6 @@ void samplePost(uint8_t& numSamples)
 
         // update RSSI before publishing
         hardwareData.rssi = networkRSSIRead();
-        debugMessage(String("WiFi RSSI: ") + hardwareData.rssi,1);
 
         #ifdef THINGSPEAK
           debugMessage(String("AQI(US): ") + pm25toAQI_US(avgPM25),1);
@@ -1400,6 +1399,7 @@ void networkStartWiFiMgrPortal()
 uint8_t networkRSSIRead()
 {
   uint8_t rssi;
+
   #ifdef HARDWARE_SIMULATE
     rssi = networkRSSISimulate();
   #else
@@ -1415,7 +1415,7 @@ uint8_t networkRSSIRead()
     else
       rssi = 255; // no network connection
   #endif
-  return(rssi);
+  return (rssi);
 }
 
 void networkDisconnect()
