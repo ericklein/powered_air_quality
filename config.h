@@ -7,7 +7,7 @@
 
 // Configuration Step 2: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 2
+// #define DEBUG 1
 
 // Configuration Step 3: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -16,7 +16,7 @@
 // Configuration Step 4: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-// #define INFLUX // Log data to InfluxDB server
+#define INFLUX // Log data to InfluxDB server
 // #define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration Step 5: Which sensor configuration do we have?  Later generation devices
@@ -26,8 +26,8 @@
 // Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
-// #define SENSOR_SEN66
-#define SENSOR_SEN54SCD40
+#define SENSOR_SEN66
+// #define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 
@@ -139,10 +139,13 @@ const uint16_t noxBad = 300;
 
 const uint32_t hardwareErrorSleepTimeμS = 10000000;  // sleep time if hardware error occurs
 
-// button
-const uint8_t hardwareButton = 0; // boot button on most ESP32 boards
+// Button
+// IMPORTANT NOTE: Application logic asssumes that timeStartPortalholdMS is shorter
+// in milliseconds than timeDeviceResetHoldMS in order to operate properly.
+const uint8_t hardwareButton = 0; // Boot button on most ESP32 boards
 const uint16_t timeStartPortalHoldMS = 5000;  // long-press duration to start config portal
-const uint16_t timeDeviceResetHoldMS = 10000; // Long-press duration to wipe config
+const uint16_t timeDeviceResetHoldMS = 10000; // Long-press duration to wipe config. Must be
+                                              // longer than timeStartPortalHoldMS.
 
 // touchscreen pins
 #define XPT2046_IRQ 36
