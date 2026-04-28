@@ -48,7 +48,7 @@
     dbdevdata.addTag(TAG_KEY_DEVICE_ID, endpointPath.deviceID);
 
     uint32_t timeInfluxConnectStart = millis();
-    while ((!dbclient.validateConnection()) && ((millis() - timeInfluxConnectStart) < timeNetworkConnectTimeoutMS)) {
+    while ((!dbclient.validateConnection()) && ((millis() - timeInfluxConnectStart) < timeConnectTimeoutSeconds*1000)) {
       delay(100);
     }
 
@@ -87,7 +87,7 @@
       dbclient.flushBuffer();  // Clear pending writes
     }
     else {
-      debugMessage(String("Could not connect to InfluxDB server: ") + dbclient.getServerUrl(),1);
+      debugMessage("Could not connect to influxdb server",1);
     }
     return (success);
   }
