@@ -64,7 +64,6 @@ WiFiManager wfm;
 TFT_eSPI display = TFT_eSPI();
 
 // Screen specific functions that reside separately in screens.cpp
-extern void screenAlert(String message);
 extern void screenSaver();
 extern void screenMain();
 extern void screenVOC();
@@ -72,6 +71,11 @@ extern void screenNOX();
 extern void screenCO2();
 extern void screenPM25();
 extern void screenTempHumidity();
+// other functions residing in screens.cpp
+extern uint8_t co2Range(float);
+extern uint8_t pm25Range(float);
+extern uint8_t vocRange(float);
+extern uint8_t noxRange(float);
 
 #ifdef PAQ
   // CYD 2432S028R -> XPT2046
@@ -239,8 +243,8 @@ void loop() {
   #ifdef CLIMATRON
     stripOne.update();
     FastLED.show();
+    delay(100); // 10Hz clock for driving animations
   #endif
-  delay(100); // 10Hz clock for driving animations
 
   // is there user input to process?
   bool touchEvent = false;
