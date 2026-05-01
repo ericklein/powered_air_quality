@@ -124,8 +124,8 @@ OpenWeatherMapAirQuality owmAirQuality;
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.  Each
 // instance contains storage to retain points for subsequent processing, which are used
 // here to graph recent data. The size of that retatined data is based on the
-// graphPoints value defined in config.h.
-Measure<graphPoints> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
+// kSampleCapacity value defined in config.h.
+Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
 
 uint32_t timeLastReportMS = 0;  // timestamp for last report to network endpoints
 
@@ -196,7 +196,7 @@ void setup() {
   owmCurrentData.tempF = 255.0f; // 255 indicates no data
   owmAirQuality.aqi = 255; // 255 indicates no data
   hardwareData.rssi = 255; // 255 indicates no WiFi connection
-  for(uint8_t loop=0;loop<graphPoints;loop++) {
+  for(uint8_t loop=0;loop<kSampleCapacity;loop++) {
     sensorData.ambientCO2[loop] = 6000.0f; // OOB value that means no data, will also warningColor to red
     sensorData.vocIndex[loop] = -1.0f;
   }
@@ -345,7 +345,7 @@ void screenUpdate(uint8_t screenCurrent)
       screenSaver();
       // update leds
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]));
+        stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[kSampleCapacity - 1])]));
       #endif
       break;
     case sMain:
@@ -357,13 +357,13 @@ void screenUpdate(uint8_t screenCurrent)
     case sVOC:
       screenVOC();
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(warningColor[vocRange(sensorData.vocIndex[graphPoints - 1])]));
+        stripOne.setOneColor(rgb565ToCRGB(warningColor[vocRange(sensorData.vocIndex[kSampleCapacity - 1])]));
       #endif
       break;
     case sCO2:
       screenCO2();
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]));
+        stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[kSampleCapacity - 1])]));
       #endif
       break;
     case sPM25:
@@ -641,10 +641,10 @@ void retainCO2(float co2)
 // Returns: NA (void)
 // Improvement: ?
 {
-  for(uint8_t loop=1;loop<graphPoints;loop++) {
+  for(uint8_t loop=1;loop<kSampleCapacity;loop++) {
     sensorData.ambientCO2[loop-1] = sensorData.ambientCO2[loop];
   }
-  sensorData.ambientCO2[graphPoints-1] = co2;
+  sensorData.ambientCO2[kSampleCapacity-1] = co2;
 }
 
 void retainVOC(float voc)
@@ -653,10 +653,10 @@ void retainVOC(float voc)
 // Returns: NA (void)
 // Improvement: not merged with retainCO2 because reads are in independent functions
 {
-  for(uint8_t loop=1;loop<graphPoints;loop++) {
+  for(uint8_t loop=1;loop<kSampleCapacity;loop++) {
     sensorData.vocIndex[loop-1] = sensorData.vocIndex[loop];
   }
-  sensorData.vocIndex[graphPoints-1] = voc;
+  sensorData.vocIndex[kSampleCapacity-1] = voc;
 }
 
 uint8_t networkRSSISimulate()
@@ -1423,9 +1423,9 @@ bool sensorSEN6xRead()
 
     debugMessage(String("SEN66 temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
     debugMessage(String("SEN66 humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
-    debugMessage(String("SEN66 CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total across samples: " + totalCO2.getTotal(),2);
+    debugMessage(String("SEN66 CO2 ") + sensorData.ambientCO2[kSampleCapacity-1] + "ppm, total across samples: " + totalCO2.getTotal(),2);
     debugMessage(String("SEN66 PM25 ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
-    debugMessage(String("SEN66 VOC index ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
+    debugMessage(String("SEN66 VOC index ") + sensorData.vocIndex[kSampleCapacity-1] + ", total: " + totalVOCIndex.getTotal(),2);
     debugMessage(String("SEN66 NOx index ") + sensorData.noxIndex + ", total: " + totalNOxIndex.getTotal(),2);
   }
   return (success);
@@ -1552,7 +1552,7 @@ bool sensorSEN554Read()
     totalNOxIndex.include(sensorData.noxIndex);
 
     debugMessage(String("sensorSEN554Read() updating pm25: ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
-    debugMessage(String("sensorSEN554Read() updating vocIndex: ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
+    debugMessage(String("sensorSEN554Read() updating vocIndex: ") + sensorData.vocIndex[kSampleCapacity-1] + ", total: " + totalVOCIndex.getTotal(),2);
   }
 
   debugMessage("sensorSEN554Read() end",2);
@@ -1782,7 +1782,7 @@ bool sensorSCD4xRead()
 
     debugMessage(String("SCD4x temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
     debugMessage(String("SCD4x humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
-    debugMessage(String("SCD4x CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total: " + totalCO2.getTotal(),2);
+    debugMessage(String("SCD4x CO2 ") + sensorData.ambientCO2[kSampleCapacity-1] + "ppm, total: " + totalCO2.getTotal(),2);
   }
   debugMessage("sensorSCD4xRead() end",2);
   return(success);

@@ -54,8 +54,8 @@ constexpr uint8_t kYMargins = 5;
 constexpr uint8_t kLegendHeight =  20;
 constexpr uint8_t kLegendWidth =   10;
 
-// How many data samples are retained for graphing
-constexpr uint8_t graphPoints = 10;
+// How many samples are retained in a FIFO queue
+constexpr uint8_t kSampleCapacity = 10;
 
 // warnings
 // const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};

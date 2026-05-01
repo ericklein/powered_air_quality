@@ -22,10 +22,10 @@ extern bool OWMCurrentWeatherRead();
 extern void debugMessage(String messageText, uint8_t messageLevel);
 extern TFT_eSPI display;
 extern uint32_t timeLastReportMS;
-extern Measure<graphPoints> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
+extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
 
 // Forward declarations for local functions to help make ordering in this file easier
-void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<graphPoints>, uint8_t, String);
+void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<kSampleCapacity>, uint8_t, String);
 void screenHelperComponentSetup(String);
 uint16_t getWarningColor(uint8_t, float);
 void screenHelperWiFiStatus(uint16_t, uint16_t, uint8_t, uint8_t, uint8_t);
@@ -50,7 +50,7 @@ void screenSaver()
   display.fillScreen(TFT_BLACK);
   display.setTextDatum(TL_DATUM);
 
-    if (sensorData.ambientCO2[graphPoints-1] == 6000) {
+    if (sensorData.ambientCO2[kSampleCapacity-1] == 6000) {
     display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(TFT_RED);
     uint16_t textWidth = display.textWidth("Not available");
@@ -294,10 +294,10 @@ void screenVOC()
  *
  * @note This function relies on global display state, sensor data,
  *       and layout constants (e.g. `display`, `sensorData`,
- *       `kXMargins`, `kYMargins`, `graphPoints`).
+ *       `kXMargins`, `kYMargins`, `kSampleCapacity`).
  *
  * @warning Assumes `sensorData.ambientCO2` contains at least
- *          `graphPoints` valid samples.
+ *          `kSampleCapacity` valid samples.
  */
 void screenCO2()
 // Description: Display CO2 information (ppm, color grade, graph)
@@ -318,7 +318,7 @@ void screenCO2()
   display.setTextDatum(MC_DATUM);
 
   // CO2 numeric value
-  if (sensorData.ambientCO2[graphPoints - 1] == 6000) {
+  if (sensorData.ambientCO2[kSampleCapacity - 1] == 6000) {
     display.setTextColor(TFT_RED);
     display.drawString("NA", (display.width() / 2), yValue);
   }
@@ -633,10 +633,10 @@ uint8_t noxRange(float noxIndex)
   return noxRange;
 }
 
-void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, Measure<graphPoints> measure, uint8_t datatype, String xLabel)
+void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, Measure<kSampleCapacity> measure, uint8_t datatype, String xLabel)
 {
   uint8_t stored, capacity;
-  int8_t loop; // upper bound is graphPoints definition
+  int8_t loop; // upper bound is kSampleCapacity definition
   uint16_t text1Width, text1Height;
   uint16_t deltaX, x, y, xp, yp;  // graphing positions
   float minValue, maxValue, value, range, average;
@@ -718,7 +718,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   // Plot however many data points we have both with filled circles at each
   // point and lines connecting the points.  Color the filled circles with the
   // appropriate warning level color for the type of data being graphed.
-  deltaX = ((xWidth-graphLineX) - 10) / (graphPoints-1);  // X distance between points, 10 pixel padding for Y axis
+  deltaX = ((xWidth-graphLineX) - 10) / (kSampleCapacity-1);  // X distance between points, 10 pixel padding for Y axis
   xp = graphLineX;
   yp = graphLineY;
   firstpoint = true;  // Reset for plotting use
