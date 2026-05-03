@@ -10,6 +10,7 @@
 #include "secrets.h"              // private credentials for network, MQTT
 #include "data.h"
 
+#include <math.h>
 #include <HTTPClient.h>           // used to access Open Weather Map
 #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
 #include <Measure.hpp>            // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
@@ -497,10 +498,102 @@ void screenHelperAlert(
   }
 }
 
-void sampleEvaluate()
+bool sampleEvaluate()
 {
-  debugMessage(String("sampleEvaluate() start"),2);
-  debugMessage(String("sampleEvaluate() end"),2);
+  debugMessage(String("sampleEvaluate() start"), 2);
+
+  constexpr uint8_t kMinRunLength   = 3;
+  constexpr float   kSigmaMultiplier = 2.5f;
+  constexpr float   kMinSigmaFloor   = 25.0f; // ppm/sample
+
+  const uint16_t stored = totalCO2.getStored();
+
+  if (stored < (kMinRunLength + 1))
+  {
+    debugMessage(String("sampleEvaluate(): insufficient samples"), 2);
+    return false;
+  }
+
+  const uint16_t deltaCount = stored - 1;
+
+  float deltas[kSampleCapacity - 1];
+
+  // Build first-difference series (no skipping)
+  for (uint16_t i = 0; i < deltaCount; ++i)
+  {
+    deltas[i] = totalCO2.getMember(i + 1) - totalCO2.getMember(i);
+  }
+
+  // Mean
+  float meanDelta = 0.0f;
+  for (uint16_t i = 0; i < deltaCount; ++i)
+  {
+    meanDelta += deltas[i];
+  }
+  meanDelta /= deltaCount;
+
+  // Standard deviation
+  float variance = 0.0f;
+  for (uint16_t i = 0; i < deltaCount; ++i)
+  {
+    const float diff = deltas[i] - meanDelta;
+    variance += diff * diff;
+  }
+  variance /= deltaCount;
+
+  const float stdDelta = sqrtf(variance);
+  const float threshold = fmaxf(kSigmaMultiplier * stdDelta, kMinSigmaFloor);
+
+  // Sustained run detection
+  uint8_t runLength = 0;
+  int8_t runDirection = 0;
+  float runSum = 0.0f;
+
+  for (uint16_t i = 0; i < deltaCount; ++i)
+  {
+    const float delta = deltas[i];
+
+    if (fabsf(delta) < threshold)
+    {
+      runLength = 0;
+      runDirection = 0;
+      runSum = 0.0f;
+      continue;
+    }
+
+    const int8_t direction = (delta > 0.0f) ? 1 : -1;
+
+    if (runLength == 0 || direction == runDirection)
+    {
+      ++runLength;
+      runDirection = direction;
+      runSum += delta;
+    }
+    else
+    {
+      runLength = 1;
+      runDirection = direction;
+      runSum = delta;
+    }
+
+    if (runLength >= kMinRunLength)
+    {
+      debugMessage(
+        String("Sustained CO2 trend detected: direction=") +
+        (runDirection > 0 ? "rising" : "falling") +
+        ", runLength=" + runLength +
+        ", avgDelta=" + (runSum / runLength) +
+        ", stdDelta=" + stdDelta +
+        ", threshold=" + threshold,
+        1
+      );
+
+      return true;
+    }
+  }
+
+  debugMessage(String("sampleEvaluate(): no sustained trend detected"), 2);
+  return false;
 }
 
 /**

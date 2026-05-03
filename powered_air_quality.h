@@ -8,12 +8,12 @@
   struct envData {
     float ambientTemperatureF;        
     float ambientHumidity;            // RH [%]
-    float ambientCO2[graphPoints];    // ppm, FIFO queue, -1 = no data
+    float ambientCO2[kSampleCapacity];    // ppm, FIFO queue, -1 = no data
     float pm25;                       // PM2.5 [µg/m³]
     // float pm1;                        // PM1.0 [µg/m³]
     // float pm10;                       // PM10.0 [µg/m³]
     // float pm4;                        // PM4.0 [µg/m³]
-    float vocIndex[graphPoints];      // Sensiron VOC Index
+    float vocIndex[kSampleCapacity];      // Sensiron VOC Index
     float noxIndex;                   // Sensiron NOx Index
   };
   extern envData sensorData;
