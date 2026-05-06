@@ -308,7 +308,9 @@ void loop() {
     // Read sensor(s)
     if (sensorRead()) {
       numSamples++;
-      sampleEvaluate();
+      if (!sampleEvaluate())
+        debugMessage(String("I should have gotten another msg from inside of sampleEvaluate()"),1);
+      
       // IMPROVEMENT: evaluate whether the screen actually needs updated based on changed data
       screenUpdate(screenCurrent);
     }
@@ -587,7 +589,6 @@ bool sampleEvaluate()
         ", threshold=" + threshold,
         1
       );
-
       return true;
     }
   }
@@ -642,7 +643,7 @@ void samplePost(uint8_t& numSamples)
         float avgPM25 = totalPM25.getAverage();
         float avgNOX = totalNOxIndex.getAverage();
 
-        debugMessage(String("Averages for the last ") + (timeReportMS/60000) + " minutes for endpoint reporting",1);
+        debugMessage(String("Averages being sent to endpoints for the last ") + (timeReportMS/60000) + " minutes",1);
         debugMessage(String("PM2.5: ") + avgPM25 + "ppm, CO2: " + avgCO2 + "ppm, VOC index: " + avgVOC + ", NOx index: " + avgNOX + ", " + 
           avgTemperatureF + "F, humidity: " + avgHumidity + "%", 1);
 
@@ -650,15 +651,14 @@ void samplePost(uint8_t& numSamples)
         hardwareData.rssi = networkRSSIRead();
 
         #ifdef THINGSPEAK
-          debugMessage(String("AQI(US): ") + pm25toAQI_US(avgPM25),1);
           if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
-            Serial.println("ERROR: Did not write to ThingSpeak");
+            debugMessage(String("ERROR: Did not write to ThingSpeak"),1);
           }
         #endif
 
         #ifdef INFLUX
           if (!post_influx(avgTemperatureF, avgHumidity, avgCO2 , avgPM25, avgVOC, avgNOX, hardwareData.rssi))
-            Serial.println("ERROR: Did not write to influxDB");
+            debugMessage(String("ERROR: Did not write to InfluxDB"),1);
         #endif
 
         #ifdef MQTT
@@ -1612,8 +1612,6 @@ bool sensorSEN554Read()
       char errorMessage[256];
       float pm1, pm4, pm10, temperatureC, humidity = 0.0f; // read and discard
 
-      debugMessage("SEN5X read initiated",1);
-
       error = pmSensor.readMeasuredValues(pm1, pm25, pm4, pm10, humidity, temperatureC, VOCIndex, NOxIndex);
       if (error) {
         errorToString(error, errorMessage, 256);
@@ -1644,8 +1642,8 @@ bool sensorSEN554Read()
     sensorData.noxIndex = NOxIndex;
     totalNOxIndex.include(sensorData.noxIndex);
 
-    debugMessage(String("sensorSEN554Read() updating pm25: ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
-    debugMessage(String("sensorSEN554Read() updating vocIndex: ") + sensorData.vocIndex[kSampleCapacity-1] + ", total: " + totalVOCIndex.getTotal(),2);
+    debugMessage(String("SEN554 pm25: ") + sensorData.pm25 + "ppm, total across samples: " + totalPM25.getTotal(),2);
+    debugMessage(String("SEN554 vocIndex: ") + sensorData.vocIndex[kSampleCapacity-1] + ", total across samples: " + totalVOCIndex.getTotal(),2);
   }
 
   debugMessage("sensorSEN554Read() end",2);
