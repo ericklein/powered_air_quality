@@ -17,7 +17,7 @@
 #include <TFT_eSPI.h>             // https://github.com/Bodmer/TFT_eSPI
 #ifdef CLIMATRON
   #include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
-  #include <LEDControl.h>           // multi LED strip async control
+  #include <LEDControl.h>           // https://github.com/disquisitioner/LEDControl, multi LED strip async control
   // CYD JC2432W328 -> CST820 capacitive touchscreen controller
   #include <CST820.h>               // https://github.com/ericklein/CST820_Arduino_Library
   #include <CST820_Helper.h>        // https://github.com/ericklein/CST820_Arduino_Library
@@ -116,7 +116,6 @@ extern uint8_t noxRange(float);
 
 // data structures defined in powered_air_quality.h
 networkEndpointConfig endpointPath;
-envData sensorData;
 hdweData hardwareData;
 OpenWeatherMapCurrentData owmCurrentData;
 OpenWeatherMapAirQuality owmAirQuality; 
@@ -196,10 +195,6 @@ void setup() {
   owmCurrentData.tempF = 255.0f; // 255 indicates no data
   owmAirQuality.aqi = 255; // 255 indicates no data
   hardwareData.rssi = 255; // 255 indicates no WiFi connection
-  for(uint8_t loop=0;loop<graphPoints;loop++) {
-    sensorData.ambientCO2[loop] = 6000.0f; // OOB value that means no data, will also warningColor to red
-    sensorData.vocIndex[loop] = -1.0f;
-  }
 
   networkOpenWiFiManager();
 
@@ -345,7 +340,7 @@ void screenUpdate(uint8_t screenCurrent)
       screenSaver();
       // update leds
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]));
+        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(CO2_DATA,totalCO2.getCurrent() )));
       #endif
       break;
     case sMain:
@@ -357,26 +352,26 @@ void screenUpdate(uint8_t screenCurrent)
     case sVOC:
       screenVOC();
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(warningColor[vocRange(sensorData.vocIndex[graphPoints - 1])]));
+        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent() )));
       #endif
       break;
     case sCO2:
       screenCO2();
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]));
+        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(CO2_DATA,totalCO2.getCurrent() ))); 
       #endif
       break;
     case sPM25:
       screenPM25();
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(warningColor[pm25Range(sensorData.pm25)]));
+        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(PM_DATA,totalPM25.getCurrent() )));
       #endif
       break;
     case sNOX:
       #ifdef SENSOR_SEN66  
         screenNOX();
         #ifdef CLIMATRON
-          stripOne.setOneColor(rgb565ToCRGB(warningColor[noxRange(sensorData.noxIndex)]));
+          stripOne.setOneColor(rgb565ToCRGB(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent() ))); 
         #endif
       #else
         screenTempHumidity();
@@ -635,30 +630,6 @@ void samplePost(uint8_t& numSamples)
   debugMessage(String("samplePost() end"),2);
 }
 
-void retainCO2(float co2)
-// Description: add new element, FIFO, to CO2 array
-// Parameters:  new CO2 value from sensor
-// Returns: NA (void)
-// Improvement: ?
-{
-  for(uint8_t loop=1;loop<graphPoints;loop++) {
-    sensorData.ambientCO2[loop-1] = sensorData.ambientCO2[loop];
-  }
-  sensorData.ambientCO2[graphPoints-1] = co2;
-}
-
-void retainVOC(float voc)
-// Description: add new element, FIFO, to VOC array
-// Parameters:  new VOC index value from sensor
-// Returns: NA (void)
-// Improvement: not merged with retainCO2 because reads are in independent functions
-{
-  for(uint8_t loop=1;loop<graphPoints;loop++) {
-    sensorData.vocIndex[loop-1] = sensorData.vocIndex[loop];
-  }
-  sensorData.vocIndex[graphPoints-1] = voc;
-}
-
 uint8_t networkRSSISimulate()
 // Description : returns simulated WiFi RSSI value from hardware or simulation value
 // Parameters: NA
@@ -704,8 +675,16 @@ bool networkOpenWiFiManager()
   // wm.setMinimumSignalQuality(20);  // set min RSSI (percentage) to show in scans, null = 8%
   // wm.setShowInfoErase(false);      // do not show erase button on info page
   // wm.setScanDispPerc(true);       // show RSSI as percentage not graph icons
-  if (DEBUG < 2)
+
+  // Enable WiFiManager debug mode if DEBUG is set and equal to 2, disabled otherwise
+  #ifdef DEBUG
+    if(DEBUG >= 2) wfm.setDebugOutput(true);
+    else wfm.setDebugOutput(false);
+  #endif
+  #ifndef DEBUG
+    // if (DEBUG < 2)
     wfm.setDebugOutput(false);
+  #endif
 
   // set WiFiManager portal parameters
   // note: parameter order determines on-screen order
@@ -1288,7 +1267,7 @@ bool sensorSEN6xInit()
       #endif
       #ifdef CLIMATRON
         // CYD JC2432W328
-        paqSensor.begin(SensorWire);
+        paqSensor.begin(SensorWire, SEN66_I2C_ADDR_6B); // DJB-TODO
       #endif
 
       error = paqSensor.deviceReset();
@@ -1408,25 +1387,20 @@ bool sensorSEN6xRead()
 
   // valid measurement, update globals
   if (success) {
-    sensorData.ambientTemperatureF = temperatureF;
-    totalTemperatureF.include(sensorData.ambientTemperatureF);
-    sensorData.ambientHumidity = humidity;
-    totalHumidity.include(sensorData.ambientHumidity);
-    retainCO2(co2);
+    // Incorporate (and retain) validated measurements for further processing & reporting
+    totalTemperatureF.include(temperatureF);
+    totalHumidity.include(humidity);
     totalCO2.include(co2);
-    sensorData.pm25 = pm25;
-    totalPM25.include(sensorData.pm25);
-    retainVOC(VOCIndex);
+    totalPM25.include(pm25);
     totalVOCIndex.include(VOCIndex);
-    sensorData.noxIndex = NOxIndex;
-    totalNOxIndex.include(sensorData.noxIndex);
+    totalNOxIndex.include(NOxIndex);
 
-    debugMessage(String("SEN66 temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
-    debugMessage(String("SEN66 humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
-    debugMessage(String("SEN66 CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total across samples: " + totalCO2.getTotal(),2);
-    debugMessage(String("SEN66 PM25 ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
-    debugMessage(String("SEN66 VOC index ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
-    debugMessage(String("SEN66 NOx index ") + sensorData.noxIndex + ", total: " + totalNOxIndex.getTotal(),2);
+    debugMessage(String("SEN66 temp ") + totalTemperatureF.getCurrent() + "F, total across samples: " + totalTemperatureF.getTotal(),2);
+    debugMessage(String("SEN66 humidity ") + totalHumidity.getCurrent() + ", total across samples: " + totalHumidity.getTotal(),2);
+    debugMessage(String("SEN66 CO2 ") + totalCO2.getCurrent() + "ppm, total across samples: " + totalCO2.getTotal(),2);
+    debugMessage(String("SEN66 PM25 ") + totalPM25.getCurrent() + "ppm, total: " + totalPM25.getTotal(),2);
+    debugMessage(String("SEN66 VOC index ") + totalVOCIndex.getCurrent() + ", total: " + totalVOCIndex.getTotal(),2);
+    debugMessage(String("SEN66 NOx index ") + totalNOxIndex.getCurrent() + ", total: " + totalNOxIndex.getTotal(),2);
   }
   return (success);
 }
@@ -1544,15 +1518,12 @@ bool sensorSEN554Read()
 
   // valid measurement, update globals
   if (success) {
-    sensorData.pm25 = pm25;
-    totalPM25.include(sensorData.pm25);
-    retainVOC(VOCIndex);
+    totalPM25.include(pm25);
     totalVOCIndex.include(VOCIndex);
-    sensorData.noxIndex = NOxIndex;
-    totalNOxIndex.include(sensorData.noxIndex);
+    totalNOxIndex.include(NOxIndex);
 
-    debugMessage(String("sensorSEN554Read() updating pm25: ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
-    debugMessage(String("sensorSEN554Read() updating vocIndex: ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
+    debugMessage(String("sensorSEN554Read() updating pm25: ") + totalPM25.getCurrent() + "ppm, total: " + totalPM25.getTotal(),2);
+    debugMessage(String("sensorSEN554Read() updating vocIndex: ") + totalVOCIndex.getCurrent() + ", total: " + totalVOCIndex.getTotal(),2);
   }
 
   debugMessage("sensorSEN554Read() end",2);
@@ -1773,16 +1744,13 @@ bool sensorSCD4xRead()
 
   // valid measurement, update globals
   if (success) {
-    sensorData.ambientTemperatureF = temperatureF;
-    totalTemperatureF.include(sensorData.ambientTemperatureF);
-    sensorData.ambientHumidity = humidity;
-    totalHumidity.include(sensorData.ambientHumidity);
-    retainCO2(co2);
+    totalTemperatureF.include(temperatureF);
+    totalHumidity.include(humidity);
     totalCO2.include(co2);
 
-    debugMessage(String("SCD4x temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
-    debugMessage(String("SCD4x humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
-    debugMessage(String("SCD4x CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total: " + totalCO2.getTotal(),2);
+    debugMessage(String("SCD4x temp ") + totalTemperatureF.getCurrent() + "F, total across samples: " + totalTemperatureF.getTotal(),2);
+    debugMessage(String("SCD4x humidity ") + totalHumidity.getCurrent() + ", total across samples: " + totalHumidity.getTotal(),2);
+    debugMessage(String("SCD4x CO2 ") + totalCO2.getCurrent() + "ppm, total: " + totalCO2.getTotal(),2);
   }
   debugMessage("sensorSCD4xRead() end",2);
   return(success);
@@ -2043,6 +2011,34 @@ void alertHandle() {
       alertLengthMS = 0;
       alertStartMS = 0;
     }
+  }
+}
+
+// Determine the right warning color to use for an arbitrary sensor data value given
+// the type of data in question.  This utility is used heavily in various screen drawing
+// routines (see screens.cpp) but also for managing the notification LEDs in Climatron.
+uint16_t getWarningColor(uint8_t datatype, float datavalue)
+{
+  switch(datatype) {
+    case CO2_DATA:
+      return(warningColor[co2Range(datavalue)]);
+    case VOC_DATA:
+      return(warningColor[vocRange(datavalue)]);
+    case NOX_DATA:
+      return(warningColor[noxRange(datavalue)]);
+    case PM_DATA:
+      return(warningColor[pm25Range(datavalue)]);
+    case TEMP_DATA:
+      // Alternatively could explicitly return TFT_GREEN & TFT_YELLOW for temperature 
+      // & humidity comfort zones but using warningColor[0] and warningColor[1] provides 
+      // configurable consistency with other warning/comfort coloration
+      if( (datavalue < sensorTempFComfortMin) || (datavalue > sensorTempFComfortMax) ) return(warningColor[1]); // "Fair"
+      else return(warningColor[0]);  // "Good"
+    case HUM_DATA:
+      if( (datavalue < sensorHumidityComfortMin) || (datavalue > sensorHumidityComfortMax) ) return(warningColor[1]); // "Fair"
+      else return(warningColor[0]); // "Good"
+    default:
+      return(TFT_WHITE);
   }
 }
 

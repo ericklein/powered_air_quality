@@ -20,6 +20,7 @@ extern uint8_t networkRSSIRead();
 extern bool OWMAirPollutionRead();
 extern bool OWMCurrentWeatherRead();
 extern void debugMessage(String messageText, uint8_t messageLevel);
+extern uint16_t getWarningColor(uint8_t, float);
 extern TFT_eSPI display;
 extern uint32_t timeLastReportMS;
 extern Measure<graphPoints> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
@@ -50,7 +51,7 @@ void screenSaver()
   display.fillScreen(TFT_BLACK);
   display.setTextDatum(TL_DATUM);
 
-    if (sensorData.ambientCO2[graphPoints-1] == 6000) {
+    if (totalCO2.getCurrent() == 6000) {
     display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(TFT_RED);
     uint16_t textWidth = display.textWidth("Not available");
@@ -293,10 +294,10 @@ void screenVOC()
  *  - A vertical color legend matching the warning scale
  *
  * @note This function relies on global display state, sensor data,
- *       and layout constants (e.g. `display`, `sensorData`,
+ *       and layout constants (e.g. `display`,
  *       `kXMargins`, `kYMargins`, `graphPoints`).
  *
- * @warning Assumes `sensorData.ambientCO2` contains at least
+ * @warning Assumes totalCO2` contains at least
  *          `graphPoints` valid samples.
  */
 void screenCO2()
@@ -318,7 +319,7 @@ void screenCO2()
   display.setTextDatum(MC_DATUM);
 
   // CO2 numeric value
-  if (sensorData.ambientCO2[graphPoints - 1] == 6000) {
+  if (totalCO2.getCurrent() == 6000) {
     display.setTextColor(TFT_RED);
     display.drawString("NA", (display.width() / 2), yValue);
   }
@@ -744,33 +745,6 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     yp = y;
   }
   debugMessage("screenHelperGraph() end",2);
-}
-
-// Determine the right warning color to use for an arbitrary sensor data value given
-// the type of data in question.
-uint16_t getWarningColor(uint8_t datatype, float datavalue)
-{
-  switch(datatype) {
-    case CO2_DATA:
-      return(warningColor[co2Range(datavalue)]);
-    case VOC_DATA:
-      return(warningColor[vocRange(datavalue)]);
-    case NOX_DATA:
-      return(warningColor[noxRange(datavalue)]);
-    case PM_DATA:
-      return(warningColor[pm25Range(datavalue)]);
-    case TEMP_DATA:
-      // Alternatively could explicitly return TFT_GREEN & TFT_YELLOW for temperature 
-      // & humidity comfort zones but using warningColor[0] and warningColor[1] provides 
-      // configurable consistency with other warning/comfort coloration
-      if( (datavalue < sensorTempFComfortMin) || (datavalue > sensorTempFComfortMax) ) return(warningColor[1]); // "Fair"
-      else return(warningColor[0]);  // "Good"
-    case HUM_DATA:
-      if( (datavalue < sensorHumidityComfortMin) || (datavalue > sensorHumidityComfortMax) ) return(warningColor[1]); // "Fair"
-      else return(warningColor[0]); // "Good"
-    default:
-      return(TFT_WHITE);
-  }
 }
 
 
