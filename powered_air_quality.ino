@@ -308,11 +308,22 @@ void loop() {
     // Read sensor(s)
     if (sensorRead()) {
       numSamples++;
-      if (!sampleEvaluate())
-        debugMessage(String("I should have gotten another msg from inside of sampleEvaluate()"),1);
-      
       // IMPROVEMENT: evaluate whether the screen actually needs updated based on changed data
       screenUpdate(screenCurrent);
+      if (sampleEvaluate()) {
+        // ALERT: 5 second, sound, LED, and screen
+        alertLengthMS = 5000;
+        alertStartMS = millis();
+        alertScreen = true;
+        alertSound = true;
+        #ifdef CLIMATRON
+          alertLED = true;
+          stripOne.setOneColor(CRGB::Red);
+        #endif
+        ledcWriteTone(pinAudio, audioFrequency);
+        display.setFreeFont(&FreeSans18pt7b);
+        screenHelperAlert("CO2 rising rapidly", TFT_WHITE,TFT_BLACK,TFT_RED);
+      }
     }
     else {
       // ALERT: 5 second screen alert, no sound or LEDs
@@ -416,7 +427,10 @@ void screenHelperAlert(
   uint16_t textColor,
   uint16_t fillColor,
   uint16_t borderColor
-) {
+) 
+{
+  debugMessage(String("screenHelperAlert start()"),2);
+
   display.setTextColor(textColor, fillColor);
   display.setTextPadding(0);
 
@@ -498,102 +512,90 @@ void screenHelperAlert(
     display.drawString(line2, rectCenterX,
                    textTopY + (int16_t)lineHeight + (int16_t)lineSpacing);
   }
+
+  debugMessage(String("screenHelperAlert end()"),2);
 }
 
 bool sampleEvaluate()
 {
   debugMessage(String("sampleEvaluate() start"), 2);
 
-  constexpr uint8_t kMinRunLength   = 3;
-  constexpr float   kSigmaMultiplier = 2.5f;
-  constexpr float   kMinSigmaFloor   = 25.0f; // ppm/sample
+  #if (DEBUG==2)
+    totalCO2.printRetained();
+  #endif
+
+  static bool trendAlreadyReported = false;
 
   const uint16_t stored = totalCO2.getStored();
 
-  if (stored < (kMinRunLength + 1))
+  if (stored < (kRequiredRisingDeltas + 1))
   {
-    debugMessage(String("sampleEvaluate(): insufficient samples"), 2);
+    trendAlreadyReported = false;
     return false;
   }
 
-  const uint16_t deltaCount = stored - 1;
+  const uint16_t startIndex = stored - (kRequiredRisingDeltas + 1);
 
-  float deltas[kSampleCapacity - 1];
+  float deltas[kRequiredRisingDeltas];
 
-  // Build first-difference series (no skipping)
-  for (uint16_t i = 0; i < deltaCount; ++i)
+  for (uint8_t i = 0; i < kRequiredRisingDeltas; ++i)
   {
-    deltas[i] = totalCO2.getMember(i + 1) - totalCO2.getMember(i);
+    const uint16_t sampleIndex = startIndex + i;
+
+    deltas[i] = totalCO2.getMember(sampleIndex + 1)
+              - totalCO2.getMember(sampleIndex);
   }
 
-  // Mean
   float meanDelta = 0.0f;
-  for (uint16_t i = 0; i < deltaCount; ++i)
+  for (uint8_t i = 0; i < kRequiredRisingDeltas; ++i)
   {
     meanDelta += deltas[i];
   }
-  meanDelta /= deltaCount;
+  meanDelta /= kRequiredRisingDeltas;
 
-  // Standard deviation
   float variance = 0.0f;
-  for (uint16_t i = 0; i < deltaCount; ++i)
+  for (uint8_t i = 0; i < kRequiredRisingDeltas; ++i)
   {
     const float diff = deltas[i] - meanDelta;
     variance += diff * diff;
   }
-  variance /= deltaCount;
+  variance /= kRequiredRisingDeltas;
 
   const float stdDelta = sqrtf(variance);
   const float threshold = fmaxf(kSigmaMultiplier * stdDelta, kMinSigmaFloor);
 
-  // Sustained run detection
-  uint8_t runLength = 0;
-  int8_t runDirection = 0;
-  float runSum = 0.0f;
+  bool rapidRisingTrend = true;
 
-  for (uint16_t i = 0; i < deltaCount; ++i)
+  for (uint8_t i = 0; i < kRequiredRisingDeltas; ++i)
   {
-    const float delta = deltas[i];
-
-    if (fabsf(delta) < threshold)
+    if (deltas[i] < threshold)
     {
-      runLength = 0;
-      runDirection = 0;
-      runSum = 0.0f;
-      continue;
-    }
-
-    const int8_t direction = (delta > 0.0f) ? 1 : -1;
-
-    if (runLength == 0 || direction == runDirection)
-    {
-      ++runLength;
-      runDirection = direction;
-      runSum += delta;
-    }
-    else
-    {
-      runLength = 1;
-      runDirection = direction;
-      runSum = delta;
-    }
-
-    if (runLength >= kMinRunLength)
-    {
-      debugMessage(
-        String("Sustained CO2 trend detected: direction=") +
-        (runDirection > 0 ? "rising" : "falling") +
-        ", runLength=" + runLength +
-        ", avgDelta=" + (runSum / runLength) +
-        ", stdDelta=" + stdDelta +
-        ", threshold=" + threshold,
-        1
-      );
-      return true;
+      rapidRisingTrend = false;
+      break;
     }
   }
 
+  if (rapidRisingTrend && !trendAlreadyReported)
+  {
+    trendAlreadyReported = true;
+
+    debugMessage(
+      String("Rapid CO2 rise detected across last ")
+      + (kRequiredRisingDeltas + 1)
+      + " samples",
+      1
+    );
+
+    return true;
+  }
+
+  if (!rapidRisingTrend)
+  {
+    trendAlreadyReported = false;
+  }
+
   debugMessage(String("sampleEvaluate(): no sustained trend detected"), 2);
+  debugMessage(String("sampleEvaluate() end"),2);
   return false;
 }
 
@@ -1423,7 +1425,7 @@ void sensorSEN6xSimulate(float& simulatedTemperatureF, float& simulatedHumidity,
   simulatedNOxIndex = 0.0f;
   simulatedCO2 = 0;
 
-  sensorSCD4xSimulate(2,3, simulatedTemperatureF, simulatedHumidity,simulatedCO2);
+  sensorSCD4xSimulate(3,10, simulatedTemperatureF, simulatedHumidity,simulatedCO2);
   sensorSEN54Simulate(simulatedPM25, simulatedVOCIndex);
   simulatedNOxIndex = randomFloatRange(sensorNOxMin, sensorNOxMax);
   debugMessage(String("returning simulated noxIndex: ") + simulatedNOxIndex,1);
@@ -1517,9 +1519,9 @@ bool sensorSEN6xRead()
     debugMessage(String("SEN66 temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
     debugMessage(String("SEN66 humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
     debugMessage(String("SEN66 CO2 ") + sensorData.ambientCO2[kSampleCapacity-1] + "ppm, total across samples: " + totalCO2.getTotal(),2);
-    debugMessage(String("SEN66 PM25 ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
-    debugMessage(String("SEN66 VOC index ") + sensorData.vocIndex[kSampleCapacity-1] + ", total: " + totalVOCIndex.getTotal(),2);
-    debugMessage(String("SEN66 NOx index ") + sensorData.noxIndex + ", total: " + totalNOxIndex.getTotal(),2);
+    debugMessage(String("SEN66 PM25 ") + sensorData.pm25 + "ppm, total across samples: " + totalPM25.getTotal(),2);
+    debugMessage(String("SEN66 VOC index ") + sensorData.vocIndex[kSampleCapacity-1] + ", total across samples: " + totalVOCIndex.getTotal(),2);
+    debugMessage(String("SEN66 NOx index ") + sensorData.noxIndex + ", total across samples: " + totalNOxIndex.getTotal(),2);
   }
   return (success);
 }
@@ -1716,6 +1718,7 @@ bool sensorSCD4xInit()
 //    default = random values, ignores cycles parameter
 //    1 = random values, slightly +/- per cycle
 //    2 = out of bounds, "bad" values designed to activate alert modes
+//    3 = rapidly rising values designed to activate sampleEvaluate()
 //  cycles = If used, determines how many times the current mode executes before resetting
 // Output : NA
 // Improvement : rapid CO2 rise mode to test sampleEvaluate()
@@ -1737,6 +1740,10 @@ void sensorSCD4xSimulate(
     cycleCount = 0;
     currentMode = mode;
   }
+
+  // random sign used in some modes
+  int8_t sign = random(0, 2) == 0 ? -1 : 1;
+
   switch (currentMode) {
   case 0: // 0 = random values, ignores cycles value
     tempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
@@ -1757,10 +1764,9 @@ void sensorSCD4xSimulate(
     else
     {
       // slightly +/- CO2 value
-      int8_t sign = random(0, 2) == 0 ? -1 : 1;
-      co2 = co2 + (sign * random(0, sensorCO2VariabilityRange));
-      // IMPROVEMENT: slightly +/- temp value
-      // IMPROVEMENT: slightly +/- humidity value
+      co2 += (sign * random(0, sensorCO2VariabilityRange));
+      tempF += (sign * random(0, 3));
+      humidity += (-sign * random(0,3));
       cycleCount++;
     }
     break;
@@ -1768,6 +1774,28 @@ void sensorSCD4xSimulate(
     tempF = (random(0,2)) ? sensorTempFMin-2 : sensorTempFMax+2;
     humidity = (random(0,2)) ? sensorHumidityMin-2 : sensorHumidityMax+2;
     co2 = (random(0,2)) ? sensorCO2Min-2 : sensorCO2Max+2;
+    break;
+  case 3: // rapidly rising values designed to activate sampleEvaluate()
+    if (cycleCount == cycles) {
+      cycleCount = 0;
+    }
+    if (!cycleCount) {
+      // clear the retained CO2 values so they don't affect std dev calculation
+      totalCO2.deleteRetained();
+      // create new base values
+      tempF = randomFloatRange((sensorTempFMin + (3 * cycles)),(sensorTempFMax - (3 * cycles))); // crude buffer for potential cycle movement
+      humidity = randomFloatRange((sensorHumidityMin + (3* cycles)),(sensorHumidityMax - (3 * cycles)));
+      co2 = random(sensorCO2Min, sensorCO2Bad); // vs. sensorCO2Max while produces unrealistic values
+      cycleCount++;
+    }
+    else
+    {
+      // rapidly spike CO2 value
+      co2 += random(kMinSigmaFloor * 2, kMinSigmaFloor * 4);
+      tempF += (sign * random(0, 3));
+      humidity += (-sign * random(0,3));
+      cycleCount++;
+    }
     break;
   default: // should not occur; random values, ignores cycles value
     tempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
@@ -1807,7 +1835,7 @@ bool sensorSCD4xRead()
 
   #ifdef HARDWARE_SIMULATE
     success = true;
-    sensorSCD4xSimulate(2, 3, temperatureF, humidity, co2);
+    sensorSCD4xSimulate(3, 10, temperatureF, humidity, co2);
   #else
     #ifdef SENSOR_SEN54SCD40
       uint16_t error;
@@ -1816,7 +1844,6 @@ bool sensorSCD4xRead()
       float temperatureC = 0.0f;
 
       // Loop attempting to read Measurement
-      debugMessage("CO2 sensor read initiated",1);
       while((errorCount < co2SensorReadFailureLimit) && (!success)) {
         delay(100);
         errorCount++;
@@ -2081,9 +2108,9 @@ float fmap(float x, float xmin, float xmax, float ymin, float ymax)
 }
 
 float randomFloatRange(uint16_t min, uint16_t max) {
-  uint16_t randomFixed = random((max-min) *100 + 1);
+  uint16_t randomFixed = random((max-min) * 100 + 1);
   // return float with 2 decimal precision
-  return randomFixed / 100.0f;
+  return min + (randomFixed / 100.0f);
 }
 
 void ledInit()

@@ -18,7 +18,7 @@
 
 // Configuration Step 5: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
-// #define HARDWARE_SIMULATE
+#define HARDWARE_SIMULATE
 
 // Configuration Step 6: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
@@ -86,19 +86,27 @@ constexpr uint16_t timeDeviceResetHoldMS = 10000; // Long-press duration to wipe
 constexpr uint32_t timeScreenSaverStartMS = 300000; // switch to screen saver if no input after this period
 
 // sampling and reporting intervals
-#ifdef DEBUG
-  constexpr uint32_t timeSensorSampleMS = 30000;  // time between samples
-  constexpr uint32_t timeReportMS = 90000;        // time between reports
-#else
+#if defined (DEBUG) && !defined (HARDWARE_SIMULATE)
+  // time between sensor reads, e.g. samples
+  constexpr uint32_t timeSensorSampleMS = 30000; // minimum inter-sample time for many sensors
+  // time between samplePost()
+  constexpr uint32_t timeReportMS = 90000;
+#elif defined(DEBUG) && defined (HARDWARE_SIMULATE) // rapid samples for debugging
+  constexpr uint32_t timeSensorSampleMS = 10000;
+  constexpr uint32_t timeReportMS = 100000; // 10 samples per report
+#else // Production sample pace
   constexpr uint32_t timeSensorSampleMS = 60000;
   constexpr uint32_t timeReportMS = 900000;
 #endif
+
 constexpr uint8_t reportFailureThreshold = 3; // report attempt failures before UI alert starts
 
 // hardware
 constexpr uint8_t screenRotation = 3; // CYD 2.8; horizontal orientation with USB port on left side
 
 // sensors
+constexpr uint8_t kRequiredRisingDeltas = 3; // minimum samples required to trigger rapid rise alert
+
 // simulation boundary values
 constexpr uint8_t OWMAQIMin = 1;  // https://openweathermap.org/api/air-pollution
 constexpr uint8_t OWMAQIMax = 5;
@@ -137,6 +145,8 @@ constexpr uint16_t sensorCO2Bad =   1600;
 #endif
 constexpr uint8_t co2SensorReadFailureLimit = 20;
 constexpr uint8_t sensorCO2VariabilityRange = 30;
+constexpr float   kSigmaMultiplier = 2.5f;
+constexpr float   kMinSigmaFloor   = 25.0f; // ppm/sample
 
 // Particulates (pm1, pm2.5, pm4, pm10) value thresholds
 constexpr uint16_t sensorPMMin =  0;  // per datasheet
