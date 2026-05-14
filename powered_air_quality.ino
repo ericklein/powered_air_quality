@@ -10,6 +10,7 @@
 #include "secrets.h"              // private credentials for network, MQTT
 #include "data.h"
 
+#include <math.h>
 #include <HTTPClient.h>           // used to access Open Weather Map
 #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
 #include <Measure.hpp>            // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
@@ -124,8 +125,8 @@ OpenWeatherMapAirQuality owmAirQuality;
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.  Each
 // instance contains storage to retain points for subsequent processing, which are used
 // here to graph recent data. The size of that retatined data is based on the
-// graphPoints value defined in config.h.
-Measure<graphPoints> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
+// kSampleCapacity value defined in config.h.
+Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
 
 uint32_t timeLastReportMS = 0;  // timestamp for last report to network endpoints
 
@@ -196,7 +197,7 @@ void setup() {
   owmCurrentData.tempF = 255.0f; // 255 indicates no data
   owmAirQuality.aqi = 255; // 255 indicates no data
   hardwareData.rssi = 255; // 255 indicates no WiFi connection
-  for(uint8_t loop=0;loop<graphPoints;loop++) {
+  for(uint8_t loop=0;loop<kSampleCapacity;loop++) {
     sensorData.ambientCO2[loop] = 6000.0f; // OOB value that means no data, will also warningColor to red
     sensorData.vocIndex[loop] = -1.0f;
   }
@@ -307,9 +308,22 @@ void loop() {
     // Read sensor(s)
     if (sensorRead()) {
       numSamples++;
-      sampleEvaluate();
       // IMPROVEMENT: evaluate whether the screen actually needs updated based on changed data
       screenUpdate(screenCurrent);
+      if (sampleEvaluate()) {
+        // ALERT: 5 second, sound, LED, and screen
+        alertLengthMS = 5000;
+        alertStartMS = millis();
+        alertScreen = true;
+        alertSound = true;
+        #ifdef CLIMATRON
+          alertLED = true;
+          stripOne.setOneColor(CRGB::Red);
+        #endif
+        ledcWriteTone(pinAudio, audioFrequency);
+        display.setFreeFont(&FreeSans18pt7b);
+        screenHelperAlert("CO2 rising rapidly", TFT_WHITE,TFT_BLACK,TFT_RED);
+      }
     }
     else {
       // ALERT: 5 second screen alert, no sound or LEDs
@@ -345,7 +359,7 @@ void screenUpdate(uint8_t screenCurrent)
       screenSaver();
       // update leds
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]));
+        stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[kSampleCapacity - 1])]));
       #endif
       break;
     case sMain:
@@ -357,13 +371,13 @@ void screenUpdate(uint8_t screenCurrent)
     case sVOC:
       screenVOC();
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(warningColor[vocRange(sensorData.vocIndex[graphPoints - 1])]));
+        stripOne.setOneColor(rgb565ToCRGB(warningColor[vocRange(sensorData.vocIndex[kSampleCapacity - 1])]));
       #endif
       break;
     case sCO2:
       screenCO2();
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[graphPoints - 1])]));
+        stripOne.setOneColor(rgb565ToCRGB(warningColor[co2Range(sensorData.ambientCO2[kSampleCapacity - 1])]));
       #endif
       break;
     case sPM25:
@@ -413,7 +427,10 @@ void screenHelperAlert(
   uint16_t textColor,
   uint16_t fillColor,
   uint16_t borderColor
-) {
+) 
+{
+  debugMessage(String("screenHelperAlert start()"),1);
+
   display.setTextColor(textColor, fillColor);
   display.setTextPadding(0);
 
@@ -495,12 +512,91 @@ void screenHelperAlert(
     display.drawString(line2, rectCenterX,
                    textTopY + (int16_t)lineHeight + (int16_t)lineSpacing);
   }
+
+  debugMessage(String("screenHelperAlert end()"), 1);
 }
 
-void sampleEvaluate()
+bool sampleEvaluate()
 {
-  debugMessage(String("sampleEvaluate() start"),2);
-  debugMessage(String("sampleEvaluate() end"),2);
+  debugMessage(String("sampleEvaluate() start"), 1);
+
+  #if (DEBUG==2)
+    totalCO2.printRetained();
+  #endif
+
+  static bool trendAlreadyReported = false;
+
+  const uint16_t stored = totalCO2.getStored();
+
+  if (stored < (kRequiredRisingDeltas + 1))
+  {
+    trendAlreadyReported = false;
+    return false;
+  }
+
+  const uint16_t startIndex = stored - (kRequiredRisingDeltas + 1);
+
+  float deltas[kRequiredRisingDeltas];
+
+  for (uint8_t i = 0; i < kRequiredRisingDeltas; ++i)
+  {
+    const uint16_t sampleIndex = startIndex + i;
+
+    deltas[i] = totalCO2.getMember(sampleIndex + 1)
+              - totalCO2.getMember(sampleIndex);
+  }
+
+  float meanDelta = 0.0f;
+  for (uint8_t i = 0; i < kRequiredRisingDeltas; ++i)
+  {
+    meanDelta += deltas[i];
+  }
+  meanDelta /= kRequiredRisingDeltas;
+
+  float variance = 0.0f;
+  for (uint8_t i = 0; i < kRequiredRisingDeltas; ++i)
+  {
+    const float diff = deltas[i] - meanDelta;
+    variance += diff * diff;
+  }
+  variance /= kRequiredRisingDeltas;
+
+  const float stdDelta = sqrtf(variance);
+  const float threshold = fmaxf(kSigmaMultiplier * stdDelta, kMinSigmaFloor);
+
+  bool rapidRisingTrend = true;
+
+  for (uint8_t i = 0; i < kRequiredRisingDeltas; ++i)
+  {
+    if (deltas[i] < threshold)
+    {
+      rapidRisingTrend = false;
+      break;
+    }
+  }
+
+  if (rapidRisingTrend && !trendAlreadyReported)
+  {
+    trendAlreadyReported = true;
+
+    debugMessage(
+      String("Rapid CO2 rise detected across last ")
+      + (kRequiredRisingDeltas + 1)
+      + " samples",
+      1
+    );
+
+    return true;
+  }
+
+  if (!rapidRisingTrend)
+  {
+    trendAlreadyReported = false;
+  }
+
+  debugMessage(String("sampleEvaluate(): no sustained trend detected"), 2);
+  debugMessage(String("sampleEvaluate() end"),1);
+  return false;
 }
 
 /**
@@ -529,7 +625,7 @@ void sampleEvaluate()
  */
 void samplePost(uint8_t& numSamples)
 {
-  debugMessage(String("samplePost() start"),2);
+  debugMessage(String("samplePost() start"),1);
 
   // do we have samples to process?
   if (numSamples) {
@@ -549,23 +645,22 @@ void samplePost(uint8_t& numSamples)
         float avgPM25 = totalPM25.getAverage();
         float avgNOX = totalNOxIndex.getAverage();
 
-        debugMessage(String("Averages for the last ") + (timeReportMS/60000) + " minutes for endpoint reporting",1);
+        debugMessage(String("Averages being sent to endpoints for the last ") + (timeReportMS/60000) + " minutes",2);
         debugMessage(String("PM2.5: ") + avgPM25 + "ppm, CO2: " + avgCO2 + "ppm, VOC index: " + avgVOC + ", NOx index: " + avgNOX + ", " + 
-          avgTemperatureF + "F, humidity: " + avgHumidity + "%", 1);
+          avgTemperatureF + "F, humidity: " + avgHumidity + "%", 2);
 
         // update RSSI before publishing
         hardwareData.rssi = networkRSSIRead();
 
         #ifdef THINGSPEAK
-          debugMessage(String("AQI(US): ") + pm25toAQI_US(avgPM25),1);
           if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
-            Serial.println("ERROR: Did not write to ThingSpeak");
+            debugMessage(String("ERROR: Did not write to ThingSpeak"),1);
           }
         #endif
 
         #ifdef INFLUX
           if (!post_influx(avgTemperatureF, avgHumidity, avgCO2 , avgPM25, avgVOC, avgNOX, hardwareData.rssi))
-            Serial.println("ERROR: Did not write to influxDB");
+            debugMessage(String("ERROR: Did not write to InfluxDB"),1);
         #endif
 
         #ifdef MQTT
@@ -632,7 +727,7 @@ void samplePost(uint8_t& numSamples)
   totalVOCIndex.clear();
   totalPM25.clear();
   totalNOxIndex.clear();
-  debugMessage(String("samplePost() end"),2);
+  debugMessage(String("samplePost() end"), 1);
 }
 
 void retainCO2(float co2)
@@ -641,10 +736,10 @@ void retainCO2(float co2)
 // Returns: NA (void)
 // Improvement: ?
 {
-  for(uint8_t loop=1;loop<graphPoints;loop++) {
+  for(uint8_t loop=1;loop<kSampleCapacity;loop++) {
     sensorData.ambientCO2[loop-1] = sensorData.ambientCO2[loop];
   }
-  sensorData.ambientCO2[graphPoints-1] = co2;
+  sensorData.ambientCO2[kSampleCapacity-1] = co2;
 }
 
 void retainVOC(float voc)
@@ -653,10 +748,10 @@ void retainVOC(float voc)
 // Returns: NA (void)
 // Improvement: not merged with retainCO2 because reads are in independent functions
 {
-  for(uint8_t loop=1;loop<graphPoints;loop++) {
+  for(uint8_t loop=1;loop<kSampleCapacity;loop++) {
     sensorData.vocIndex[loop-1] = sensorData.vocIndex[loop];
   }
-  sensorData.vocIndex[graphPoints-1] = voc;
+  sensorData.vocIndex[kSampleCapacity-1] = voc;
 }
 
 uint8_t networkRSSISimulate()
@@ -677,19 +772,20 @@ void networkWiFiMgrPortalCallback()
 }
 
 void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
-  debugMessage(String("networkWiFiMgrAPCallback() start"),2);
+  debugMessage(String("networkWiFiMgrAPCallback() start"),1);
+
   debugMessage(String("did not connect to stored AP, starting WiFi Manager config portal"),1);
   display.setFreeFont(&FreeSans12pt7b);
   // This alert is intentionally a UI blocker, handled by WiFiManager, not alertHandle()
   display.fillScreen(TFT_BLACK);
   screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_GREEN);
-  debugMessage(String("networkWiFiMgrAPCallback() end"),2);
+  debugMessage(String("networkWiFiMgrAPCallback() end"),1);
 }
 
 bool networkOpenWiFiManager()
 // Connect to WiFi network using WiFiManager library
 {
-  debugMessage("networkOpenWiFiManager() begin",2);
+  debugMessage("networkOpenWiFiManager() start",1);
   // make sure Wi-Fi is fully stopped before setting hostname
   WiFi.mode(WIFI_MODE_NULL);
   WiFi.setHostname(endpointPath.deviceID.c_str());
@@ -812,9 +908,9 @@ bool networkOpenWiFiManager()
       saveWFMConfig = false;
     }
     hardwareData.rssi = networkRSSIRead();
-    debugMessage(endpointPath.deviceID + " connected to " + WiFi.SSID() + ", " + WiFi.localIP().toString() + ", " + hardwareData.rssi + "dBm RSSI", 1);
+    debugMessage(endpointPath.deviceID + " connected to " + WiFi.SSID() + ", " + WiFi.localIP().toString() + ", " + hardwareData.rssi + "dBm RSSI", 2);
   }
-  debugMessage("networkOpenWiFiManager() end", 2);
+  debugMessage("networkOpenWiFiManager() end", 1);
   return (connected);
 }
 
@@ -841,7 +937,7 @@ uint8_t networkRSSIRead()
 
     if (WiFi.status() == WL_CONNECTED) {
       rssi = abs(WiFi.RSSI());
-      debugMessage(String("WiFi RSSI: -") + rssi + "db",1);
+      debugMessage(String("WiFi RSSI: -") + rssi + "db",2);
     }
     else
       rssi = 255; // no network connection
@@ -865,7 +961,7 @@ void networkDisconnect()
 
 // Preferences helper routines
 void loadNVConfig() {
-  debugMessage("loadNVConfig() begin",2);
+  debugMessage("loadNVConfig() start",1);
   nvConfig.begin("config", true); // read-only
 
   hardwareData.altitude = nvConfig.getUShort("altitude", uint16_t(defaultAltitude.toInt()));
@@ -914,13 +1010,13 @@ void loadNVConfig() {
   #endif
 
   nvConfig.end();
-  debugMessage("loadNVConfig() end",2);
+  debugMessage("loadNVConfig() end",1);
 }
 
 void saveNVConfig()
 // copy new config data to non-volatile storage
 {
-  debugMessage("saveNVConfig() begin",2);
+  debugMessage("saveNVConfig() start",1);
   nvConfig.begin("config", false); // read-write
 
   nvConfig.putUShort("altitude", hardwareData.altitude);
@@ -951,13 +1047,13 @@ void saveNVConfig()
   #endif
 
   nvConfig.end();
-  debugMessage("saveNVConfig() end",2);
+  debugMessage("saveNVConfig() end",1);
 }
 
   void deviceErasePrefsAndReboot() 
   // Wipes all ESP, WiFiManager preferences and reboots device
   {
-    debugMessage("deviceErasePrefsAndReboot() begin",2);
+    debugMessage("deviceErasePrefsAndReboot() start",1);
 
     // Clear nv storage
     nvConfig.begin("config", false);
@@ -1321,7 +1417,7 @@ void sensorSEN6xSimulate(float& simulatedTemperatureF, float& simulatedHumidity,
 // Return: simulated values
 // Improvement: implement mode passthrough for other sensorSimulate APIs
 {
-  debugMessage ("sensorSEN6xSimulate() start",2);
+  debugMessage ("sensorSEN6xSimulate() start",1);
 
   simulatedPM25 = 0.0f;
   simulatedTemperatureF = 0.0f;
@@ -1330,12 +1426,12 @@ void sensorSEN6xSimulate(float& simulatedTemperatureF, float& simulatedHumidity,
   simulatedNOxIndex = 0.0f;
   simulatedCO2 = 0;
 
-  sensorSCD4xSimulate(2,3, simulatedTemperatureF, simulatedHumidity,simulatedCO2);
+  sensorSCD4xSimulate(3,10, simulatedTemperatureF, simulatedHumidity,simulatedCO2);
   sensorSEN54Simulate(simulatedPM25, simulatedVOCIndex);
   simulatedNOxIndex = randomFloatRange(sensorNOxMin, sensorNOxMax);
   debugMessage(String("returning simulated noxIndex: ") + simulatedNOxIndex,1);
   
-  debugMessage("sensorSEN6xSimulate() end",2);
+  debugMessage("sensorSEN6xSimulate() end",1);
 }
 
 bool sensorSEN6xRead()
@@ -1423,10 +1519,10 @@ bool sensorSEN6xRead()
 
     debugMessage(String("SEN66 temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
     debugMessage(String("SEN66 humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
-    debugMessage(String("SEN66 CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total across samples: " + totalCO2.getTotal(),2);
-    debugMessage(String("SEN66 PM25 ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
-    debugMessage(String("SEN66 VOC index ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
-    debugMessage(String("SEN66 NOx index ") + sensorData.noxIndex + ", total: " + totalNOxIndex.getTotal(),2);
+    debugMessage(String("SEN66 CO2 ") + sensorData.ambientCO2[kSampleCapacity-1] + "ppm, total across samples: " + totalCO2.getTotal(),2);
+    debugMessage(String("SEN66 PM25 ") + sensorData.pm25 + "ppm, total across samples: " + totalPM25.getTotal(),2);
+    debugMessage(String("SEN66 VOC index ") + sensorData.vocIndex[kSampleCapacity-1] + ", total across samples: " + totalVOCIndex.getTotal(),2);
+    debugMessage(String("SEN66 NOx index ") + sensorData.noxIndex + ", total across samples: " + totalNOxIndex.getTotal(),2);
   }
   return (success);
 }
@@ -1435,7 +1531,7 @@ bool sensorSEN54Init()
 {
   bool success = false;
 
-  debugMessage("sensorSEN54Init() begin",2);
+  debugMessage("sensorSEN54Init() start",1);
 
   #ifdef HARDWARE_SIMULATE
     success = true;
@@ -1463,16 +1559,16 @@ bool sensorSEN54Init()
         error = pmSensor.startMeasurement();
         if (error) {
           errorToString(error, errorMessage, 256);
-          debugMessage(String(errorMessage) + " error during SEN5x startMeasurement", 1);
+          debugMessage(String(errorMessage) + " error during SEN5x startMeasurement", 2);
         }
         else {
-          debugMessage("SEN5X starting periodic measurements",1);
+          debugMessage("SEN5X starting periodic measurements",2);
           success = true;
         }
       }
     #endif
   #endif
-  debugMessage("sensorSEN54Init() end",2);
+  debugMessage("sensorSEN54Init() end",1);
   return success;
 }
 
@@ -1485,7 +1581,7 @@ void sensorSEN54Simulate(float& simulatedPM25, float& simulatedVOCIndex)
 {
   //float pm1, pm10, pm4 = 0.0f;
 
-  debugMessage("sensorSEN54Simulate() start",2);
+  debugMessage("sensorSEN54Simulate() start",1);
 
   simulatedPM25 = randomFloatRange(sensorPMMin, sensorPMMax);
   // pm1 = randomFloatRange(sensorPMMin, sensorPMMax);
@@ -1494,7 +1590,7 @@ void sensorSEN54Simulate(float& simulatedPM25, float& simulatedVOCIndex)
   simulatedVOCIndex = randomFloatRange(sensorVOCMin, sensorVOCMax);
 
   debugMessage(String("returning simulated PM2.5: ") + simulatedPM25 + " ppm, VOC index: " + simulatedVOCIndex,1);
-  debugMessage("sensorSEN54Simulate() end",2);
+  debugMessage("sensorSEN54Simulate() end",1);
 }
 
 bool sensorSEN554Read() 
@@ -1508,7 +1604,7 @@ bool sensorSEN554Read()
   float VOCIndex = 0.0f;
   float NOxIndex = 0.0f;
 
-  debugMessage("sensorSEN554Read() start",2);
+  debugMessage("sensorSEN554Read() start",1);
 
   #ifdef HARDWARE_SIMULATE
     sensorSEN54Simulate(pm25, VOCIndex);
@@ -1518,8 +1614,6 @@ bool sensorSEN554Read()
       uint16_t error;
       char errorMessage[256];
       float pm1, pm4, pm10, temperatureC, humidity = 0.0f; // read and discard
-
-      debugMessage("SEN5X read initiated",1);
 
       error = pmSensor.readMeasuredValues(pm1, pm25, pm4, pm10, humidity, temperatureC, VOCIndex, NOxIndex);
       if (error) {
@@ -1551,11 +1645,11 @@ bool sensorSEN554Read()
     sensorData.noxIndex = NOxIndex;
     totalNOxIndex.include(sensorData.noxIndex);
 
-    debugMessage(String("sensorSEN554Read() updating pm25: ") + sensorData.pm25 + "ppm, total: " + totalPM25.getTotal(),2);
-    debugMessage(String("sensorSEN554Read() updating vocIndex: ") + sensorData.vocIndex[graphPoints-1] + ", total: " + totalVOCIndex.getTotal(),2);
+    debugMessage(String("SEN554 pm25: ") + sensorData.pm25 + "ppm, total across samples: " + totalPM25.getTotal(),2);
+    debugMessage(String("SEN554 vocIndex: ") + sensorData.vocIndex[kSampleCapacity-1] + ", total across samples: " + totalVOCIndex.getTotal(),2);
   }
 
-  debugMessage("sensorSEN554Read() end",2);
+  debugMessage("sensorSEN554Read() end",1);
   return(success);
 }
 
@@ -1564,7 +1658,7 @@ bool sensorSCD4xInit()
 {
   bool success = false;
 
-  debugMessage("sensorSCD4xInit() begin",2);
+  debugMessage("sensorSCD4xInit() start",1);
 
   #ifdef HARDWARE_SIMULATE
     success = true;
@@ -1604,18 +1698,18 @@ bool sensorSCD4xInit()
         error = co2Sensor.startLowPowerPeriodicMeasurement();
         if (error) {
           errorToString(error, errorMessage, 256);
-          debugMessage(String(errorMessage) + " executing SCD4X startLowPowerPeriodicMeasurement()",1);
+          debugMessage(String(errorMessage) + " executing SCD4X startLowPowerPeriodicMeasurement()",2);
         }
         else
         {
-          debugMessage("SCD4X starting low power periodic measurements",1);
+          debugMessage("SCD4X starting low power periodic measurements",2);
           success = true;
         }
       }
     #endif
   #endif
 
-  debugMessage("sensorSCD4xInit() end",2);
+  debugMessage("sensorSCD4xInit() end",1);
   return success;
 }
 
@@ -1625,6 +1719,7 @@ bool sensorSCD4xInit()
 //    default = random values, ignores cycles parameter
 //    1 = random values, slightly +/- per cycle
 //    2 = out of bounds, "bad" values designed to activate alert modes
+//    3 = rapidly rising values designed to activate sampleEvaluate()
 //  cycles = If used, determines how many times the current mode executes before resetting
 // Output : NA
 // Improvement : rapid CO2 rise mode to test sampleEvaluate()
@@ -1640,12 +1735,16 @@ void sensorSCD4xSimulate(
   static float tempF, humidity = 0.0f;
   static uint16_t co2 = 0;
 
-  debugMessage("sensorSCD4xSimulate() start",2);
+  debugMessage("sensorSCD4xSimulate() start",1);
 
   if (mode != currentMode) {
     cycleCount = 0;
     currentMode = mode;
   }
+
+  // random sign used in some modes
+  int8_t sign = random(0, 2) == 0 ? -1 : 1;
+
   switch (currentMode) {
   case 0: // 0 = random values, ignores cycles value
     tempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
@@ -1666,10 +1765,9 @@ void sensorSCD4xSimulate(
     else
     {
       // slightly +/- CO2 value
-      int8_t sign = random(0, 2) == 0 ? -1 : 1;
-      co2 = co2 + (sign * random(0, sensorCO2VariabilityRange));
-      // IMPROVEMENT: slightly +/- temp value
-      // IMPROVEMENT: slightly +/- humidity value
+      co2 += (sign * random(0, sensorCO2VariabilityRange));
+      tempF += (sign * random(0, 3));
+      humidity += (-sign * random(0,3));
       cycleCount++;
     }
     break;
@@ -1677,6 +1775,28 @@ void sensorSCD4xSimulate(
     tempF = (random(0,2)) ? sensorTempFMin-2 : sensorTempFMax+2;
     humidity = (random(0,2)) ? sensorHumidityMin-2 : sensorHumidityMax+2;
     co2 = (random(0,2)) ? sensorCO2Min-2 : sensorCO2Max+2;
+    break;
+  case 3: // rapidly rising values designed to activate sampleEvaluate()
+    if (cycleCount == cycles) {
+      cycleCount = 0;
+    }
+    if (!cycleCount) {
+      // clear the retained CO2 values so they don't affect std dev calculation
+      totalCO2.deleteRetained();
+      // create new base values
+      tempF = randomFloatRange((sensorTempFMin + (3 * cycles)),(sensorTempFMax - (3 * cycles))); // crude buffer for potential cycle movement
+      humidity = randomFloatRange((sensorHumidityMin + (3* cycles)),(sensorHumidityMax - (3 * cycles)));
+      co2 = random(sensorCO2Min, sensorCO2Bad); // vs. sensorCO2Max while produces unrealistic values
+      cycleCount++;
+    }
+    else
+    {
+      // rapidly spike CO2 value
+      co2 += random(kMinSigmaFloor * 2, kMinSigmaFloor * 4);
+      tempF += (sign * random(0, 3));
+      humidity += (-sign * random(0,3));
+      cycleCount++;
+    }
     break;
   default: // should not occur; random values, ignores cycles value
     tempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
@@ -1690,7 +1810,7 @@ void sensorSCD4xSimulate(
   debugMessage(String("returning simulated temp: ") + simulatedTempF + "F, humidity: " + simulatedHumidity
     + "%, CO2: " + simulatedCO2 + "ppm",1);
 
-  debugMessage("sensorSCD4xSimulate() end",2);
+  debugMessage("sensorSCD4xSimulate() end",1);
 }
 
 void sensorSCD4xSimulate(
@@ -1712,11 +1832,11 @@ bool sensorSCD4xRead()
   float humidity = 0.0f;
   uint16_t co2 = 0;
 
-  debugMessage("sensorSCD4xRead() start",2);
+  debugMessage("sensorSCD4xRead() start",1);
 
   #ifdef HARDWARE_SIMULATE
     success = true;
-    sensorSCD4xSimulate(2, 3, temperatureF, humidity, co2);
+    sensorSCD4xSimulate(3, 10, temperatureF, humidity, co2);
   #else
     #ifdef SENSOR_SEN54SCD40
       uint16_t error;
@@ -1725,7 +1845,6 @@ bool sensorSCD4xRead()
       float temperatureC = 0.0f;
 
       // Loop attempting to read Measurement
-      debugMessage("CO2 sensor read initiated",1);
       while((errorCount < co2SensorReadFailureLimit) && (!success)) {
         delay(100);
         errorCount++;
@@ -1782,9 +1901,9 @@ bool sensorSCD4xRead()
 
     debugMessage(String("SCD4x temp ") + sensorData.ambientTemperatureF + "F, total across samples: " + totalTemperatureF.getTotal(),2);
     debugMessage(String("SCD4x humidity ") + sensorData.ambientHumidity + ", total across samples: " + totalHumidity.getTotal(),2);
-    debugMessage(String("SCD4x CO2 ") + sensorData.ambientCO2[graphPoints-1] + "ppm, total: " + totalCO2.getTotal(),2);
+    debugMessage(String("SCD4x CO2 ") + sensorData.ambientCO2[kSampleCapacity-1] + "ppm, total: " + totalCO2.getTotal(),2);
   }
-  debugMessage("sensorSCD4xRead() end",2);
+  debugMessage("sensorSCD4xRead() end",1);
   return(success);
 }
 
@@ -1990,20 +2109,20 @@ float fmap(float x, float xmin, float xmax, float ymin, float ymax)
 }
 
 float randomFloatRange(uint16_t min, uint16_t max) {
-  uint16_t randomFixed = random((max-min) *100 + 1);
+  uint16_t randomFixed = random((max-min) * 100 + 1);
   // return float with 2 decimal precision
-  return randomFixed / 100.0f;
+  return min + (randomFixed / 100.0f);
 }
 
 void ledInit()
 {
-  debugMessage("ledInit() begin",2);  
+  debugMessage("ledInit() start",1);  
   #ifdef CLIMATRON
     FastLED.addLeds<WS2812B, pinLEDStripOne, GRB>(ledsOne,ledStripPixelCount);
     FastLED.setBrightness(200);
     stripOne.setOneColor(CRGB::Black);
   #endif
-  debugMessage("ledInit() end",2);
+  debugMessage("ledInit() end",1);
 }
 
 #ifdef CLIMATRON

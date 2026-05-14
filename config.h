@@ -9,12 +9,12 @@
 
 // Configuration Step 3: Base hardware platform
 // this is needed until we branch PAQ and Climatron
-#define PAQ
-// #define CLIMATRON
+// #define PAQ
+#define CLIMATRON
 
 // Configuration Step 4: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-#define DEBUG 2
+#define DEBUG 1
 
 // Configuration Step 5: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -33,8 +33,8 @@
 // Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
-#define SENSOR_SEN66
-// #define SENSOR_SEN54SCD40
+// #define SENSOR_SEN66
+#define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 
@@ -54,8 +54,8 @@ constexpr uint8_t kYMargins = 5;
 constexpr uint8_t kLegendHeight =  20;
 constexpr uint8_t kLegendWidth =   10;
 
-// How many data samples are retained for graphing
-constexpr uint8_t graphPoints = 10;
+// How many samples are retained in a FIFO queue
+constexpr uint8_t kSampleCapacity = 10;
 
 // warnings
 // const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
@@ -86,19 +86,27 @@ constexpr uint16_t timeDeviceResetHoldMS = 10000; // Long-press duration to wipe
 constexpr uint32_t timeScreenSaverStartMS = 300000; // switch to screen saver if no input after this period
 
 // sampling and reporting intervals
-#ifdef DEBUG
-  constexpr uint32_t timeSensorSampleMS = 30000;  // time between samples
-  constexpr uint32_t timeReportMS = 90000;        // time between reports
-#else
+#if defined (DEBUG) && !defined (HARDWARE_SIMULATE)
+  // time between sensor reads, e.g. samples
+  constexpr uint32_t timeSensorSampleMS = 30000; // minimum inter-sample time for many sensors
+  // time between samplePost()
+  constexpr uint32_t timeReportMS = 90000;
+#elif defined(DEBUG) && defined (HARDWARE_SIMULATE) // rapid samples for debugging
+  constexpr uint32_t timeSensorSampleMS = 10000;
+  constexpr uint32_t timeReportMS = 100000; // 10 samples per report
+#else // Production sample pace
   constexpr uint32_t timeSensorSampleMS = 60000;
   constexpr uint32_t timeReportMS = 900000;
 #endif
+
 constexpr uint8_t reportFailureThreshold = 3; // report attempt failures before UI alert starts
 
 // hardware
 constexpr uint8_t screenRotation = 3; // CYD 2.8; horizontal orientation with USB port on left side
 
 // sensors
+constexpr uint8_t kRequiredRisingDeltas = 3; // minimum samples required to trigger rapid rise alert
+
 // simulation boundary values
 constexpr uint8_t OWMAQIMin = 1;  // https://openweathermap.org/api/air-pollution
 constexpr uint8_t OWMAQIMax = 5;
@@ -137,6 +145,8 @@ constexpr uint16_t sensorCO2Bad =   1600;
 #endif
 constexpr uint8_t co2SensorReadFailureLimit = 20;
 constexpr uint8_t sensorCO2VariabilityRange = 30;
+constexpr float   kSigmaMultiplier = 2.5f;
+constexpr float   kMinSigmaFloor   = 25.0f; // ppm/sample
 
 // Particulates (pm1, pm2.5, pm4, pm10) value thresholds
 constexpr uint16_t sensorPMMin =  0;  // per datasheet

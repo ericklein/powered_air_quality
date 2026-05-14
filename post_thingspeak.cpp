@@ -1,9 +1,6 @@
 /*
   Project Name:   Powered Air Quality
   Description:    Write sensor data to ThingSpeak (https://thingspeak.mathworks.com)
-
-  Uses the ThingSpeak Arduino library from MathWorks
-  https://github.com/mathworks/thingspeak-arduino
 */
 
 #include "Arduino.h"
@@ -14,7 +11,7 @@
 #include "secrets.h"              // private credentials for network, MQTT, weather provider
 
 #ifdef THINGSPEAK
-  #include "ThingSpeak.h"
+  #include <ThingSpeak.h>         // https://github.com/mathworks/thingspeak-arduino
 
   // Shared helper function(s)
   extern void debugMessage(String messageText, uint8_t messageLevel);
@@ -22,10 +19,10 @@
   bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float nox, float aqi)
   {  
     uint16_t httpcode;
-    WiFiClient ts_client;  
+    extern WiFiClient client;
 
     // Initialize ThingSpeak
-    ThingSpeak.begin(ts_client);
+    ThingSpeak.begin(client);
 
     // Set values for the Channel's fields to queue them up for a single batch post to ThingSpeak
     // Note that a channel cannot have more than eight fields (so choose wisely)
