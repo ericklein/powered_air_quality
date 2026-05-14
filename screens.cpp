@@ -27,7 +27,7 @@ extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, tota
 
 // Forward declarations for local functions to help make ordering in this file easier
 void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<kSampleCapacity>, uint8_t, String);
-void screenHelperComponentSetup(String);
+void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, String header);
 uint16_t getWarningColor(uint8_t, float);
 void screenHelperWiFiStatus(uint16_t, uint16_t, uint8_t, uint8_t, uint8_t);
 void screenHelperReportStatus(uint16_t, uint16_t);
@@ -123,7 +123,7 @@ void screenTempHumidity()
 
   debugMessage("screenTempHumidity() start",1);
 
-  screenHelperComponentSetup("Temp/Humidity");
+  screenHelperHeaderBar(totalTemperatureF, UNK_DATA, "Temp/Humidity");
   // split indoor v. outside
   display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_DARKGREY);
 
@@ -196,7 +196,7 @@ void screenPM25()
 
   debugMessage("screenPM25() start",1);
 
-  screenHelperComponentSetup("PM2.5");
+  screenHelperHeaderBar(totalPM25, PM_DATA, "PM2.5 Levels");
   // split indoor v. outside
   display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_DARKGREY);
 
@@ -263,7 +263,7 @@ void screenVOC()
 
   debugMessage("screenVOC() start",1);
 
-  screenHelperComponentSetup("VOC");
+  screenHelperHeaderBar(totalVOCIndex, VOC_DATA, "VOC Level");
 
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
@@ -324,7 +324,7 @@ void screenCO2()
 
   debugMessage("screenCO2() start",1);
 
-  screenHelperComponentSetup("CO2");
+  screenHelperHeaderBar(totalCO2,CO2_DATA,"Recent CO2 Values");
 
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
@@ -367,7 +367,7 @@ void screenNOX()
 
   debugMessage("screenNOX() start",1);
 
-  screenHelperComponentSetup("NOx");
+  screenHelperHeaderBar(totalNOxIndex, NOX_DATA, "NOx Level");
 
   display.setFreeFont(&FreeSans18pt7b);
 
@@ -486,7 +486,7 @@ void screenNOX()
 //   debugMessage("screenAggregateData() end",1);
 // }
 
-void screenHelperComponentSetup(String header)
+void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, String header)
 // Description: helper function for screenXXX() routines to draw the status region frame
 // Parameters: NA
 // Output : NA
@@ -500,21 +500,21 @@ void screenHelperComponentSetup(String header)
   constexpr uint8_t wifiBarWidth = 3;
   constexpr uint8_t wifiBarSpacing = 5;
 
-  debugMessage("screenHelperStatusBar() start",1);
+  debugMessage("screenHelperHeaderBar() start",1);
 
   display.fillScreen(TFT_BLACK);
-  display.fillRect(0,0,display.width(),yStatusRegion,TFT_DARKGREY);
+  display.fillRect(0,0,display.width(),yStatusRegion,getWarningColor(datatype,measure.getMember(measure.getCurrent())));
   // screen helpers in status region
   screenHelperWiFiStatus((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), yStatusRegionFloor, wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
   screenHelperReportStatus(((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-helperXSpacing), (yStatusRegionFloor-15));
 
   //label
   display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(TFT_WHITE);
+  display.setTextColor(TFT_BLACK);
   display.setTextDatum(L_BASELINE);
   display.drawString(header, ((display.width()/2)-(display.textWidth(header)/2)), yStatusRegionFloor);
 
-  debugMessage("screenHelperStatusBar() end",1);
+  debugMessage("screenHelperHeaderBar() end",1);
 }
 
 void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
@@ -539,7 +539,7 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
       barCount = 1;
 
     for (uint8_t loop = 1; loop <= barCount; loop++) {
-      display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_WHITE);
+      display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_BLACK);
     }
     debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
   }
@@ -560,13 +560,16 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
 // Improvement : NA
 // 
 {
+  debugMessage(String("screenHelperReportStatus() start"), 1); 
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-    if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (timeReportMS * reportFailureThreshold)))
+    if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (timeReportMS * reportFailureThreshold))) {
         // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
-        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_RED);
-      else
-        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_GREEN);
+        // display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
+    }
+    else
+        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
   #endif
+  debugMessage(String("screenHelperReportStatus() end"), 1);   
 }
 
 void screenHelperIndoorOutdoorStatusRegion()

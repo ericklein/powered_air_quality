@@ -64,25 +64,29 @@
       dbenvdata.addField(VALUE_KEY_VOC, vocIndex);
       dbenvdata.addField(VALUE_KEY_CO2, co2);
       dbenvdata.addField(VALUE_KEY_NOX, noxIndex);
-      // Write point via connection to InfluxDB host
-      if (!dbclient.writePoint(dbenvdata)) {
-        debugMessage(String("InfluxDB environment data write failed: ") + dbclient.getLastErrorMessage(),1);
-      }
-      else {
-        debugMessage(String("InfluxDB environment data write success: ") + dbclient.pointToLineProtocol(dbenvdata),1);
+      // Write point to InfluxDB host
+      if (dbclient.writePoint(dbenvdata)) {
+        debugMessage(String("InfluxDB environment update success"), 1);
+        debugMessage(String("Return message: ") + dbclient.pointToLineProtocol(dbenvdata), 2);
         success = true;
+      }
+      else { 
+        debugMessage(String("InfluxDB environment update failed"), 1);
+        debugMessage(String("InfluxDB environment update error msg: ") + dbclient.getLastErrorMessage(), 2);
       }
       // Now store device information 
       dbdevdata.clearFields();
       // Report device readings
       dbdevdata.addField(VALUE_KEY_RSSI, rssi);
       // Write point via connection to InfluxDB host
-      if (!dbclient.writePoint(dbdevdata)) {
-        debugMessage(String("InfluxDB device data write failed: ") + dbclient.getLastErrorMessage(),1);
+      if (dbclient.writePoint(dbdevdata)) {
+        debugMessage(String("InfluxDB device update success"), 1);
+        debugMessage(String("Return message: ") + dbclient.pointToLineProtocol(dbdevdata), 2);
+        success = true;
       }
       else {
-        debugMessage(String("InfluxDB device data write success: ") + dbclient.pointToLineProtocol(dbdevdata),1);
-        success = true;
+        debugMessage(String("InfluxDB device update failed"), 1);
+        debugMessage(String("InfluxDB device update update error msg: ") + dbclient.getLastErrorMessage(), 2);
       }
       dbclient.flushBuffer();  // Clear pending writes
     }
