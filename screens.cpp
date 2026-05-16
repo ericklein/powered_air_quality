@@ -51,13 +51,15 @@ void screenSaver()
   display.fillScreen(TFT_BLACK);
   display.setTextDatum(TL_DATUM);
 
-  if (totalCO2.getCurrent() == 6000) {
+  // If no data available, display "Not available"
+  if (totalCO2.getStored() == 0) {
     display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(TFT_RED);
     uint16_t textWidth = display.textWidth("Not available");
     display.drawString("Not available", random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
   }
   else {
+    // Otherwise display the latest CO2 reading 
     display.setFreeFont(&FreeSans24pt7b);
     display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
     uint16_t textWidth = display.textWidth(String(totalCO2.getCurrent()));
@@ -304,7 +306,7 @@ void screenVOC()
  *
  * @note This function relies on global display state, sensor data,
  *       and layout constants (e.g. `display`,
- *       `kXMargins`, `kYMargins`, `graphPoints`).
+ *       `kXMargins`, `kYMargins`).
  *
  * @warning Assumes totalCO2` contains at least
  *          `graphPoints` valid samples.
@@ -648,7 +650,7 @@ uint8_t noxRange(float noxIndex)
 void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, Measure<kSampleCapacity> measure, uint8_t datatype, String xLabel)
 {
   uint8_t stored, capacity;
-  int8_t loop; // upper bound is kSampleCapacity definition
+  int8_t loop; // upper bound is kSampleCapacity definition (size of Measure retained storage)
   uint16_t text1Width, text1Height;
   uint16_t deltaX, x, y, xp, yp;  // graphing positions
   float minValue, maxValue, value, range, average;
