@@ -28,7 +28,6 @@ extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, tota
 // Forward declarations for local functions to help make ordering in this file easier
 void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<kSampleCapacity>, uint8_t, String);
 void screenHelperComponentSetup(String);
-uint16_t getWarningColor(uint8_t, float);
 void screenHelperWiFiStatus(uint16_t, uint16_t, uint8_t, uint8_t, uint8_t);
 void screenHelperReportStatus(uint16_t, uint16_t);
 void screenHelperIndoorOutdoorStatusRegion();
