@@ -1,14 +1,13 @@
 # Configuration
-$SKETCH = "powered_air_quality.ino"
+$SKETCH = "."
 $BOARD = "esp32:esp32:esp32:PartitionScheme=min_spiffs"
 $BUILD_DIR = "./build"
-$CACHE_DIR = "./cache"
 $LIB_PATH = "$env:USERPROFILE\Dropbox\make\arduino\libraries"
+$PORT  = "COM9"
 
 
 # Ensure directories exist
 if (!(Test-Path $BUILD_DIR)) { New-Item -ItemType Directory -Path $BUILD_DIR }
-if (!(Test-Path $CACHE_DIR)) { New-Item -ItemType Directory -Path $CACHE_DIR }
 
 Write-Host "--- Starting Ultra-Fast Windows Compile ---" -ForegroundColor Cyan
 
@@ -18,9 +17,8 @@ arduino-cli compile --fqbn $BOARD `
   --jobs 0 `
   --libraries $LIB_PATH `
   --build-path $BUILD_DIR `
-  --build-cache-path $CACHE_DIR `
-  -v `
   --skip-libraries-discovery `
+  -v `
   $SKETCH
 
 # Check exit code ($?)
@@ -28,5 +26,5 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "--- Compile Success! ---" -ForegroundColor Green
 } else {
     Write-Host "--- Compile Failed ---" -ForegroundColor Red
-    Write-Host "Tip: If a library is missing, try removing --skip-libraries-discovery once."
+    Write-Host "Tip: Check library path, FQBN, and compile output above."
 }

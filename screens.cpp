@@ -23,10 +23,10 @@ extern void debugMessage(String messageText, uint8_t messageLevel);
 extern uint16_t getWarningColor(uint8_t, float);
 extern TFT_eSPI display;
 extern uint32_t timeLastReportMS;
-extern Measure<graphPoints> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
+extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
 
 // Forward declarations for local functions to help make ordering in this file easier
-void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<graphPoints>, uint8_t, String);
+void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<kSampleCapacity>, uint8_t, String);
 void screenHelperComponentSetup(String);
 uint16_t getWarningColor(uint8_t, float);
 void screenHelperWiFiStatus(uint16_t, uint16_t, uint8_t, uint8_t, uint8_t);
@@ -51,7 +51,7 @@ void screenSaver()
   display.fillScreen(TFT_BLACK);
   display.setTextDatum(TL_DATUM);
 
-    if (totalCO2.getCurrent() == 6000) {
+  if (totalCO2.getCurrent() == 6000) {
     display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(TFT_RED);
     uint16_t textWidth = display.textWidth("Not available");
@@ -327,6 +327,7 @@ void screenCO2()
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
 
+
   // Display latest CO2 numeric value at the top of the graph.  If no current
   // value display "NA" instead.
   if (totalCO2.getStored() == 0) {
@@ -497,7 +498,7 @@ void screenHelperComponentSetup(String header)
   constexpr uint8_t wifiBarWidth = 3;
   constexpr uint8_t wifiBarSpacing = 5;
 
-  debugMessage("screenHelperStatusBar() start",2);
+  debugMessage("screenHelperStatusBar() start",1);
 
   display.fillScreen(TFT_BLACK);
   display.fillRect(0,0,display.width(),yStatusRegion,TFT_DARKGREY);
@@ -511,7 +512,7 @@ void screenHelperComponentSetup(String header)
   display.setTextDatum(L_BASELINE);
   display.drawString(header, ((display.width()/2)-(display.textWidth(header)/2)), yStatusRegionFloor);
 
-  debugMessage("screenHelperStatusBar() end",2);
+  debugMessage("screenHelperStatusBar() end",1);
 }
 
 void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
@@ -521,7 +522,7 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
 // Improvement : error handling for initialX, initialY, and overall width and height
 //  dedicated icon type for no WiFi?
 {
-  debugMessage("screenHelperWiFiStatus() begin",2);
+  debugMessage("screenHelperWiFiStatus() start",1);
 
   hardwareData.rssi = networkRSSIRead();
 
@@ -547,7 +548,7 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
     }
     debugMessage("WiFi signal strength via red bars because no WiFi connection", 1);
   }
-  debugMessage("screenHelperWiFiStatus() end",2);
+  debugMessage("screenHelperWiFiStatus() end",1);
 }
 
 void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
@@ -644,10 +645,10 @@ uint8_t noxRange(float noxIndex)
   return noxRange;
 }
 
-void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, Measure<graphPoints> measure, uint8_t datatype, String xLabel)
+void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, Measure<kSampleCapacity> measure, uint8_t datatype, String xLabel)
 {
   uint8_t stored, capacity;
-  int8_t loop; // upper bound is graphPoints definition
+  int8_t loop; // upper bound is kSampleCapacity definition
   uint16_t text1Width, text1Height;
   uint16_t deltaX, x, y, xp, yp;  // graphing positions
   float minValue, maxValue, value, range, average;
@@ -658,7 +659,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   uint16_t graphLineX; // dynamically defined below
   uint16_t graphLineY;
 
-  debugMessage("screenHelperGraph() start",2);
+  debugMessage("screenHelperGraph() start",1);
 
   stored   = measure.getStored();
   capacity = measure.getCapacity();
@@ -729,7 +730,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   // Plot however many data points we have both with filled circles at each
   // point and lines connecting the points.  Color the filled circles with the
   // appropriate warning level color for the type of data being graphed.
-  deltaX = ((xWidth-graphLineX) - 10) / (graphPoints-1);  // X distance between points, 10 pixel padding for Y axis
+  deltaX = ((xWidth-graphLineX) - 10) / (kSampleCapacity-1);  // X distance between points, 10 pixel padding for Y axis
   xp = graphLineX;
   yp = graphLineY;
   firstpoint = true;  // Reset for plotting use
@@ -754,7 +755,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     xp = x;
     yp = y;
   }
-  debugMessage("screenHelperGraph() end",2);
+  debugMessage("screenHelperGraph() end",1);
 }
 
 
