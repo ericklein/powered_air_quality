@@ -28,7 +28,6 @@ extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, tota
 // Forward declarations for local functions to help make ordering in this file easier
 void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<kSampleCapacity>, uint8_t, String);
 void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, String header);
-uint16_t getWarningColor(uint8_t, float);
 String getWarningLabel(uint8_t, float);
 void screenHelperWiFiStatus(uint16_t, uint16_t, uint8_t, uint8_t, uint8_t);
 void screenHelperReportStatus(uint16_t, uint16_t);
@@ -761,33 +760,6 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     yp = y;
   }
   debugMessage("screenHelperGraph() end",1);
-}
-
-// Determine the right warning color to use for an arbitrary sensor data value given
-// the type of data in question.
-uint16_t getWarningColor(uint8_t datatype, float datavalue)
-{
-  switch(datatype) {
-    case CO2_DATA:
-      return(warningColor[co2Range(datavalue)]);
-    case VOC_DATA:
-      return(warningColor[vocRange(datavalue)]);
-    case NOX_DATA:
-      return(warningColor[noxRange(datavalue)]);
-    case PM_DATA:
-      return(warningColor[pm25Range(datavalue)]);
-    case TEMP_DATA:
-      // Alternatively could explicitly return TFT_GREEN & TFT_YELLOW for temperature 
-      // & humidity comfort zones but using warningColor[0] and warningColor[1] provides 
-      // configurable consistency with other warning/comfort coloration
-      if( (datavalue < sensorTempFComfortMin) || (datavalue > sensorTempFComfortMax) ) return(warningColor[1]); // "Fair"
-      else return(warningColor[0]);  // "Good"
-    case HUM_DATA:
-      if( (datavalue < sensorHumidityComfortMin) || (datavalue > sensorHumidityComfortMax) ) return(warningColor[1]); // "Fair"
-      else return(warningColor[0]); // "Good"
-    default:
-      return(TFT_WHITE);
-  }
 }
 
 // Determine the right warning label to use for an arbitrary sensor data value given
