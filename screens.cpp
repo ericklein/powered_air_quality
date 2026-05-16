@@ -29,6 +29,7 @@ extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, tota
 void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<kSampleCapacity>, uint8_t, String);
 void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, String header);
 uint16_t getWarningColor(uint8_t, float);
+String getWarningLabel(uint8_t, float);
 void screenHelperWiFiStatus(uint16_t, uint16_t, uint8_t, uint8_t, uint8_t);
 void screenHelperReportStatus(uint16_t, uint16_t);
 void screenHelperIndoorOutdoorStatusRegion();
@@ -326,9 +327,8 @@ void screenCO2()
 
   screenHelperHeaderBar(totalCO2,CO2_DATA,"Recent CO2 Values");
 
-  display.setFreeFont(&FreeSans24pt7b);
+  display.setFreeFont(&FreeSans18pt7b);
   display.setTextDatum(MC_DATUM);
-
 
   // Display latest CO2 numeric value at the top of the graph.  If no current
   // value display "NA" instead.
@@ -338,15 +338,15 @@ void screenCO2()
   }
   else {
     display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
-    display.drawString(String(uint16_t(totalCO2.getCurrent())), (display.width()/2), yValue);
+    display.drawString(String(uint16_t(totalCO2.getCurrent()) + "ppm"), (display.width()/4*3), yValue);
   }
   // recent CO₂ graph
-  screenHelperGraph(kXMargins, display.height()/3, (display.width()-(2*kXMargins)-kLegendWidth-10),((display.height()*2/3)-kYMargins), totalCO2, CO2_DATA, "Recent values");
+  screenHelperGraph(kXMargins, display.height()/3, (display.width()-(2*kXMargins)-kLegendWidth-10),((display.height()*2/3)-kYMargins), totalCO2, CO2_DATA, "");
 
-  //  CO₂ severity color legend
-  for(uint8_t loop = 0; loop < 4; loop++){
-    display.fillRect(xLegend,(yLegend-(loop*kLegendHeight)),kLegendWidth,kLegendHeight,warningColor[loop]);
-  }
+  // //  CO₂ severity color legend
+  // for(uint8_t loop = 0; loop < 4; loop++){
+  //   display.fillRect(xLegend,(yLegend-(loop*kLegendHeight)),kLegendWidth,kLegendHeight,warningColor[loop]);
+  // }
   debugMessage("screenCO2() end",1);
 }
 
@@ -763,6 +763,59 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   debugMessage("screenHelperGraph() end",1);
 }
 
+// Determine the right warning color to use for an arbitrary sensor data value given
+// the type of data in question.
+uint16_t getWarningColor(uint8_t datatype, float datavalue)
+{
+  switch(datatype) {
+    case CO2_DATA:
+      return(warningColor[co2Range(datavalue)]);
+    case VOC_DATA:
+      return(warningColor[vocRange(datavalue)]);
+    case NOX_DATA:
+      return(warningColor[noxRange(datavalue)]);
+    case PM_DATA:
+      return(warningColor[pm25Range(datavalue)]);
+    case TEMP_DATA:
+      // Alternatively could explicitly return TFT_GREEN & TFT_YELLOW for temperature 
+      // & humidity comfort zones but using warningColor[0] and warningColor[1] provides 
+      // configurable consistency with other warning/comfort coloration
+      if( (datavalue < sensorTempFComfortMin) || (datavalue > sensorTempFComfortMax) ) return(warningColor[1]); // "Fair"
+      else return(warningColor[0]);  // "Good"
+    case HUM_DATA:
+      if( (datavalue < sensorHumidityComfortMin) || (datavalue > sensorHumidityComfortMax) ) return(warningColor[1]); // "Fair"
+      else return(warningColor[0]); // "Good"
+    default:
+      return(TFT_WHITE);
+  }
+}
+
+// Determine the right warning label to use for an arbitrary sensor data value given
+// the type of data in question.
+String getWarningLabel(uint8_t datatype, float datavalue)
+{
+  switch(datatype) {
+    case CO2_DATA:
+      return(warningLabel[co2Range(datavalue)]);
+    case VOC_DATA:
+      return(warningLabel[vocRange(datavalue)]);
+    case NOX_DATA:
+      return(warningLabel[noxRange(datavalue)]);
+    case PM_DATA:
+      return(warningLabel[pm25Range(datavalue)]);
+    case TEMP_DATA:
+      // Alternatively could explicitly return TFT_GREEN & TFT_YELLOW for temperature 
+      // & humidity comfort zones but using warningColor[0] and warningColor[1] provides 
+      // configurable consistency with other warning/comfort coloration
+      if( (datavalue < sensorTempFComfortMin) || (datavalue > sensorTempFComfortMax) ) return(warningLabel[1]); // "Fair"
+      else return(warningLabel[0]);  // "Good"
+    case HUM_DATA:
+      if( (datavalue < sensorHumidityComfortMin) || (datavalue > sensorHumidityComfortMax) ) return(warningLabel[1]); // "Fair"
+      else return(warningLabel[0]); // "Good"
+    default:
+      return(warningLabel[0]);
+  }
+}
 
 /**
  * @brief Maps an OpenWeatherMap (OWM) icon code to a Meteocon font character.

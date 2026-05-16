@@ -712,7 +712,7 @@ void samplePost(uint8_t& numSamples)
     display.setFreeFont(&FreeSans18pt7b);
     screenHelperAlert("No samples available", TFT_WHITE,TFT_BLACK,TFT_RED);
 
-    debugMessage(String("samplePost() warning; no samples to process this cycle"),1);
+    debugMessage(String("samplePost() no samples to process this cycle"),1);
   }
   // Reset sample counters
   numSamples = 0;
@@ -1219,6 +1219,7 @@ void OWMAirPollutionSimulate()
 bool OWMAirPollutionRead()
 // stores local air pollution info from Open Weather Map in environment global
 {
+  debugMessage(String("OWMAirPollutionRead() start"), 1);
   #ifdef HARDWARE_SIMULATE
     OWMAirPollutionSimulate();
     return true;
@@ -1285,6 +1286,8 @@ bool OWMAirPollutionRead()
       return true;
     }
   #endif
+
+  debugMessage(String("OWMAirPollutionRead() end"), 1);
   return true;
 }
 
@@ -1331,11 +1334,11 @@ bool sensorRead()
   #ifdef SENSOR_SEN54SCD40
     bool pmSuccess = sensorSEN554Read();
     if (!pmSuccess)
-      debugMessage("PM sensor read failed",1);
+      debugMessage("SEN54 read failed",1);
 
     success = sensorSCD4xRead();
     if (!success)
-      debugMessage("SCD4x read failed",1);
+      debugMessage("SCD40 read failed",1);
     if (!pmSuccess)
       success = false;
   #endif // SENSOR_SEN54SCD40
@@ -1441,7 +1444,7 @@ bool sensorSEN6xRead()
 
       if (error) {
         errorToString(error, errorMessage, 256);
-        debugMessage(String(errorMessage) + " error during SEN6x read",1);
+        debugMessage(String(errorMessage) + " error during SEN6x read",2);
       }
       else {
         success = true;
@@ -1453,32 +1456,32 @@ bool sensorSEN6xRead()
   // range valid returned sensor values, even simulation values can be OOB
   if (co2 < sensorCO2Min || co2 > sensorCO2Max) {
     success = false;
-    debugMessage(String("SEN66 CO2 reading: ") + co2 + " is out of datasheet range",1);
+    debugMessage(String("SEN66 CO2 reading: ") + co2 + " is out of datasheet range",2);
   }
 
   if (temperatureF < sensorTempFMin || temperatureF > sensorTempFMax) {
     success = false;
-    debugMessage(String("SEN66 temperatureF reading: ") + temperatureF + " is out of datasheet range",1);
+    debugMessage(String("SEN66 temperatureF reading: ") + temperatureF + " is out of datasheet range",2);
   }
 
   if (humidity < sensorHumidityMin || humidity > sensorHumidityMax) {
     success = false;
-    debugMessage(String("SEN66 humidity reading: ") + humidity + " is out of datasheet range",1);
+    debugMessage(String("SEN66 humidity reading: ") + humidity + " is out of datasheet range",2);
   }
 
   if (pm25 < sensorPMMin || pm25 > sensorPMMax) {
     success = false;
-    debugMessage(String("SEN66 PM2.5 reading: ") + pm25 + " is out of datasheet range",1);
+    debugMessage(String("SEN66 PM2.5 reading: ") + pm25 + " is out of datasheet range",2);
   }
 
   if (VOCIndex < sensorVOCMin || VOCIndex > sensorVOCMax) {
     success = false;
-    debugMessage(String("SEN66 VOC index reading: ") + VOCIndex + " is out of datasheet range",1);
+    debugMessage(String("SEN66 VOC index reading: ") + VOCIndex + " is out of datasheet range",2);
   }
 
   if (NOxIndex < sensorNOxMin || NOxIndex > sensorNOxMax) {
     success = false;
-    debugMessage(String("SEN66 NOx index reading: ") + NOxIndex + " is out of datasheet range",1);
+    debugMessage(String("SEN66 NOx index reading: ") + NOxIndex + " is out of datasheet range",2);
   }
 
   // valid measurement, update globals
@@ -1592,7 +1595,7 @@ bool sensorSEN554Read()
       error = pmSensor.readMeasuredValues(pm1, pm25, pm4, pm10, humidity, temperatureC, VOCIndex, NOxIndex);
       if (error) {
         errorToString(error, errorMessage, 256);
-        debugMessage(String(errorMessage) + " error during SEN5x read",1);
+        debugMessage(String(errorMessage) + " error during SEN5x read",2);
       }
       else
         success = true;
@@ -1602,12 +1605,12 @@ bool sensorSEN554Read()
   // range valid returned sensor values, even simulation values can be OOB
   if (pm25 < sensorPMMin || pm25 > sensorPMMax) {
     success = false;
-    debugMessage(String("SEN5x PM2.5 reading: ") + pm25 + " is out of datasheet range",1);
+    debugMessage(String("SEN5x PM2.5 reading: ") + pm25 + " is out of datasheet range",2);
   }
 
   if (VOCIndex < sensorVOCMin || VOCIndex > sensorVOCMax) {
     success = false;
-    debugMessage(String("SEN5x VOC index reading: ") + VOCIndex + " is out of datasheet range",1);
+    debugMessage(String("SEN5x VOC index reading: ") + VOCIndex + " is out of datasheet range",2);
   }
 
   // valid measurement, update globals
@@ -1848,17 +1851,17 @@ bool sensorSCD4xRead()
 
   if (co2 < sensorCO2Min || co2 > sensorCO2Max) {
     success = false;
-    debugMessage(String("SCD4x CO2 reading: ") + co2 + " is out of datasheet range",1);
+    debugMessage(String("SCD4x CO2 reading: ") + co2 + " is out of datasheet range",2);
   }
 
   if (temperatureF < sensorTempFMin || temperatureF > sensorTempFMax) {
     success = false;
-    debugMessage(String("SCD4x temperatureF reading: ") + temperatureF + " is out of datasheet range",1);
+    debugMessage(String("SCD4x temperatureF reading: ") + temperatureF + " is out of datasheet range",2);
   }
 
   if (humidity < sensorHumidityMin || humidity > sensorHumidityMax) {
     success = false;
-    debugMessage(String("SCD4x humidity reading: ") + humidity + " is out of datasheet range",1);
+    debugMessage(String("SCD4x humidity reading: ") + humidity + " is out of datasheet range",2);
   }
 
   // valid measurement, update globals

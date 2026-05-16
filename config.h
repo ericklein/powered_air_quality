@@ -58,7 +58,7 @@ constexpr uint8_t kLegendWidth =   10;
 constexpr uint8_t kSampleCapacity = 10;
 
 // warnings
-// const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
+const String warningLabel[4]={"Good", "Fair", "Poor", "Bad"};
 // Subjective color scheme using 16 bit ('565') RGB colors
 constexpr uint16_t warningColor[4] = {
     0x07E0, // Green = "Good"
