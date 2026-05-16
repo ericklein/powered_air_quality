@@ -266,10 +266,19 @@ void screenVOC()
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
 
-  // VOC numeric value
-  display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));  // Use highlight color look-up 
-  display.drawString(String(uint16_t(totalVOCIndex.getCurrent())), (display.width()/2), yValue);
-
+  // Display latest VOCIndex numeric value at the top of the graph.  If no current
+  // value display "NA" instead.
+  if (totalVOCIndex.getStored() == 0) {
+    display.setTextColor(TFT_RED);
+    display.drawString("NA", (display.width() / 2), yValue);
+  }
+  else {
+    // VOC numeric value
+    display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));  // Use highlight color look-up 
+    display.drawString(String(uint16_t(totalVOCIndex.getCurrent())), (display.width()/2), yValue);
+  }
+  
+  // Graph recent VOCIndex values using retained storage data
   screenHelperGraph(kXMargins, display.height()/3, (display.width()-(2*kXMargins)-kLegendWidth-10),((display.height()*2/3)-kYMargins), totalVOCIndex, VOC_DATA, "Recent values");
 
   // legend for VOC color wheel
@@ -318,8 +327,9 @@ void screenCO2()
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
 
-  // CO2 numeric value
-  if (totalCO2.getCurrent() == 6000) {
+  // Display latest CO2 numeric value at the top of the graph.  If no current
+  // value display "NA" instead.
+  if (totalCO2.getStored() == 0) {
     display.setTextColor(TFT_RED);
     display.drawString("NA", (display.width() / 2), yValue);
   }
