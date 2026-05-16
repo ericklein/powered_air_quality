@@ -20,6 +20,7 @@ extern uint8_t networkRSSIRead();
 extern bool OWMAirPollutionRead();
 extern bool OWMCurrentWeatherRead();
 extern void debugMessage(String messageText, uint8_t messageLevel);
+extern uint16_t getWarningColor(uint8_t, float);
 extern TFT_eSPI display;
 extern uint32_t timeLastReportMS;
 extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
@@ -50,13 +51,15 @@ void screenSaver()
   display.fillScreen(TFT_BLACK);
   display.setTextDatum(TL_DATUM);
 
-    if (sensorData.ambientCO2[kSampleCapacity-1] == 6000) {
+  // If no data available, display "Not available"
+  if (totalCO2.getStored() == 0) {
     display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(TFT_RED);
     uint16_t textWidth = display.textWidth("Not available");
     display.drawString("Not available", random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
   }
   else {
+    // Otherwise display the latest CO2 reading 
     display.setFreeFont(&FreeSans24pt7b);
     display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
     uint16_t textWidth = display.textWidth(String(totalCO2.getCurrent()));
@@ -265,10 +268,19 @@ void screenVOC()
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
 
-  // VOC numeric value
-  display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));  // Use highlight color look-up 
-  display.drawString(String(uint16_t(totalVOCIndex.getCurrent())), (display.width()/2), yValue);
-
+  // Display latest VOCIndex numeric value at the top of the graph.  If no current
+  // value display "NA" instead.
+  if (totalVOCIndex.getStored() == 0) {
+    display.setTextColor(TFT_RED);
+    display.drawString("NA", (display.width() / 2), yValue);
+  }
+  else {
+    // VOC numeric value
+    display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));  // Use highlight color look-up 
+    display.drawString(String(uint16_t(totalVOCIndex.getCurrent())), (display.width()/2), yValue);
+  }
+  
+  // Graph recent VOCIndex values using retained storage data
   screenHelperGraph(kXMargins, display.height()/3, (display.width()-(2*kXMargins)-kLegendWidth-10),((display.height()*2/3)-kYMargins), totalVOCIndex, VOC_DATA, "Recent values");
 
   // legend for VOC color wheel
@@ -293,11 +305,11 @@ void screenVOC()
  *  - A vertical color legend matching the warning scale
  *
  * @note This function relies on global display state, sensor data,
- *       and layout constants (e.g. `display`, `sensorData`,
- *       `kXMargins`, `kYMargins`, `kSampleCapacity`).
+ *       and layout constants (e.g. `display`,
+ *       `kXMargins`, `kYMargins`).
  *
- * @warning Assumes `sensorData.ambientCO2` contains at least
- *          `kSampleCapacity` valid samples.
+ * @warning Assumes totalCO2` contains at least
+ *          `graphPoints` valid samples.
  */
 void screenCO2()
 // Description: Display CO2 information (ppm, color grade, graph)
@@ -317,8 +329,10 @@ void screenCO2()
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
 
-  // CO2 numeric value
-  if (sensorData.ambientCO2[kSampleCapacity - 1] == 6000) {
+
+  // Display latest CO2 numeric value at the top of the graph.  If no current
+  // value display "NA" instead.
+  if (totalCO2.getStored() == 0) {
     display.setTextColor(TFT_RED);
     display.drawString("NA", (display.width() / 2), yValue);
   }
@@ -636,7 +650,7 @@ uint8_t noxRange(float noxIndex)
 void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, Measure<kSampleCapacity> measure, uint8_t datatype, String xLabel)
 {
   uint8_t stored, capacity;
-  int8_t loop; // upper bound is kSampleCapacity definition
+  int8_t loop; // upper bound is kSampleCapacity definition (size of Measure retained storage)
   uint16_t text1Width, text1Height;
   uint16_t deltaX, x, y, xp, yp;  // graphing positions
   float minValue, maxValue, value, range, average;
@@ -744,33 +758,6 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     yp = y;
   }
   debugMessage("screenHelperGraph() end",1);
-}
-
-// Determine the right warning color to use for an arbitrary sensor data value given
-// the type of data in question.
-uint16_t getWarningColor(uint8_t datatype, float datavalue)
-{
-  switch(datatype) {
-    case CO2_DATA:
-      return(warningColor[co2Range(datavalue)]);
-    case VOC_DATA:
-      return(warningColor[vocRange(datavalue)]);
-    case NOX_DATA:
-      return(warningColor[noxRange(datavalue)]);
-    case PM_DATA:
-      return(warningColor[pm25Range(datavalue)]);
-    case TEMP_DATA:
-      // Alternatively could explicitly return TFT_GREEN & TFT_YELLOW for temperature 
-      // & humidity comfort zones but using warningColor[0] and warningColor[1] provides 
-      // configurable consistency with other warning/comfort coloration
-      if( (datavalue < sensorTempFComfortMin) || (datavalue > sensorTempFComfortMax) ) return(warningColor[1]); // "Fair"
-      else return(warningColor[0]);  // "Good"
-    case HUM_DATA:
-      if( (datavalue < sensorHumidityComfortMin) || (datavalue > sensorHumidityComfortMax) ) return(warningColor[1]); // "Fair"
-      else return(warningColor[0]); // "Good"
-    default:
-      return(TFT_WHITE);
-  }
 }
 
 
