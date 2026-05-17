@@ -31,7 +31,6 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
 String getWarningLabel(uint8_t, float);
 void screenHelperWiFiStatus(uint16_t, uint16_t, uint8_t, uint8_t, uint8_t);
 void screenHelperReportStatus(uint16_t, uint16_t);
-void screenHelperIndoorOutdoorStatusRegion();
 uint8_t co2Range(float); 
 uint8_t pm25Range(float);
 uint8_t vocRange(float);
@@ -118,24 +117,12 @@ void screenTempHumidity()
 // Output: NA (void)
 // Improvement: 
 {
-  // screen layout assists in pixels
-  const uint8_t yStatusRegion = display.height()/8;
-
   debugMessage("screenTempHumidity() start",1);
 
   screenHelperHeaderBar(totalTemperatureF, UNK_DATA, "Temp/Humidity");
-  // split indoor v. outside
-  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_DARKGREY);
-
-  display.setTextDatum(MC_DATUM);
-
-  // labels
-  display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(TFT_WHITE);
-  display.drawString("Indoor", display.width()/4, display.height()/6);
-  display.drawString("Outside", (display.width()*3/4), display.height()/6);
 
   display.setFreeFont(&FreeSans24pt7b);
+  display.setTextDatum(MC_DATUM);
 
   // Indoor
   // Indoor temp
@@ -181,7 +168,6 @@ void screenPM25()
 // Improvement: 
 {
   // screen layout assists in pixels
-  const uint8_t   yStatusRegion = display.height()/8;
   const uint16_t  xOutdoorMargin = ((display.width() / 2) + kXMargins);
   // temp & humidity
   constexpr uint16_t  yPollution = 210;
@@ -197,16 +183,8 @@ void screenPM25()
   debugMessage("screenPM25() start",1);
 
   screenHelperHeaderBar(totalPM25, PM_DATA, "PM2.5 Levels");
-  // split indoor v. outside
-  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_DARKGREY);
 
   display.setTextDatum(MC_DATUM);
-
-  // labels
-  display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(TFT_WHITE);
-  display.drawString("Indoor", display.width()/4, display.height()/6);
-  display.drawString("Outside", (display.width()*3/4), display.height()/6);
 
   // Indoor PM2.5 ring
   display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius,getWarningColor(PM_DATA,totalPM25.getCurrent()));
@@ -257,6 +235,8 @@ void screenVOC()
 // Improvement: ?
 {
   // screen layout assists in pixels
+  constexpr uint8_t kLegendHeight =  20;
+  constexpr uint8_t kLegendWidth =   10;
   const uint16_t xLegend =      display.width() - kXMargins - 5 - kLegendWidth;
   const uint16_t yLegend =      ((display.height()/3) + (uint8_t(3.5*kLegendHeight)));
   const uint16_t yValue =       display.width()/6;
@@ -318,34 +298,35 @@ void screenCO2()
 // Improvement: ?
 {
   // screen layout assists in pixels
-  const uint16_t xLegend =      display.width() - kXMargins - 5 - kLegendWidth;
-  const uint16_t yLegend =      ((display.height()/3) + (uint8_t(3.5*kLegendHeight)));
-  const uint16_t yValue =       display.width()/6;
+  const uint16_t yValue = display.width()/3;
 
   debugMessage("screenCO2() start",1);
 
   screenHelperHeaderBar(totalCO2,CO2_DATA,"Recent CO2 Values");
 
-  display.setFreeFont(&FreeSans18pt7b);
-  display.setTextDatum(MC_DATUM);
+  display.setFreeFont(&FreeSans24pt7b);
 
-  // Display latest CO2 numeric value at the top of the graph.  If no current
-  // value display "NA" instead.
+  // if no CO2 values are available yet, display "NA"
   if (totalCO2.getStored() == 0) {
     display.setTextColor(TFT_RED);
-    display.drawString("NA", (display.width() / 2), yValue);
+    display.setTextDatum(MC_DATUM);
+    display.drawString("NA", (display.width() / 2), (display.height() / 2));
   }
   else {
+    // display generalized CO₂ level
+    display.setTextDatum(BL_DATUM);
     display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
-    display.drawString(String(uint16_t(totalCO2.getCurrent()) + "ppm"), (display.width()/4*3), yValue);
-  }
-  // recent CO₂ graph
-  screenHelperGraph(kXMargins, display.height()/3, (display.width()-(2*kXMargins)-kLegendWidth-10),((display.height()*2/3)-kYMargins), totalCO2, CO2_DATA, "");
+    display.drawString(getWarningLabel(CO2_DATA,totalCO2.getCurrent()),kXMargins,yValue - 3);
 
-  // //  CO₂ severity color legend
-  // for(uint8_t loop = 0; loop < 4; loop++){
-  //   display.fillRect(xLegend,(yLegend-(loop*kLegendHeight)),kLegendWidth,kLegendHeight,warningColor[loop]);
-  // }
+    // display current CO₂ value
+    display.setFreeFont(&FreeSans18pt7b);
+    display.setTextDatum(BR_DATUM);
+    display.setTextColor(TFT_WHITE);
+    display.drawString((String(uint16_t(totalCO2.getCurrent())) + "ppm"), (display.width()-(2*kXMargins)), yValue - 3);
+
+    // recent CO₂ graph
+    screenHelperGraph(kXMargins, yValue, (display.width()-(2*kXMargins)),((display.height()*2/3)-kYMargins), totalCO2, CO2_DATA, " ");
+  }
   debugMessage("screenCO2() end",1);
 }
 
@@ -356,6 +337,8 @@ void screenNOX()
 // Improvement: ?
 {
   // screen layout assists in pixels
+  constexpr uint8_t kLegendHeight =  20;
+  constexpr uint8_t kLegendWidth =   10;
   const uint16_t xLegend = (display.width() - kXMargins - kLegendWidth);
   const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*kLegendHeight)));
   constexpr uint16_t circleRadius = 100;
@@ -492,8 +475,7 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
 // Improvement : NA
 {
   // screen layout assists in pixels
-  const uint8_t   yStatusRegion = display.height()/8;
-  const uint8_t   yStatusRegionFloor = yStatusRegion - 7;  
+  const uint8_t   yStatusRegionFloor = kYStatusRegion - 7;  
   constexpr uint8_t helperXSpacing = 15;
   constexpr uint8_t wifiBarHeightIncrement = 3;
   constexpr uint8_t wifiBarWidth = 3;
@@ -502,12 +484,29 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
   debugMessage("screenHelperHeaderBar() start",1);
 
   display.fillScreen(TFT_BLACK);
-  display.fillRect(0,0,display.width(),yStatusRegion,getWarningColor(datatype,measure.getMember(measure.getCurrent())));
+  if ((datatype == PM_DATA) || (datatype == UNK_DATA)) {
+    // when displaying multiple data sources the header bare is a neutral color
+    display.fillRect(0,0,display.width(),kYStatusRegion,TFT_DARKGREY);
+
+    // vertical separator for indoor/outdoor
+    display.drawFastVLine((display.width() / 2), kYStatusRegion, display.height(), TFT_DARKGREY);
+
+    // indoor/outdoor labels
+    display.setFreeFont(&FreeSans12pt7b);
+    display.setTextColor(TFT_WHITE);
+    display.setTextDatum(MC_DATUM);
+    display.drawString("Indoor", display.width()/4, display.height()/6);
+    display.drawString("Outside", (display.width()*3/4), display.height()/6);
+  }
+  else {
+    // bar is colored with the warning color of the most recent sample
+    display.fillRect(0,0,display.width(),kYStatusRegion,getWarningColor(datatype,measure.getMember(measure.getCurrent())));
+  }
   // screen helpers in status region
   screenHelperWiFiStatus((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), yStatusRegionFloor, wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
   screenHelperReportStatus(((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-helperXSpacing), (yStatusRegionFloor-15));
 
-  //label
+  // header bar label
   display.setFreeFont(&FreeSans12pt7b);
   display.setTextColor(TFT_BLACK);
   display.setTextDatum(L_BASELINE);
@@ -569,35 +568,6 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
         display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
   #endif
   debugMessage(String("screenHelperReportStatus() end"), 1);   
-}
-
-void screenHelperIndoorOutdoorStatusRegion()
-// Description: helper function for screenXXX() routines to draw the status region frame for indoor/outdoor information
-// Parameters: NA
-// Output : NA
-// Improvement : NA
-{
-  // screen layout assists in pixels
-  const uint16_t yStatusRegion = display.height()/8;
-  const uint16_t xOutdoorMargin = ((display.width() / 2) + kXMargins);
-  constexpr uint8_t wifiBarHeightIncrement = 3;
-  constexpr uint8_t wifiBarWidth = 3;
-  constexpr uint8_t wifiBarSpacing = 5;
-
-  display.fillRect(0,0,display.width(),yStatusRegion,TFT_DARKGREY);
-  // split indoor v. outside
-  display.drawFastVLine((display.width() / 2), yStatusRegion, display.height(), TFT_DARKGREY);
-  // screen helpers in status region
-  // IMPROVEMENT: Pad the initial X coordinate by the actual # of bars
-  screenHelperWiFiStatus((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), (kYMargins + (5*wifiBarHeightIncrement)), wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
-  screenHelperReportStatus(((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-20), kYMargins);
-  // labels
-  display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(TFT_WHITE);
-  display.setCursor(kXMargins, ((display.height()/8)-7));
-  display.print("Indoor");
-  display.setCursor(xOutdoorMargin, ((display.height()/8)-7));
-  display.print("Outdoor");
 }
 
 // Range and math functions
@@ -670,6 +640,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
 
   display.fillRect(initialX,initialY,xWidth,yHeight,TFT_BLACK);
   display.setFreeFont();
+  display.setTextDatum(MC_DATUM);
   display.setTextColor(TFT_WHITE);
 
   // Save ourselves some work if we don't have data to plot

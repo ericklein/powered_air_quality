@@ -14,7 +14,7 @@
 
 // Configuration Step 4: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-#define DEBUG 1
+#define DEBUG 2
 
 // Configuration Step 5: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -51,8 +51,7 @@ enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX};
 // screen layout assists in pixels
 constexpr uint8_t kXMargins = 5;
 constexpr uint8_t kYMargins = 5;
-constexpr uint8_t kLegendHeight =  20;
-constexpr uint8_t kLegendWidth =   10;
+constexpr uint8_t kYStatusRegion = 30; // display.height()/8 assuming 320x240 screen
 
 // How many samples are retained in a FIFO queue
 constexpr uint8_t kSampleCapacity = 10;
