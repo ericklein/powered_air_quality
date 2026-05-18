@@ -5,12 +5,10 @@
 
 // Configuration Step 1: Create and/or configure secrets.h. Use secrets_template.h as guide to create secrets.h
 
-// Configuration Step 2: Change User_Setup_Select.h to either PAQ or Climatron
-
-// Configuration Step 3: Base hardware platform
+// Configuration Step 3: Define hardware parameters in device_config.h
 // this is needed until we branch PAQ and Climatron
-// #define PAQ
-#define CLIMATRON
+#pragma once
+#include "device_config.h"
 
 // Configuration Step 4: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
@@ -25,16 +23,6 @@
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
 #define INFLUX // Log data to InfluxDB server
 #define THINGSPEAK  // Log data to ThingSpeak
-
-// Configuration Step 7: Which sensor configuration do we have?  Later generation devices
-// use Sensirion SEN66 sensor which measures CO2, particulates, VOC, NOX, temperature and humidity
-// in one package.  Earlier generation devices use a combination of the SEN54 particulates
-// sensor and the SCD40 CO2 sensor (which also provides VOC, temperature and humidity readings).
-// Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
-// NOX Index).
-// Use the one that corresponds to your device hardware and leave the other commented out.
-// #define SENSOR_SEN66
-#define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 
@@ -171,7 +159,7 @@ constexpr uint16_t sensorNOxMax =   500;  // per SEN66 datasheet
 // CYD variations
 
 #ifdef PAQ
-  // CYD ESP32-2432S028R (2.8" TFT, micro-USB)
+  // CYD ESP32-2432S028R (2.8" TFT, micro-USB, 2 GPIO pin connectors)
   const String hardwareDeviceType = "AirQuality";
   constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
   constexpr uint8_t pinSensorSDA = 22;
@@ -192,7 +180,7 @@ constexpr uint16_t sensorNOxMax =   500;  // per SEN66 datasheet
 #endif
 
 #ifdef CLIMATRON
-  // JC2432W328
+  // CYD JC2432W328 (2.8" TFT, USB-C, 3 GPIO pin connectors)
   const String hardwareDeviceType = "Climatron";
   constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
   constexpr uint8_t pinSensorSDA = 22;

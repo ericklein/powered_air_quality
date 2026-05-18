@@ -515,10 +515,6 @@ bool sampleEvaluate()
 {
   debugMessage(String("sampleEvaluate() start"), 1);
 
-  #if (DEBUG==2)
-    totalCO2.printRetained();
-  #endif
-
   static bool trendAlreadyReported = false;
 
   const uint16_t stored = totalCO2.getStored();

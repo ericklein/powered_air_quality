@@ -40,10 +40,6 @@ char OWMtoMeteoconIcon(const char*);
 // ***** Screen display routines, typically one per major screen ***** //
 
 void screenSaver()
-// Description: Display current CO2 reading at a random location (e.g. "screen saver")
-// Parameters:  NA
-// Returns: NA (void)
-// Improvement: ?
 {
   debugMessage("screenSaver() start",1);
 
@@ -69,10 +65,6 @@ void screenSaver()
 }
 
 void screenMain()
-// Description: Represent CO2, VOC, PM25, and either T/H or NOx as touchscreen input quadrants color coded by current quality
-// Parameters:  NA
-// Returns: NA (void)
-// Improvement: ?
 {
   // screen assists
   constexpr uint8_t halfBorderWidth = 2;
@@ -162,10 +154,6 @@ void screenTempHumidity()
 }
 
 void screenPM25() 
-// Description: Displays indoor and outdoor PM25, outdoor air pollution index
-// Parameters:
-// Output: NA (void)
-// Improvement: 
 {
   // screen layout assists in pixels
   const uint16_t  xOutdoorMargin = ((display.width() / 2) + kXMargins);
@@ -229,10 +217,6 @@ void screenPM25()
 }
 
 void screenVOC()
-// Description: Display VOC index information (ppm, color grade, graph)
-// Parameters:  NA
-// Returns: NA (void)
-// Improvement: ?
 {
   // screen layout assists in pixels
   constexpr uint8_t kLegendHeight =  20;
@@ -271,33 +255,10 @@ void screenVOC()
   debugMessage("screenVOC() end",1);
 }
 
-/**
- * @brief Displays CO₂ concentration information on the screen.
- *
- * Renders the current CO₂ reading (in ppm), applies a color-coded
- * severity grade, updates the RGB status LED, and draws a historical
- * graph of recent CO₂ values.
- *
- * The screen layout includes:
- *  - A large numeric CO₂ value (ppm)
- *  - Color-coded severity indication
- *  - A scrolling graph of recent CO₂ measurements
- *  - A vertical color legend matching the warning scale
- *
- * @note This function relies on global display state, sensor data,
- *       and layout constants (e.g. `display`,
- *       `kXMargins`, `kYMargins`).
- *
- * @warning Assumes totalCO2` contains at least
- *          `graphPoints` valid samples.
- */
+
 void screenCO2()
-// Description: Display CO2 information (ppm, color grade, graph)
-// Parameters:  NA
-// Returns: NA (void)
-// Improvement: ?
 {
-  // screen layout assists in pixels
+  // screen layout assist(s) in pixels
   const uint16_t yValue = display.width()/3;
 
   debugMessage("screenCO2() start",1);
@@ -306,7 +267,7 @@ void screenCO2()
 
   display.setFreeFont(&FreeSans24pt7b);
 
-  // if no CO2 values are available yet, display "NA"
+  // if CO2 values are not yet available, display "NA"
   if (totalCO2.getStored() == 0) {
     display.setTextColor(TFT_RED);
     display.setTextDatum(MC_DATUM);
@@ -316,7 +277,7 @@ void screenCO2()
     // display generalized CO₂ level
     display.setTextDatum(BL_DATUM);
     display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
-    display.drawString(getWarningLabel(CO2_DATA,totalCO2.getCurrent()),kXMargins,yValue - 3);
+    display.drawString(getWarningLabel(CO2_DATA,totalCO2.getCurrent()),kXMargins, yValue - 3);
 
     // display current CO₂ value
     display.setFreeFont(&FreeSans18pt7b);
@@ -331,10 +292,6 @@ void screenCO2()
 }
 
 void screenNOX()
-// Description: Display NOx index information (ppm, color grade, graph)
-// Parameters:  NA
-// Returns: NA (void)
-// Improvement: ?
 {
   // screen layout assists in pixels
   constexpr uint8_t kLegendHeight =  20;
@@ -469,10 +426,6 @@ void screenNOX()
 // }
 
 void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, String header)
-// Description: helper function for screenXXX() routines to draw the status region frame
-// Parameters: NA
-// Output : NA
-// Improvement : NA
 {
   // screen layout assists in pixels
   const uint8_t   yStatusRegionFloor = kYStatusRegion - 7;  
