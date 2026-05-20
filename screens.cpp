@@ -294,38 +294,36 @@ void screenCO2()
 void screenNOX()
 {
   // screen layout assists in pixels
-  constexpr uint8_t kLegendHeight =  20;
-  constexpr uint8_t kLegendWidth =   10;
-  const uint16_t xLegend = (display.width() - kXMargins - kLegendWidth);
-  const uint16_t yLegend =  ((display.height()/4) + (uint8_t(3.5*kLegendHeight)));
-  constexpr uint16_t circleRadius = 100;
-  const uint16_t xNOxCircle = (display.width() / 2);
-  const uint16_t yNOxCircle = (display.height() / 2);
-  const uint16_t xNOxLabel = xNOxCircle - 35;
-  const uint16_t yNOxLabel = yNOxCircle + 35;
+  constexpr uint16_t circleOuterRadius = 140;
+  constexpr uint16_t circleInnerRadius = 100;
+  const uint16_t xNOxCircle = (display.width()/2);
+  const uint16_t yNOxCircle = (display.height()*3/4);
+  const uint16_t xNOxLabel = xNOxCircle + 20;
+  const uint16_t yNOxLabel = yNOxCircle;
 
   debugMessage("screenNOX() start",1);
 
   screenHelperHeaderBar(totalNOxIndex, NOX_DATA, "NOx Level");
 
+  // draw segmented arc
+
+  display.drawSmoothArc(xNOxCircle,yNOxCircle,circleOuterRadius,circleInnerRadius,150,270, warningColor[3],TFT_BLACK, true);
+  display.drawSmoothArc(xNOxCircle,yNOxCircle,circleOuterRadius,circleInnerRadius,180,225, warningColor[2],TFT_BLACK, false);
+  display.drawSmoothArc(xNOxCircle,yNOxCircle,circleOuterRadius,circleInnerRadius,90,160, warningColor[0],TFT_BLACK, true);
+  display.drawSmoothArc(xNOxCircle,yNOxCircle,circleOuterRadius,circleInnerRadius,135,180, warningColor[1],TFT_BLACK, false);
+
+  // // NOx color circle
+  // display.fillSmoothCircle(xNOxCircle,yNOxCircle,circleRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));
+  // display.fillSmoothCircle(xNOxCircle,yNOxCircle,circleRadius*0.8,TFT_BLACK);
+
+  // // NOx value and label (displayed inside circle)
   display.setFreeFont(&FreeSans18pt7b);
-
-  // NOx color circle
-  display.fillSmoothCircle(xNOxCircle,yNOxCircle,circleRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));
-  display.fillSmoothCircle(xNOxCircle,yNOxCircle,circleRadius*0.8,TFT_BLACK);
-
-  // legend for NOx color wheel
-  for(uint8_t loop = 0; loop < 4; loop++){
-    display.fillRect(xLegend,(yLegend-(loop*kLegendHeight)),kLegendWidth,kLegendHeight,warningColor[loop]);
-  }
-
-  // NOx value and label (displayed inside circle)
+  display.setTextDatum(MC_DATUM);
   display.setTextColor(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));  // Use highlight color look-up 
-  display.setCursor(xNOxCircle-20,yNOxCircle);
-  display.print(int(totalNOxIndex.getCurrent() +.5));
-  display.setTextColor(TFT_WHITE);
-  display.setCursor(xNOxLabel,yNOxLabel);
-  display.print("NOx");
+  display.drawString(String(int(totalNOxIndex.getCurrent() +.5)),xNOxLabel,yNOxLabel);
+  // display.setTextColor(TFT_WHITE);
+  // display.setCursor(xNOxLabel,yNOxLabel);
+  // display.print("NOx");
 
   debugMessage("screenNOX() end",1);
 }

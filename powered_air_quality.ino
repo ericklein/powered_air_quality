@@ -1404,7 +1404,7 @@ void sensorSEN6xSimulate(float& simulatedTemperatureF, float& simulatedHumidity,
   simulatedNOxIndex = 0.0f;
   simulatedCO2 = 0;
 
-  sensorSCD4xSimulate(3,10, simulatedTemperatureF, simulatedHumidity,simulatedCO2);
+  sensorSCD4xSimulate(1,10, simulatedTemperatureF, simulatedHumidity,simulatedCO2);
   sensorSEN54Simulate(simulatedPM25, simulatedVOCIndex);
   simulatedNOxIndex = randomFloatRange(sensorNOxMin, sensorNOxMax);
   debugMessage(String("returning simulated noxIndex: ") + simulatedNOxIndex,1);
@@ -1729,7 +1729,7 @@ void sensorSCD4xSimulate(
       // create new base values
       tempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
       humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-      co2 = random(sensorCO2Min, sensorCO2Max);
+      co2 = random(sensorCO2Min, sensorCO2Bad); // starts values in highly likely scenarios
       cycleCount++;
     }
     else
@@ -1806,7 +1806,7 @@ bool sensorSCD4xRead()
 
   #ifdef HARDWARE_SIMULATE
     success = true;
-    sensorSCD4xSimulate(3, 10, temperatureF, humidity, co2);
+    sensorSCD4xSimulate(1, 10, temperatureF, humidity, co2);
   #else
     #ifdef SENSOR_SEN54SCD40
       uint16_t error;

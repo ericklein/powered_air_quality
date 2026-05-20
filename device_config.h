@@ -1,7 +1,7 @@
 #pragma once
 
-#define PAQ
-// #define CLIMATRON
+// #define PAQ
+#define CLIMATRON
 
 #if defined(PAQ) && defined(CLIMATRON)
   #error "Define only one device target: PAQ or CLIMATRON"
