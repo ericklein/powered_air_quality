@@ -36,6 +36,7 @@ uint8_t pm25Range(float);
 uint8_t vocRange(float);
 uint8_t noxRange(float);
 char OWMtoMeteoconIcon(const char*);
+void arcMeter(uint16_t, uint16_t, uint16_t, uint16_t);
 
 // ***** Screen display routines, typically one per major screen ***** //
 
@@ -298,19 +299,16 @@ void screenNOX()
   constexpr uint16_t circleInnerRadius = 100;
   const uint16_t xNOxCircle = (display.width()/2);
   const uint16_t yNOxCircle = (display.height()*3/4);
-  const uint16_t xNOxLabel = xNOxCircle + 20;
+  const uint16_t xNOxLabel = xNOxCircle;
   const uint16_t yNOxLabel = yNOxCircle;
 
   debugMessage("screenNOX() start",1);
 
   screenHelperHeaderBar(totalNOxIndex, NOX_DATA, "NOx Level");
 
-  // draw segmented arc
-
-  display.drawSmoothArc(xNOxCircle,yNOxCircle,circleOuterRadius,circleInnerRadius,150,270, warningColor[3],TFT_BLACK, true);
-  display.drawSmoothArc(xNOxCircle,yNOxCircle,circleOuterRadius,circleInnerRadius,180,225, warningColor[2],TFT_BLACK, false);
-  display.drawSmoothArc(xNOxCircle,yNOxCircle,circleOuterRadius,circleInnerRadius,90,160, warningColor[0],TFT_BLACK, true);
-  display.drawSmoothArc(xNOxCircle,yNOxCircle,circleOuterRadius,circleInnerRadius,135,180, warningColor[1],TFT_BLACK, false);
+  // Draw segmented arc using the arcMeter() graphing helper function, including marker to indicate
+  // current NOx quality tier.
+  arcMeter(xNOxCircle,yNOxCircle,display.width(),noxRange(totalNOxIndex.getCurrent()) );
 
   // // NOx color circle
   // display.fillSmoothCircle(xNOxCircle,yNOxCircle,circleRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));
@@ -764,4 +762,42 @@ char OWMtoMeteoconIcon(const char* icon)
 
   debugMessage("OWM icon not matched to Meteocon, why?", 1);
   return '?'; // error handling for calling function
+}
+
+// Draw an "arc meter" to use in portraying the relative quality of an environmental value using a
+// four tier scale from worst through good and using the colors specified by the warning color scheme .
+// Can draw the arc meter at any size based on an (x,y) coordinate for its center and the desired
+// overeall width of the meter itself. Will also display a dot in the proper tier corresponding to 
+// a specicifed quality rating on the range [0-3] with 0 = good and 3 = bad as reflected by the
+// warning color scheme.
+// 
+// Does not check that the arc will fit on screen (or be large enough to be clearly legible).
+//
+// Only draws the arc meter, so displaying the current numerical value or adding a label needs to be
+// handled separately.
+void arcMeter(uint16_t xcenter, uint16_t ycenter, uint16_t width, uint16_t quality)
+{
+  // screen layout assists in pixels
+  const uint16_t arcOuterRadius = 0.5 + (0.9 * width/2);
+  const uint16_t arcInnerRadius = 0.5 + (0.7 * width/2);
+
+  // draw segmented arcs. First and last segments are drawn with rounded ends so are rendered first,
+  // interior segments with straight ends are then added over the top.  Drawing order matters here.
+  display.drawSmoothArc(xcenter,ycenter,arcOuterRadius,arcInnerRadius,180,270, warningColor[3],TFT_BLACK, true);
+  display.drawSmoothArc(xcenter,ycenter,arcOuterRadius,arcInnerRadius,90,180, warningColor[0],TFT_BLACK, true);
+  display.drawSmoothArc(xcenter,ycenter,arcOuterRadius,arcInnerRadius,180,225, warningColor[2],TFT_BLACK, false);
+  display.drawSmoothArc(xcenter,ycenter,arcOuterRadius,arcInnerRadius,135,180, warningColor[1],TFT_BLACK, false);
+
+  // Add an indicator dot in the zone in the arc that corresponds to the specified quality value. Confirms
+  // that the quality value is in the valid range before drawing.
+  if( (quality >= 0) && (quality <= 3)) {
+    uint16_t dotrblack = 0.075*(width/2);  // radius of the black ring surrounding the indicator dot
+    uint16_t dotrwhite = 0.05*(width/2);   // radius of the white circle inside the surrounding ring
+    double angle = (22.5 + (quality * 45.0)) * PI / 180.0;  // Convert to radians for cos() and sin() below
+
+    uint16_t xdot = xcenter - (0.5+(cos(angle) * 0.8 * (width/2))) + 1;  // +1 centers better, perhaps due to rendering
+    uint16_t ydot = ycenter - (0.5+(sin(angle) * 0.8 * (width/2))) + 1;  // +1 centers better, perhaps due to rendering
+    display.fillSmoothCircle(xdot,ydot,dotrblack,TFT_BLACK);
+    display.fillSmoothCircle(xdot,ydot,dotrwhite,TFT_WHITE);
+  }
 }
