@@ -220,37 +220,34 @@ void screenPM25()
 void screenVOC()
 {
   // screen layout assists in pixels
-  constexpr uint8_t kLegendHeight =  20;
-  constexpr uint8_t kLegendWidth =   10;
-  const uint16_t xLegend =      display.width() - kXMargins - 5 - kLegendWidth;
-  const uint16_t yLegend =      ((display.height()/3) + (uint8_t(3.5*kLegendHeight)));
-  const uint16_t yValue =       display.width()/6;
+  const uint16_t xCircle = (display.width()/2);
+  const uint16_t yCircle = (display.height()*4/5);
+  const uint16_t xValue = xCircle;
+  const uint16_t yValue = yCircle - 50;
 
   debugMessage("screenVOC() start",1);
 
   screenHelperHeaderBar(totalVOCIndex, VOC_DATA, "VOC Level");
 
-  display.setFreeFont(&FreeSans24pt7b);
-  display.setTextDatum(MC_DATUM);
-
-  // Display latest VOCIndex numeric value at the top of the graph.  If no current
-  // value display "NA" instead.
+  // If VOCIndex has no values, alert the user
   if (totalVOCIndex.getStored() == 0) {
+    display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(TFT_RED);
-    display.drawString("NA", (display.width() / 2), yValue);
+    display.setTextDatum(MC_DATUM);
+    display.drawString("No data", (display.width() / 2), (display.height() / 2));
   }
   else {
-    // VOC numeric value
-    display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));  // Use highlight color look-up 
-    display.drawString(String(uint16_t(totalVOCIndex.getCurrent())), (display.width()/2), yValue);
-  }
-  
-  // Graph recent VOCIndex values using retained storage data
-  screenHelperGraph(kXMargins, display.height()/3, (display.width()-(2*kXMargins)-kLegendWidth-10),((display.height()*2/3)-kYMargins), totalVOCIndex, VOC_DATA, "Recent values");
+    // Draw segmented arc showing color range and current VOCIndex in that range
+    arcMeter(xCircle,yCircle,display.width(),vocRange(totalVOCIndex.getCurrent()));
 
-  // legend for VOC color wheel
-  for(uint8_t loop = 0; loop < 4; loop++){
-    display.fillRect(xLegend,(yLegend-(loop*kLegendHeight)),kLegendWidth,kLegendHeight,warningColor[loop]);
+    // Display VOCIndex value and label inside the arc
+    display.setFreeFont(&FreeSans24pt7b);
+    display.setTextDatum(MC_DATUM);
+    display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));  // Use highlight color look-up 
+    display.drawString(String(int(totalVOCIndex.getCurrent() +.5)),xValue,yValue);
+    display.setFreeFont(&FreeSans18pt7b);
+    display.setTextColor(TFT_WHITE);
+    display.drawString(getWarningLabel(VOC_DATA,totalVOCIndex.getCurrent()), xValue, yCircle);
   }
 
   debugMessage("screenVOC() end",1);
@@ -260,7 +257,7 @@ void screenVOC()
 void screenCO2()
 {
   // screen layout assist(s) in pixels
-  const uint16_t yValue = display.width()/3;
+  const uint16_t yValue = (display.height()*2/5);
 
   debugMessage("screenCO2() start",1);
 
@@ -287,7 +284,7 @@ void screenCO2()
     display.drawString((String(uint16_t(totalCO2.getCurrent())) + "ppm"), (display.width()-(2*kXMargins)), yValue - 3);
 
     // recent CO₂ graph
-    screenHelperGraph(kXMargins, yValue, (display.width()-(2*kXMargins)),((display.height()*2/3)-kYMargins), totalCO2, CO2_DATA, " ");
+    screenHelperGraph(kXMargins, yValue, (display.width()-(2*kXMargins)),((display.height()-yValue)-kYMargins), totalCO2, CO2_DATA, "");
   }
   debugMessage("screenCO2() end",1);
 }
@@ -295,33 +292,26 @@ void screenCO2()
 void screenNOX()
 {
   // screen layout assists in pixels
-  constexpr uint16_t circleOuterRadius = 140;
-  constexpr uint16_t circleInnerRadius = 100;
-  const uint16_t xNOxCircle = (display.width()/2);
-  const uint16_t yNOxCircle = (display.height()*3/4);
-  const uint16_t xNOxLabel = xNOxCircle;
-  const uint16_t yNOxLabel = yNOxCircle;
+  const uint16_t xCircle = (display.width()/2);
+  const uint16_t yCircle = (display.height()*4/5);
+  const uint16_t xValue = xCircle;
+  const uint16_t yValue = yCircle - 50;
 
   debugMessage("screenNOX() start",1);
 
   screenHelperHeaderBar(totalNOxIndex, NOX_DATA, "NOx Level");
 
-  // Draw segmented arc using the arcMeter() graphing helper function, including marker to indicate
-  // current NOx quality tier.
-  arcMeter(xNOxCircle,yNOxCircle,display.width(),noxRange(totalNOxIndex.getCurrent()) );
+  // Draw segmented arc showing color ranges and current NOxIndex in one of those ranges
+  arcMeter(xCircle,yCircle,display.width(),noxRange(totalNOxIndex.getCurrent()) );
 
-  // // NOx color circle
-  // display.fillSmoothCircle(xNOxCircle,yNOxCircle,circleRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));
-  // display.fillSmoothCircle(xNOxCircle,yNOxCircle,circleRadius*0.8,TFT_BLACK);
-
-  // // NOx value and label (displayed inside circle)
-  display.setFreeFont(&FreeSans18pt7b);
+  // // NOx value and label inside the arc
+  display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
   display.setTextColor(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));  // Use highlight color look-up 
-  display.drawString(String(int(totalNOxIndex.getCurrent() +.5)),xNOxLabel,yNOxLabel);
-  // display.setTextColor(TFT_WHITE);
-  // display.setCursor(xNOxLabel,yNOxLabel);
-  // display.print("NOx");
+  display.drawString(String(int(totalNOxIndex.getCurrent() +.5)),xValue,yValue);
+  display.setFreeFont(&FreeSans18pt7b);
+  display.setTextColor(TFT_WHITE);
+  display.drawString(getWarningLabel(NOX_DATA,totalNOxIndex.getCurrent()), xValue, yCircle);
 
   debugMessage("screenNOX() end",1);
 }
@@ -510,11 +500,14 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
   debugMessage(String("screenHelperReportStatus() start"), 1); 
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
     if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (timeReportMS * reportFailureThreshold))) {
-        // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
-        // display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
+      // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
+      // display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
+      debugMessage(String("Report status on screen as false"),2);
     }
-    else
-        display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
+    else {
+      display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
+      debugMessage(String("Report status on screen as true"),2);
+    }
   #endif
   debugMessage(String("screenHelperReportStatus() end"), 1);   
 }
@@ -588,9 +581,6 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   capacity = measure.getCapacity();
 
   display.fillRect(initialX,initialY,xWidth,yHeight,TFT_BLACK);
-  display.setFreeFont();
-  display.setTextDatum(MC_DATUM);
-  display.setTextColor(TFT_WHITE);
 
   // Save ourselves some work if we don't have data to plot
   if(stored == 0) {
@@ -612,7 +602,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
       if(value < minValue) minValue = value;
       if(value > maxValue) maxValue = value;
     }
-    debugMessage(String("Min value in samples is ") + minValue + ", max is " + maxValue, 2);
+    debugMessage(String("Min sample value is ") + minValue + ", max is " + maxValue, 2);
 
     // Since we have data, attempt to scale graph area based on range in data values but with some
     // padding above and below the graphed data itself.  Also have max and min labels
@@ -622,16 +612,20 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
     average = (maxValue + minValue)/2.0;
     maxValue = (int16_t)(10.0 * ceil((average + range)/10.0));
     minValue = (int16_t)(10.0 * floor((average - range)/10.0));
-
   }
 
-  // draw the X axis description, if provided, and set the position of the horizontal axis line
+  display.setFreeFont(&FreeSans9pt7b);
+  display.setTextDatum(TL_DATUM);
+  display.setTextColor(TFT_WHITE);
+
+  // set the position of the horizontal axis line
+  text1Height = display.fontHeight();
+  graphLineY = initialY + yHeight - text1Height - labelSpacer;
+
+  // draw the X axis description, if provided
   if (strlen(xLabel.c_str())) {
     text1Width = display.textWidth(xLabel);
-    text1Height = display.fontHeight();
-    graphLineY = initialY + yHeight - text1Height - labelSpacer;
-    display.setCursor((((initialX + xWidth)/2) - (text1Width/2)), (initialY + yHeight - text1Height));
-    display.print(xLabel);
+    display.drawString(xLabel, (((initialX + xWidth)/2) - (text1Width/2)), (initialY + yHeight - text1Height));
   }
 
   // calculate text width and height of longest Y axis label (which we assume is the max value label)
@@ -640,11 +634,10 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   graphLineX = initialX + text1Width + labelSpacer;
   
   // draw top Y axis label
-  display.setCursor(initialX, initialY);
-  display.print(int16_t(maxValue));
+  display.drawString(String(int16_t(maxValue)), initialX, initialY);
+
   // draw bottom Y axis label
-  display.setCursor(initialX, graphLineY-text1Height); 
-  display.print(int16_t(minValue));
+  display.drawString(String(int16_t(minValue)), initialX, graphLineY-text1Height);
 
   // Draw vertical axis
   display.drawFastVLine(graphLineX,initialY,(graphLineY-initialY), TFT_WHITE);
@@ -661,7 +654,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   for(loop=capacity-stored;loop<capacity;loop++) {
     x = graphLineX + 10 + (loop*deltaX);  // Include 10 pixel padding for Y axis
     y = graphLineY - (((measure.getMember(loop) - minValue)/(maxValue-minValue)) * (graphLineY-initialY));
-    debugMessage(String("Array ") + loop + " y value is " + y,2);
+    debugMessage(String("Graph position ") + loop + "'s y value is " + y,2);
 
     // Draw a filled circle to represent the data value, using the warning color scheme appropriate for
     // the specified sensor data type.
