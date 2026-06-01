@@ -8,12 +8,13 @@
 #include "config.h"
 #include "powered_air_quality.h"
 #include <TFT_eSPI.h>  // https://github.com/Bodmer/TFT_eSPI
+#include <PNGdec.h>
 
 // fonts and glyphs
-#include "Fonts/meteocons12pt7b.h"
-#include "Fonts/meteocons16pt7b.h"
-#include "Fonts/meteocons24pt7b.h"
-#include "glyphs.h"
+#include "ui/meteocons12pt7b.h"
+#include "ui/meteocons16pt7b.h"
+#include "ui/meteocons24pt7b.h"
+#include "ui/glyphs.h"
 
 // Shared helper function(s) and globals
 extern uint8_t networkRSSIRead();
@@ -37,31 +38,89 @@ uint8_t vocRange(float);
 uint8_t noxRange(float);
 char OWMtoMeteoconIcon(const char*);
 void arcMeter(uint16_t, uint16_t, uint16_t, uint16_t);
+int pngDraw(PNGDRAW *pDraw);
+void drawPNGFromFlash(
+  const uint8_t *imageData,
+  size_t imageSize,
+  TFT_eSPI &display,
+  int16_t xpos,
+  int16_t ypos
+);
+void fillSmoothRoundRectWithBorder(
+    int32_t x, int32_t y,
+    int32_t w, int32_t h,
+    int32_t radius,
+    uint16_t fillColor,
+    uint16_t borderColor,
+    int32_t borderWidth = 2);
+
+PNG png; // PNG decoder instance
+
+struct DrawContext {
+  TFT_eSPI *display;
+  int16_t xpos;
+  int16_t ypos;
+};
 
 // ***** Screen display routines, typically one per major screen ***** //
 
 void screenSaver()
 {
+  // screen assist in pixels
+  constexpr uint8_t cornerRoundRadius = 4;
+  // constexpr uint8_t kXRowOne = 10;
+  // constexpr uint8_t kYColumnOne = 11;
+
   debugMessage("screenSaver() start",1);
 
   display.fillScreen(TFT_BLACK);
-  display.setTextDatum(TL_DATUM);
+  // temp/humdity
+  display.drawSmoothRoundRect(10,11,4,2,90,95,TFT_WHITE,TFT_BLACK);
+  // CO2
+  // display.drawSmoothRoundRect(110,11,4,2,200,95,TFT_WHITE,TFT_BLACK);
+  drawPNGFromFlash(co2_base_png, sizeof(co2_base_png), display,110,11);
 
-  // If no data available, display "Not available"
-  if (totalCO2.getStored() == 0) {
-    display.setFreeFont(&FreeSans18pt7b);
-    display.setTextColor(TFT_RED);
-    uint16_t textWidth = display.textWidth("Not available");
-    display.drawString("Not available", random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
-  }
-  else {
-    // Otherwise display the latest CO2 reading 
-    display.setFreeFont(&FreeSans24pt7b);
-    display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
-    uint16_t textWidth = display.textWidth(String(totalCO2.getCurrent()));
-    // Display CO2 value in random, valid location
-    display.drawString(String(uint16_t(totalCO2.getCurrent())), random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
-  }
+  // VOC
+  // display.drawSmoothRoundRect(10,117,4,2,91,112,TFT_WHITE,TFT_BLACK);
+    //display.fillSmoothRoundRect(10,117,91,112, cornerRoundRadius, getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));
+    fillSmoothRoundRectWithBorder(10,117,91,112,cornerRoundRadius,getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()),TFT_WHITE);
+
+  //display.drawString("VOC",display.width()/4,display.height()*3/4);
+  // PM2.5
+  // display.drawSmoothRoundRect(111,117,4,2,97,112,TFT_WHITE,TFT_BLACK);
+    // display.fillSmoothRoundRect(111,117,97,112, cornerRoundRadius, getWarningColor(PM_DATA,totalPM25.getCurrent()));
+    fillSmoothRoundRectWithBorder(111,117,97,112,cornerRoundRadius,getWarningColor(PM_DATA,totalPM25.getCurrent()),TFT_WHITE);
+
+  //display.drawString("PM25",display.width()*3/4,display.height()/4);
+  #ifdef CLIMATRON
+  // NOX
+  // display.drawSmoothRoundRect(218,117,4,2,96,112,TFT_WHITE,TFT_BLACK);
+      // display.fillSmoothRoundRect(218, 117, 96, 112, cornerRoundRadius, getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()) );
+      fillSmoothRoundRectWithBorder(218,117,96,112,cornerRoundRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()),TFT_WHITE);
+
+    //display.drawString("NOx",display.width()*3/4,display.height()*3/4);
+  #endif
+
+
+  // drawPNGFromFlash(bob, sizeof(bob), display, 40, 60);
+
+  // display.setTextDatum(TL_DATUM);
+
+  // // If no data available, display "Not available"
+  // if (totalCO2.getStored() == 0) {
+  //   display.setFreeFont(&FreeSans18pt7b);
+  //   display.setTextColor(TFT_RED);
+  //   uint16_t textWidth = display.textWidth("Not available");
+  //   display.drawString("Not available", random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
+  // }
+  // else {
+  //   // Otherwise display the latest CO2 reading 
+  //   display.setFreeFont(&FreeSans24pt7b);
+  //   display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
+  //   uint16_t textWidth = display.textWidth(String(totalCO2.getCurrent()));
+  //   // Display CO2 value in random, valid location
+  //   display.drawString(String(uint16_t(totalCO2.getCurrent())), random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
+  // }
   debugMessage("screenSaver() end",1);
 }
 
@@ -505,7 +564,8 @@ void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
       debugMessage(String("Report status on screen as false"),2);
     }
     else {
-      display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
+      drawPNGFromFlash(network_store_png, sizeof(network_store_png),display,initialX, initialY);
+      //display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
       debugMessage(String("Report status on screen as true"),2);
     }
   #endif
@@ -561,26 +621,24 @@ uint8_t noxRange(float noxIndex)
   return noxRange;
 }
 
-void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, uint16_t yHeight, Measure<kSampleCapacity> measure, uint8_t datatype, String xLabel)
+void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t width, uint16_t height, Measure<kSampleCapacity> measure, uint8_t datatype, String xLabel)
 {
   uint8_t stored, capacity;
   int8_t loop; // upper bound is kSampleCapacity definition (size of Measure retained storage)
-  uint16_t text1Width, text1Height;
+  uint16_t text1Width, text1Height, graphLineY;
   uint16_t deltaX, x, y, xp, yp;  // graphing positions
   float minValue, maxValue, value, range, average;
   bool firstpoint = true;
 
   // screen layout assists in pixels
   uint8_t labelSpacer = 2;
-  uint16_t graphLineX; // dynamically defined below
-  uint16_t graphLineY;
 
   debugMessage("screenHelperGraph() start",1);
 
   stored   = measure.getStored();
   capacity = measure.getCapacity();
 
-  display.fillRect(initialX,initialY,xWidth,yHeight,TFT_BLACK);
+  display.fillRect(initialX,initialY,width,height,TFT_BLACK);
 
   // Save ourselves some work if we don't have data to plot
   if(stored == 0) {
@@ -618,20 +676,27 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   display.setTextDatum(TL_DATUM);
   display.setTextColor(TFT_WHITE);
 
-  // set the position of the horizontal axis line
-  text1Height = display.fontHeight();
-  graphLineY = initialY + yHeight - text1Height - labelSpacer;
-
   // draw the X axis description, if provided
+  text1Height = display.fontHeight();
   if (strlen(xLabel.c_str())) {
+    graphLineY = initialY + height - text1Height - labelSpacer;
     text1Width = display.textWidth(xLabel);
-    display.drawString(xLabel, (((initialX + xWidth)/2) - (text1Width/2)), (initialY + yHeight - text1Height));
+    display.drawString(xLabel, (((initialX + width)/2) - (text1Width/2)), (initialY + height - text1Height));
+  }
+  else {
+    // there is no X axis label so use the entire height
+    graphLineY = initialY + height;
   }
 
   // calculate text width and height of longest Y axis label (which we assume is the max value label)
   text1Width = display.textWidth(String(maxValue));
   text1Height = display.fontHeight(); 
-  graphLineX = initialX + text1Width + labelSpacer;
+  uint16_t graphLineX = initialX + text1Width + labelSpacer;
+
+  // Draw vertical axis
+  display.drawFastVLine(graphLineX,initialY,(graphLineY-initialY), TFT_WHITE);
+  // Draw horitzonal axis
+  display.drawFastHLine(graphLineX,graphLineY,(width-graphLineX),TFT_WHITE);
   
   // draw top Y axis label
   display.drawString(String(int16_t(maxValue)), initialX, initialY);
@@ -639,35 +704,35 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t xWidth, ui
   // draw bottom Y axis label
   display.drawString(String(int16_t(minValue)), initialX, graphLineY-text1Height);
 
-  // Draw vertical axis
-  display.drawFastVLine(graphLineX,initialY,(graphLineY-initialY), TFT_WHITE);
-  // Draw horitzonal axis
-  display.drawFastHLine(graphLineX,graphLineY,(xWidth-graphLineX),TFT_WHITE);
-
   // Plot however many data points we have both with filled circles at each
   // point and lines connecting the points.  Color the filled circles with the
   // appropriate warning level color for the type of data being graphed.
-  deltaX = ((xWidth-graphLineX) - 10) / (kSampleCapacity-1);  // X distance between points, 10 pixel padding for Y axis
-  xp = graphLineX;
-  yp = graphLineY;
+  deltaX = ((width-graphLineX) - 10) / (kSampleCapacity-1);  // X distance between points, 10 pixel padding for Y axis
   firstpoint = true;  // Reset for plotting use
   for(loop=capacity-stored;loop<capacity;loop++) {
     x = graphLineX + 10 + (loop*deltaX);  // Include 10 pixel padding for Y axis
     y = graphLineY - (((measure.getMember(loop) - minValue)/(maxValue-minValue)) * (graphLineY-initialY));
     debugMessage(String("Graph position ") + loop + "'s y value is " + y,2);
 
-    // Draw a filled circle to represent the data value, using the warning color scheme appropriate for
-    // the specified sensor data type.
-    display.fillSmoothCircle(x,y,4,getWarningColor(datatype,measure.getMember(loop)) );
-
     if(firstpoint) {
       // If this is the first drawn point then don't try to draw a line
       firstpoint = false;
+      xp = x;
+      yp = y;
     }
     else {
       // Draw line from previous point (if one) to this point
       display.drawLine(xp,yp,x,y,TFT_WHITE);
     }
+
+    // Draw a filled circle representing the data value, using the warning color scheme appropriate for
+    // the specified sensor data type.
+    display.fillSmoothCircle(x,y,4,getWarningColor(datatype,measure.getMember(loop)));
+
+    // redraw the last circle to eliminate the line overdrawn on it
+    if (!firstpoint)
+      display.fillSmoothCircle(xp,yp,4,getWarningColor(datatype,measure.getMember(loop)));
+
     // Save x & y of this point to use as previous point for next one.
     xp = x;
     yp = y;
@@ -793,4 +858,75 @@ void arcMeter(uint16_t xcenter, uint16_t ycenter, uint16_t width, uint16_t quali
     display.fillSmoothCircle(xdot,ydot,dotrblack,TFT_BLACK);
     display.fillSmoothCircle(xdot,ydot,dotrwhite,TFT_WHITE);
   }
+}
+
+void drawPNGFromFlash(
+  const uint8_t *imageData,
+  size_t imageSize,
+  TFT_eSPI &display,
+  int16_t xpos,
+  int16_t ypos
+) {
+  DrawContext ctx = {
+    &display,
+    xpos,
+    ypos
+  };
+
+  if (png.openFLASH((uint8_t *)imageData, imageSize, pngDraw) == PNG_SUCCESS) {
+    display.startWrite();
+    png.decode(&ctx, 0);
+    display.endWrite();
+    //png.close();
+  }
+}
+
+// Callback function to renders each image line to the TFT
+int pngDraw(PNGDRAW *pDraw) {
+  DrawContext *ctx = (DrawContext *)pDraw->pUser;
+
+  uint16_t lineBuffer[ctx->display->width()];
+  uint8_t maskBuffer[1 + ((ctx->display->width() + 7) / 8)];
+
+  png.getLineAsRGB565(pDraw, lineBuffer, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
+
+  // for getAlphaMask's third parameter
+  // 1 -> preserve all visible alpha pixels
+  // 128 ->  cleaner hard edge, ignores faint antialiasing
+  // 255  -> only fully opaque pixels; often too aggressive
+
+  if (png.getAlphaMask(pDraw, maskBuffer, 100)) {
+    display.pushMaskedImage(ctx->xpos, ctx->ypos + pDraw->y, pDraw->iWidth, 1, lineBuffer, maskBuffer);
+  }
+
+  return 1;  // non-zero = continue decoding
+}
+
+void fillSmoothRoundRectWithBorder(
+    int32_t x, int32_t y,
+    int32_t w, int32_t h,
+    int32_t radius,
+    uint16_t fillColor,
+    uint16_t borderColor,
+    int32_t borderWidth)
+{
+    // Outer (border)
+    display.fillSmoothRoundRect(
+        x,
+        y,
+        w,
+        h,
+        radius,
+        borderColor
+    );
+
+    // Inner (fill)
+    display.fillSmoothRoundRect(
+        x + borderWidth,
+        y + borderWidth,
+        w - (2 * borderWidth),
+        h - (2 * borderWidth),
+        radius - borderWidth,
+        fillColor
+    );
 }

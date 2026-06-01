@@ -16,13 +16,13 @@
 
 // Configuration Step 5: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
-#define HARDWARE_SIMULATE
+// #define HARDWARE_SIMULATE
 
 // Configuration Step 6: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
 // #define INFLUX // Log data to InfluxDB server
-// #define THINGSPEAK  // Log data to ThingSpeak
+#define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration variables that are less likely to require changes
 

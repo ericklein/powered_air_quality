@@ -1,7 +1,7 @@
 #pragma once
 
-#define PAQ
-// #define CLIMATRON
+// #define PAQ
+#define CLIMATRON
 
 #if defined(PAQ) && defined(CLIMATRON)
   #error "Define only one device target: PAQ or CLIMATRON"
@@ -18,5 +18,5 @@
 // Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
-#define SENSOR_SEN66
-// #define SENSOR_SEN54SCD40
+// #define SENSOR_SEN66
+#define SENSOR_SEN54SCD40
