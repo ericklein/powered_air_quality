@@ -267,30 +267,32 @@ void loop() {
     }
   #endif
   if (touchEvent) {
+    debugMessage(String("touch input x=") + calibratedX + ", y=" + calibratedY,2);
     if (screenCurrent == sMain) {
-      debugMessage(String("input: touchpoint x=") + calibratedX + ", y=" + calibratedY,2);
-      // transition to appropriate component screen
-      if ((calibratedX < display.width()/2) && (calibratedY < display.height()/2)) {
-        // upper left quandrant
-        screenCurrent = sCO2;
+      if (calibratedY < 122) { // top components
+        if (calibratedX < 107) {
+          screenCurrent = sTempHum;
+        }
+        else {
+          screenCurrent = sCO2;
+        }
       }
-      else
-        if ((calibratedX < display.width()/2) && (calibratedY > display.height()/2)) {
-          // lower left quandrant
+      else {
+        if (calibratedX < 107) {
           screenCurrent = sVOC;
         }
-        else
-          if ((calibratedX > display.width()/2) && (calibratedY < display.height()/2)) {
-            // upper right quandrant
+        else {
+          #ifdef CLIMATRON
+            (calibratedX < 214) ? screenCurrent = sPM25 : screenCurrent = sNOX;
+          #else
             screenCurrent = sPM25;
-          }
-          else
-          // lower right quandrant, either temp/humidity (SCD40/SEN55) or NOx Index (SEN66)
-          screenCurrent = sNOX;
+          #endif
+        }
       }
-    else
-      // return to the main screen
+    }
+    else {
       screenCurrent = sMain;
+    }
     screenUpdate(screenCurrent);
     timeLastInputMS = millis();
   }
@@ -382,16 +384,15 @@ void screenUpdate(uint8_t screenCurrent)
       #endif
       break;
     case sNOX:
-      #ifdef SENSOR_SEN66  
-        screenNOX();
-        #ifdef CLIMATRON
-          stripOne.setOneColor(rgb565ToCRGB(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent() ))); 
-        #endif
-      #else
-        screenTempHumidity();
-        #ifdef CLIMATRON
-          stripOne.setOneColor(CRGB::Black);
-        #endif
+      screenNOX();
+      #ifdef CLIMATRON
+        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent() ))); 
+      #endif
+      break;
+    case sTempHum:
+      screenTempHumidity();
+      #ifdef CLIMATRON
+        stripOne.setOneColor(CRGB::Black);
       #endif
       break;
   }

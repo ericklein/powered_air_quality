@@ -34,7 +34,7 @@ const String OWMAQMPath = "air_pollution?";
 const String OWMPollutionLabel[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 
 // UI
-enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX};
+enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX, sTempHum};
 
 // screen layout assists in pixels
 constexpr uint8_t kXMargins = 5;

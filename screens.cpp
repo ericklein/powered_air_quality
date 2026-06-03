@@ -74,53 +74,24 @@ void screenSaver()
   debugMessage("screenSaver() start",1);
 
   display.fillScreen(TFT_BLACK);
-  // temp/humdity
-  display.drawSmoothRoundRect(10,11,4,2,90,95,TFT_WHITE,TFT_BLACK);
-  // CO2
-  // display.drawSmoothRoundRect(110,11,4,2,200,95,TFT_WHITE,TFT_BLACK);
-  drawPNGFromFlash(co2_base_png, sizeof(co2_base_png), display,110,11);
+  display.setTextDatum(TL_DATUM);
 
-  // VOC
-  // display.drawSmoothRoundRect(10,117,4,2,91,112,TFT_WHITE,TFT_BLACK);
-    //display.fillSmoothRoundRect(10,117,91,112, cornerRoundRadius, getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));
-    fillSmoothRoundRectWithBorder(10,117,91,112,cornerRoundRadius,getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()),TFT_WHITE);
+  // If no data available, display "Not available"
+  if (totalCO2.getStored() == 0) {
+    display.setFreeFont(&FreeSans18pt7b);
+    display.setTextColor(TFT_RED);
+    uint16_t textWidth = display.textWidth("Not available");
+    display.drawString("Not available", random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
+  }
+  else {
+    // Otherwise display the latest CO2 reading 
+    display.setFreeFont(&FreeSans24pt7b);
+    display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
+    uint16_t textWidth = display.textWidth(String(totalCO2.getCurrent()));
+    // Display CO2 value in random, valid location
+    display.drawString(String(uint16_t(totalCO2.getCurrent())), random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
+  }
 
-  //display.drawString("VOC",display.width()/4,display.height()*3/4);
-  // PM2.5
-  // display.drawSmoothRoundRect(111,117,4,2,97,112,TFT_WHITE,TFT_BLACK);
-    // display.fillSmoothRoundRect(111,117,97,112, cornerRoundRadius, getWarningColor(PM_DATA,totalPM25.getCurrent()));
-    fillSmoothRoundRectWithBorder(111,117,97,112,cornerRoundRadius,getWarningColor(PM_DATA,totalPM25.getCurrent()),TFT_WHITE);
-
-  //display.drawString("PM25",display.width()*3/4,display.height()/4);
-  #ifdef CLIMATRON
-  // NOX
-  // display.drawSmoothRoundRect(218,117,4,2,96,112,TFT_WHITE,TFT_BLACK);
-      // display.fillSmoothRoundRect(218, 117, 96, 112, cornerRoundRadius, getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()) );
-      fillSmoothRoundRectWithBorder(218,117,96,112,cornerRoundRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()),TFT_WHITE);
-
-    //display.drawString("NOx",display.width()*3/4,display.height()*3/4);
-  #endif
-
-
-  // drawPNGFromFlash(bob, sizeof(bob), display, 40, 60);
-
-  // display.setTextDatum(TL_DATUM);
-
-  // // If no data available, display "Not available"
-  // if (totalCO2.getStored() == 0) {
-  //   display.setFreeFont(&FreeSans18pt7b);
-  //   display.setTextColor(TFT_RED);
-  //   uint16_t textWidth = display.textWidth("Not available");
-  //   display.drawString("Not available", random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
-  // }
-  // else {
-  //   // Otherwise display the latest CO2 reading 
-  //   display.setFreeFont(&FreeSans24pt7b);
-  //   display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
-  //   uint16_t textWidth = display.textWidth(String(totalCO2.getCurrent()));
-  //   // Display CO2 value in random, valid location
-  //   display.drawString(String(uint16_t(totalCO2.getCurrent())), random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
-  // }
   debugMessage("screenSaver() end",1);
 }
 
@@ -132,32 +103,26 @@ void screenMain()
 
   debugMessage("screenMain() start",1);
 
-  display.setFreeFont(&FreeSans18pt7b);
+  display.setFreeFont(&FreeSans12pt7b);
   display.setTextColor(TFT_BLACK);
   display.setTextDatum(MC_DATUM);
 
-  display.fillScreen(TFT_BLACK);
+display.fillScreen(TFT_BLACK);
+  // temp/humdity
+  display.drawSmoothRoundRect(10,11,4,2,90,95,TFT_WHITE,TFT_BLACK);
   // CO2
-  display.fillSmoothRoundRect(0, 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, getWarningColor(CO2_DATA,totalCO2.getCurrent()) );
-  display.drawString("CO2",display.width()/4,display.height()/4);
+  // display.drawSmoothRoundRect(110,11,4,2,200,95,TFT_WHITE,TFT_BLACK);
+  drawPNGFromFlash(co2_base_png, sizeof(co2_base_png), display,110,11);
+  // VOC
+  fillSmoothRoundRectWithBorder(10,117,91,112,cornerRoundRadius,getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()),TFT_WHITE);
+  display.drawString("VOC",50,199);
   // PM2.5
-  display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth), 0, ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, getWarningColor(PM_DATA,totalPM25.getCurrent()) ); 
-  display.drawString("PM25",display.width()*3/4,display.height()/4);
-  // VOC Index
-  display.fillSmoothRoundRect(0, ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()) );
-  display.drawString("VOC",display.width()/4,display.height()*3/4);
-  #ifdef SENSOR_SEN66
-    // NOx index
-    display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth), ((display.height()/2)+halfBorderWidth), ((display.width()/2)-halfBorderWidth), ((display.height()/2)-halfBorderWidth), cornerRoundRadius, getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()) );
-    display.drawString("NOx",display.width()*3/4,display.height()*3/4);
-  #else
-    // Temperature
-    display.fillSmoothRoundRect(((display.width()/2)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,getWarningColor(TEMP_DATA,totalTemperatureF.getCurrent()) );
-    display.setFreeFont(&meteocons24pt7b);
-    display.drawString("+",display.width()*5/8,display.height()*3/4);
-    // Humdity
-    display.fillSmoothRoundRect((((display.width()*3)/4)+halfBorderWidth),((display.height()/2)+halfBorderWidth),((display.width()/4)-halfBorderWidth),((display.height()/2)-halfBorderWidth),cornerRoundRadius,TFT_GREEN);
-    display.drawBitmap(((display.width()*7/8)-10),((display.height()*3/4)-14), bitmapHumidityIconSmall, 20, 28, TFT_BLACK);
+  fillSmoothRoundRectWithBorder(111,117,97,112,cornerRoundRadius,getWarningColor(PM_DATA,totalPM25.getCurrent()),TFT_WHITE);
+  display.drawString("PM25",150,199);
+  #ifdef CLIMATRON
+    // NOX
+    fillSmoothRoundRectWithBorder(218,117,96,112,cornerRoundRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()),TFT_WHITE);
+    display.drawString("NOx",250,199);
   #endif
 
   debugMessage("screenMain() end",1);
