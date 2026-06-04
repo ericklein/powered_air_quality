@@ -107,6 +107,7 @@ extern uint8_t noxRange(float);
   extern bool mqttConnect();
   extern void mqttPublish(const char* topic, const String& payload);
   extern const char* generateMQTTTopic(String key);
+  extern bool mqttPublishValue(String key, const String& payload);
 
   #ifdef HASSIO_MQTT
     extern void hassio_mqtt_publish(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2);
@@ -661,22 +662,16 @@ void samplePost(uint8_t& numSamples)
             const char* topic;
 
             // publish hardware data
-            topic = generateMQTTTopic(VALUE_KEY_RSSI);
-            mqttPublish(topic, String(hardwareData.rssi));
+            mqttPublishValue(VALUE_KEY_RSSI, String(hardwareData.rssi));
 
             // publish sensor data
-            topic = generateMQTTTopic(VALUE_KEY_TEMPERATURE);
-            mqttPublish(topic, String(avgTemperatureF));
-            topic = generateMQTTTopic(VALUE_KEY_HUMIDITY);
-            mqttPublish(topic, String(avgHumidity));
-            topic = generateMQTTTopic(VALUE_KEY_PM25);
-            mqttPublish(topic, String(avgPM25));
-            topic = generateMQTTTopic(VALUE_KEY_VOC);
-            mqttPublish(topic, String(avgVOC));
-            topic = generateMQTTTopic(VALUE_KEY_CO2);
-            mqttPublish(topic, String(avgCO2));
-            topic = generateMQTTTopic(VALUE_KEY_NOX);
-            mqttPublish(topic, String(avgNOX));
+            mqttPublishValue(VALUE_KEY_TEMPERATURE, String(avgTemperatureF));
+            mqttPublishValue(VALUE_KEY_HUMIDITY, String(avgHumidity));
+            mqttPublishValue(VALUE_KEY_PM25, String(avgPM25));
+            mqttPublishValue(VALUE_KEY_VOC, String(avgVOC));
+            mqttPublishValue(VALUE_KEY_CO2, String(avgCO2));
+            mqttPublishValue(VALUE_KEY_NOX, String(avgNOX));
+
 
             #ifdef HASSIO_MQTT
               debugMessage("Establishing MQTT for Home Assistant",1);
@@ -816,7 +811,7 @@ bool networkOpenWiFiManager()
     WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",defaultMQTTBroker.c_str(),30);;
     WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", defaultMQTTPort.c_str(), 5);
     WiFiManagerParameter mqttUser("mqttUser", "MQTT username", defaultMQTTUser.c_str(), 20);
-    WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", defaultMQTTPassword.c_str(), 20);
+    WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", defaultMQTTPassword.c_str(), 26);
 
     wfm.addParameter(&mqttBroker);
     wfm.addParameter(&mqttPort);

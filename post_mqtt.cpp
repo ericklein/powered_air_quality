@@ -50,7 +50,8 @@
         debugMessage(String("Connected to MQTT broker ") + mqttBrokerConfig.host,1);
       } 
       else {
-      debugMessage(String("MQTT connection to ") + mqttBrokerConfig.host + " failed, rc=" + mqtt.state(),1);
+      debugMessage(String("MQTT connection to ") + mqttBrokerConfig.host + String(":") + mqttBrokerConfig.port + " failed, rc=" + mqtt.state(),1);
+      debugMessage(String("MQTT user: ") + mqttBrokerConfig.user.c_str() + String(", password: ") + mqttBrokerConfig.password.c_str(),1);
       }
     }
     return connected;
@@ -67,6 +68,31 @@
       }
       else
         // IMPROVEMENT: topic is not being printed
+        debugMessage(String("MQTT publish to topic ") + topic + " failed",1);
+    }
+    else {
+      debugMessage("MQTT not connected during publish",1);
+    }
+    return success;
+  }
+
+  // Publish a value to MQTT, synthesizing the relevant topic based on device and site
+  // configuration data.  The KEY passed in should correspond to the value being published,
+  // and is defined in data.h.
+  bool mqttPublishValue(String key, const String& payload) {
+      bool success = false;
+
+    // Generate the MQTT topic from site configuration data and the provided value-specific key
+    String topic = endpointPath.site + "/" + endpointPath.location + "/" + endpointPath.room +
+      "/" + hardwareDeviceType + "/" + endpointPath.deviceID + "/" + key;
+
+    // Confirm we're connected to the MQTT broker, and if so publish to the generated topic
+    if (mqtt.connected()) {
+      if (mqtt.publish(topic.c_str(), payload.c_str())) {
+        success = true;
+        debugMessage(String("MQTT publish topic is ") + topic + ", message is " + payload,2);
+      }
+      else
         debugMessage(String("MQTT publish to topic ") + topic + " failed",1);
     }
     else {
