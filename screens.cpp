@@ -7,8 +7,8 @@
 #include <Measure.hpp>
 #include "config.h"
 #include "powered_air_quality.h"
-#include <TFT_eSPI.h>  // https://github.com/Bodmer/TFT_eSPI
-#include <PNGdec.h>
+#include <TFT_eSPI.h> // https://github.com/Bodmer/TFT_eSPI
+#include <PNGdec.h>   // https://github.com/bitbank2/PNGdec
 
 // fonts and glyphs
 #include "ui/meteocons12pt7b.h"
@@ -182,37 +182,32 @@ void screenPM25()
 {
   // screen layout assists in pixels
   const uint16_t  xOutdoorMargin = ((display.width() / 2) + kXMargins);
-  // temp & humidity
-  constexpr uint16_t  yPollution = 210;
+
   // pm25 rings
   const uint16_t  xIndoorPMCircle = (display.width() / 4);
   const uint16_t  xOutdoorPMCircle = (display.width()*3/4);
-  constexpr uint16_t  yPMCircles = 123;
+  constexpr uint16_t  yPMCircles = 150;
   constexpr uint16_t  circleRadius = 65;
-  // inside the pm25 rings
-  const uint16_t  xIndoorCircleText = (xIndoorPMCircle - 18);
-  const uint16_t  xOutdoorCircleText = (xOutdoorPMCircle - 18);
 
   debugMessage("screenPM25() start",1);
 
-  screenHelperHeaderBar(totalPM25, PM_DATA, "PM2.5 Levels");
+  screenHelperHeaderBar(totalPM25, PM_DATA, "PM 2.5");
 
   display.setTextDatum(MC_DATUM);
 
   // Indoor PM2.5 ring
   display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius,getWarningColor(PM_DATA,totalPM25.getCurrent()));
   display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
+  // ? 360 arc?
 
   // Indoor pm25 value and label inside the circle
-  display.setFreeFont(&FreeSans12pt7b);
+  display.setFreeFont(&FreeSans18pt7b);
   display.setTextColor(getWarningColor(PM_DATA,totalPM25.getCurrent()));  // Use highlight color look-up
-  display.setCursor(xIndoorCircleText,yPMCircles);
-  display.print(totalPM25.getCurrent());
+  display.drawFloat(totalPM25.getCurrent(), 1, xIndoorPMCircle, yPMCircles);
   // label
-  display.setTextColor(TFT_WHITE);
-  display.setCursor(xIndoorCircleText,yPMCircles+23);
-  display.setFreeFont(&FreeSans9pt7b);
-  display.print("PM25");
+  // display.setTextColor(TFT_WHITE);
+  // display.setFreeFont(&FreeSans9pt7b);
+  // display.drawString("PM25", xIndoorCircleText,yPMCircles+23);
   
   // Outside
   // do we have OWM Air Quality data to display?
@@ -222,21 +217,17 @@ void screenPM25()
     display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
     // outdoor pm25 value and label inside the circle
-    display.setFreeFont(&FreeSans12pt7b);
+    //display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(getWarningColor(PM_DATA,owmAirQuality.pm25)); // Use highlight color look-up 
-    display.setCursor(xOutdoorCircleText, yPMCircles);
-    display.print(owmAirQuality.pm25);
+    display.drawFloat(owmAirQuality.pm25, 1, xOutdoorPMCircle, yPMCircles);
     //label
-    display.setTextColor(TFT_WHITE);
-    display.setCursor(xOutdoorCircleText,yPMCircles + 23);
-    display.setFreeFont(&FreeSans9pt7b);
-    display.print("PM25");
-
-    // outside AQI
-    display.setCursor(xOutdoorMargin, yPollution);
-    display.print(OWMPollutionLabel[(owmAirQuality.aqi)]);
-    display.setCursor(xOutdoorMargin, yPollution + 15);
-    display.print("air pollution");
+    // display.setTextColor(TFT_WHITE);
+    // display.setFreeFont(&FreeSans9pt7b);
+    // display.drawString("PM25", xOutdoorCircleText,yPMCircles + 23);
+  }
+  else
+  {
+    // handle this case with an error message
   }
   debugMessage("screenPM25() end", 1);
 }
@@ -253,11 +244,12 @@ void screenVOC()
 
   screenHelperHeaderBar(totalVOCIndex, VOC_DATA, "VOC Level");
 
+  display.setTextDatum(MC_DATUM);
+
   // If VOCIndex has no values, alert the user
   if (totalVOCIndex.getStored() == 0) {
     display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(TFT_RED);
-    display.setTextDatum(MC_DATUM);
     display.drawString("No data", (display.width() / 2), (display.height() / 2));
   }
   else {
@@ -266,9 +258,8 @@ void screenVOC()
 
     // Display VOCIndex value and label inside the arc
     display.setFreeFont(&FreeSans24pt7b);
-    display.setTextDatum(MC_DATUM);
     display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));  // Use highlight color look-up 
-    display.drawString(String(int(totalVOCIndex.getCurrent() +.5)),xValue,yValue);
+    display.drawFloat((totalVOCIndex.getCurrent() +.5), 0, xValue, yValue);
     display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(TFT_WHITE);
     display.drawString(getWarningLabel(VOC_DATA,totalVOCIndex.getCurrent()), xValue, yCircle);
@@ -332,7 +323,7 @@ void screenNOX()
   display.setFreeFont(&FreeSans24pt7b);
   display.setTextDatum(MC_DATUM);
   display.setTextColor(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));  // Use highlight color look-up 
-  display.drawString(String(int(totalNOxIndex.getCurrent() +.5)),xValue,yValue);
+  display.drawFloat((totalNOxIndex.getCurrent() +.5), 0, xValue, yValue);
   display.setFreeFont(&FreeSans18pt7b);
   display.setTextColor(TFT_WHITE);
   display.drawString(getWarningLabel(NOX_DATA,totalNOxIndex.getCurrent()), xValue, yCircle);
@@ -438,7 +429,8 @@ void screenNOX()
 void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, String header)
 {
   // screen layout assists in pixels
-  const uint8_t   yStatusRegionFloor = kYStatusRegion - 7;  
+  const uint8_t yStatusRegionFloor = kYStatusRegion - 7;
+  const uint8_t yLabels = display.height() / 4; 
   constexpr uint8_t helperXSpacing = 15;
   constexpr uint8_t wifiBarHeightIncrement = 3;
   constexpr uint8_t wifiBarWidth = 3;
@@ -458,8 +450,8 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
     display.setFreeFont(&FreeSans12pt7b);
     display.setTextColor(TFT_WHITE);
     display.setTextDatum(MC_DATUM);
-    display.drawString("Indoor", display.width()/4, display.height()/6);
-    display.drawString("Outside", (display.width()*3/4), display.height()/6);
+    display.drawString("Indoor", display.width()/4, yLabels);
+    display.drawString("Outside", (display.width()*3/4), yLabels);
   }
   else {
     // bar is colored with the warning color of the most recent sample

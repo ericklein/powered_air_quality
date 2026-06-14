@@ -21,6 +21,24 @@
      #pragma once
      #include "device_config.h"
 
+// Comment out the #defines below with // to stop that font being loaded
+// The ESP8366 and ESP32 have plenty of memory so commenting out fonts is not
+// normally necessary. If all fonts are loaded the extra FLASH space required is
+// about 17Kbytes. To save FLASH space only enable the fonts you need!
+
+// #define LOAD_GLCD   // Font 1. Original Adafruit 8 pixel font needs ~1820 bytes in FLASH
+// #define LOAD_FONT2  // Font 2. Small 16 pixel high font, needs ~3534 bytes in FLASH, 96 characters
+// #define LOAD_FONT4  // Font 4. Medium 26 pixel high font, needs ~5848 bytes in FLASH, 96 characters
+// #define LOAD_FONT6  // Font 6. Large 48 pixel font, needs ~2666 bytes in FLASH, only characters 1234567890:-.apm
+// #define LOAD_FONT7  // Font 7. 7 segment 48 pixel font, needs ~2438 bytes in FLASH, only characters 1234567890:-.
+// #define LOAD_FONT8  // Font 8. Large 75 pixel font needs ~3256 bytes in FLASH, only characters 1234567890:-.
+//#define LOAD_FONT8N // Font 8. Alternative to Font 8 above, slightly narrower, so 3 digits fit a 160 pixel TFT
+#define LOAD_GFXFF  // FreeFonts. Include access to the 48 Adafruit_GFX free fonts FF1 to FF48 and custom fonts
+
+// Comment out the #define below to stop the SPIFFS filing system and smooth font code being loaded
+// this will save ~20kb
+// #define SMOOTH_FONT
+
      ///////////////////////////////////////////////////////
      //   User configuration selection lines are below    //
      ///////////////////////////////////////////////////////
@@ -318,22 +336,22 @@
 
 // These are the pins for ESP8266 boards
 //      Name   GPIO    NodeMCU      Function
-#define PIN_D0  16  // GPIO16       WAKE
-#define PIN_D1   5  // GPIO5        User purpose
-#define PIN_D2   4  // GPIO4        User purpose
-#define PIN_D3   0  // GPIO0        Low on boot means enter FLASH mode
-#define PIN_D4   2  // GPIO2        TXD1 (must be high on boot to go to UART0 FLASH mode)
-#define PIN_D5  14  // GPIO14       HSCLK
-#define PIN_D6  12  // GPIO12       HMISO
-#define PIN_D7  13  // GPIO13       HMOSI  RXD2
-#define PIN_D8  15  // GPIO15       HCS    TXD0 (must be low on boot to enter UART0 FLASH mode)
-#define PIN_D9   3  //              RXD0
-#define PIN_D10  1  //              TXD0
+// #define PIN_D0  16  // GPIO16       WAKE
+// #define PIN_D1   5  // GPIO5        User purpose
+// #define PIN_D2   4  // GPIO4        User purpose
+// #define PIN_D3   0  // GPIO0        Low on boot means enter FLASH mode
+// #define PIN_D4   2  // GPIO2        TXD1 (must be high on boot to go to UART0 FLASH mode)
+// #define PIN_D5  14  // GPIO14       HSCLK
+// #define PIN_D6  12  // GPIO12       HMISO
+// #define PIN_D7  13  // GPIO13       HMOSI  RXD2
+// #define PIN_D8  15  // GPIO15       HCS    TXD0 (must be low on boot to enter UART0 FLASH mode)
+// #define PIN_D9   3  //              RXD0
+// #define PIN_D10  1  //              TXD0
 
-#define PIN_MOSI 8  // SD1          FLASH and overlap mode
-#define PIN_MISO 7  // SD0
-#define PIN_SCLK 6  // CLK
-#define PIN_HWCS 0  // D3
+// #define PIN_MOSI 8  // SD1          FLASH and overlap mode
+// #define PIN_MISO 7  // SD0
+// #define PIN_SCLK 6  // CLK
+// #define PIN_HWCS 0  // D3
 
-#define PIN_D11  9  // SD2
-#define PIN_D12 10  // SD4
+// #define PIN_D11  9  // SD2
+// #define PIN_D12 10  // SD4
