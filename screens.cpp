@@ -16,6 +16,11 @@
 #include "ui/meteocons24pt7b.h"
 #include "ui/glyphs.h"
 
+#include "ui/fonts/Roboto_Regular_12.h"
+#include "ui/fonts/Roboto_Regular_16.h"
+#include "ui/fonts/Roboto_Bold_24.h"
+#include "ui/fonts/Roboto_Bold_60.h"
+
 // Shared helper function(s) and globals
 extern uint8_t networkRSSIRead();
 extern bool OWMAirPollutionRead();
@@ -257,13 +262,16 @@ void screenVOC()
     arcMeter(xCircle,yCircle,display.width(),vocRange(totalVOCIndex.getCurrent()));
 
     // Display VOCIndex value and label inside the arc
-    display.setFreeFont(&FreeSans24pt7b);
+    display.loadFont(Roboto_Bold_60);
+    //display.setFreeFont(&FreeSans24pt7b);
     display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));  // Use highlight color look-up 
     display.drawFloat((totalVOCIndex.getCurrent() +.5), 0, xValue, yValue);
-    display.setFreeFont(&FreeSans18pt7b);
+    display.loadFont(Roboto_Bold_24);
+    //display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(TFT_WHITE);
     display.drawString(getWarningLabel(VOC_DATA,totalVOCIndex.getCurrent()), xValue, yCircle);
   }
+  display.unloadFont();
 
   debugMessage("screenVOC() end",1);
 }

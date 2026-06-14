@@ -37,7 +37,7 @@
 
 // Comment out the #define below to stop the SPIFFS filing system and smooth font code being loaded
 // this will save ~20kb
-// #define SMOOTH_FONT
+#define SMOOTH_FONT
 
      ///////////////////////////////////////////////////////
      //   User configuration selection lines are below    //

@@ -1,0 +1,13 @@
+python -m pip install pillow fonttools
+
+
+python .\ui\original\fonts\tft_espi_smooth_font_header_generator.py `
+  --font ".\ui\original\fonts\Roboto-Regular.ttf" `
+  --size 12 --size 16 `
+  --out-dir ".\ui\fonts"
+
+  python .\tft_espi_smooth_font_header_generator.py `
+  --font ".\ui\original\fonts\Roboto-Bold.ttf" `
+  --size 24 --size 36 `
+  --out-dir ".\ui\fonts"
+
