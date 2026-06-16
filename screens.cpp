@@ -84,7 +84,7 @@ void screenSaver()
   if (totalCO2.getStored() == 0) {
     display.loadFont(Roboto_Regular_24);
     // display.setFreeFont(&FreeSans18pt7b);
-    display.setTextColor(TFT_RED);
+    display.setTextColor(TFT_RED, TFT_BLACK, true);
     uint16_t textWidth = display.textWidth("Not available");
     display.drawString("Not available", random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
   }
@@ -92,7 +92,7 @@ void screenSaver()
     // Otherwise display the latest CO2 reading
     display.loadFont(Roboto_Bold_60);
     // display.setFreeFont(&FreeSans24pt7b);
-    display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
+    display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()), TFT_BLACK, true);
     uint16_t textWidth = display.textWidth(String(totalCO2.getCurrent()));
     // Display CO2 value in random, valid location
     display.drawString(String(uint16_t(totalCO2.getCurrent())), random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
@@ -122,13 +122,16 @@ display.fillScreen(TFT_BLACK);
   drawPNGFromFlash(co2_base_png, sizeof(co2_base_png), display,110,11);
   // VOC
   fillSmoothRoundRectWithBorder(10,117,91,112,cornerRoundRadius,getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()),TFT_WHITE);
+  display.setTextColor(TFT_BLACK,getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()), true);
   display.drawString("VOC",55,199);
   // PM2.5
   fillSmoothRoundRectWithBorder(111,117,97,112,cornerRoundRadius,getWarningColor(PM_DATA,totalPM25.getCurrent()),TFT_WHITE);
+  display.setTextColor(TFT_BLACK,getWarningColor(PM_DATA,totalPM25.getCurrent()), true);
   display.drawString("PM25",155,199);
   #ifdef CLIMATRON
     // NOX
     fillSmoothRoundRectWithBorder(218,117,96,112,cornerRoundRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()),TFT_WHITE);
+    display.setTextColor(TFT_BLACK,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()), true);
     display.drawString("NOx",255,199);
   #endif
 
@@ -151,12 +154,12 @@ void screenTempHumidity()
 
   // Indoor
   // Indoor temp
-  display.setTextColor(getWarningColor(TEMP_DATA,totalTemperatureF.getCurrent()));
+  display.setTextColor(getWarningColor(TEMP_DATA,totalTemperatureF.getCurrent()),TFT_BLACK, true);
   display.drawString(String((uint8_t)(totalTemperatureF.getCurrent() + .5)), (display.width()/4), (display.height()*3/8));
   display.drawBitmap((display.width()/4 + 30), ((display.height()*3/8) - 14), bitmapTempFSmall, 20, 28, TFT_WHITE);
 
   // Indoor humidity
-  display.setTextColor(getWarningColor(HUM_DATA,totalHumidity.getCurrent()));
+  display.setTextColor(getWarningColor(HUM_DATA,totalHumidity.getCurrent()), TFT_BLACK, true);
   display.drawString(String((uint8_t)(totalHumidity.getCurrent() + 0.5)), (display.width()/4), (display.height()*5/8));
   display.drawBitmap((display.width()/4 + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
 
@@ -164,12 +167,12 @@ void screenTempHumidity()
   // do we have OWM Current data to display?
   if ((OWMCurrentWeatherRead()) && (owmCurrentData.tempF != 255)) {
     // Outside temp
-    display.setTextColor(getWarningColor(TEMP_DATA,owmCurrentData.tempF));
+    display.setTextColor(getWarningColor(TEMP_DATA,owmCurrentData.tempF), TFT_BLACK, true);
     display.drawString(String((uint8_t)(owmCurrentData.tempF + 0.5)), (display.width()*3/4), (display.height()*3/8));
     display.drawBitmap(((display.width()*3/4) + 30), ((display.height()*3/8) - 14), bitmapTempFSmall, 20, 28, TFT_WHITE);
 
     // Outside humidity
-    display.setTextColor(getWarningColor(HUM_DATA,owmCurrentData.humidity));
+    display.setTextColor(getWarningColor(HUM_DATA,owmCurrentData.humidity), TFT_BLACK, true);
     display.drawString(String((uint8_t)(owmCurrentData.humidity + 0.5)), (display.width()*3/4), (display.height()*5/8));
     display.drawBitmap(((display.width()*3/4) + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
   }
@@ -192,12 +195,11 @@ void screenPM25()
 {
   // screen layout assists in pixels
   const uint16_t  xOutdoorMargin = ((display.width() / 2) + kXMargins);
-
-  // pm25 rings
   const uint16_t  xIndoorPMCircle = (display.width() / 4);
   const uint16_t  xOutdoorPMCircle = (display.width()*3/4);
   constexpr uint16_t  yPMCircles = 150;
   constexpr uint16_t  circleRadius = 65;
+  constexpr uint16_t circleInnerRadius = circleRadius * 8 / 10;
 
   debugMessage("screenPM25() start",1);
 
@@ -206,14 +208,12 @@ void screenPM25()
   display.setTextDatum(MC_DATUM);
 
   // Indoor PM2.5 ring
-  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius,getWarningColor(PM_DATA,totalPM25.getCurrent()));
-  display.fillSmoothCircle(xIndoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
-  // ? 360 arc?
+  display.drawSmoothArc(xIndoorPMCircle, yPMCircles, circleRadius, circleInnerRadius, 0, 360, getWarningColor(PM_DATA, totalPM25.getCurrent()), TFT_BLACK);
 
   // Indoor pm25 value and label inside the circle
   // display.setFreeFont(&FreeSans18pt7b);
   display.loadFont(Roboto_Bold_36);
-  display.setTextColor(getWarningColor(PM_DATA,totalPM25.getCurrent()));  // Use highlight color look-up
+  display.setTextColor(getWarningColor(PM_DATA,totalPM25.getCurrent()), TFT_BLACK, true);  // Use highlight color look-up
   display.drawFloat(totalPM25.getCurrent(), 1, xIndoorPMCircle, yPMCircles);
   // label
   // display.setTextColor(TFT_WHITE);
@@ -223,13 +223,12 @@ void screenPM25()
   // Outside
   // do we have OWM Air Quality data to display?
   if ((OWMAirPollutionRead()) && (owmAirQuality.aqi != 255)) {
-    // Outside PM2.5
-    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius,getWarningColor(PM_DATA,owmAirQuality.pm25));
-    display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
+    // Outside PM2.5 ring
+    display.drawSmoothArc(xOutdoorPMCircle, yPMCircles, circleRadius, circleInnerRadius, 0, 360, getWarningColor(PM_DATA,owmAirQuality.pm25), TFT_BLACK);
 
     // outdoor pm25 value and label inside the circle
     //display.setFreeFont(&FreeSans18pt7b);
-    display.setTextColor(getWarningColor(PM_DATA,owmAirQuality.pm25)); // Use highlight color look-up 
+    display.setTextColor(getWarningColor(PM_DATA,owmAirQuality.pm25), TFT_BLACK, true); // Use highlight color look-up 
     display.drawFloat(owmAirQuality.pm25, 1, xOutdoorPMCircle, yPMCircles);
     //label
     // display.setTextColor(TFT_WHITE);
@@ -261,7 +260,7 @@ void screenVOC()
   // If VOCIndex has no values, alert the user
   if (totalVOCIndex.getStored() == 0) {
     display.setFreeFont(&FreeSans18pt7b);
-    display.setTextColor(TFT_RED);
+    display.setTextColor(TFT_RED, TFT_BLACK, true);
     display.drawString("No data", (display.width() / 2), (display.height() / 2));
   }
   else {
@@ -271,11 +270,11 @@ void screenVOC()
     // Display VOCIndex value and label inside the arc
     display.loadFont(Roboto_Bold_60);
     //display.setFreeFont(&FreeSans24pt7b);
-    display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()));  // Use highlight color look-up 
+    display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()), TFT_BLACK, true);  // Use highlight color look-up 
     display.drawFloat((totalVOCIndex.getCurrent() +.5), 0, xValue, yValue);
     display.loadFont(Roboto_Regular_24);
     //display.setFreeFont(&FreeSans18pt7b);
-    display.setTextColor(TFT_WHITE);
+    display.setTextColor(TFT_WHITE, TFT_BLACK, true);
     display.drawString(getWarningLabel(VOC_DATA,totalVOCIndex.getCurrent()), xValue, yCircle);
   }
 
@@ -297,20 +296,20 @@ void screenCO2()
 
   // if CO2 values are not yet available, display "NA"
   if (totalCO2.getStored() == 0) {
-    display.setTextColor(TFT_RED);
+    display.setTextColor(TFT_RED, TFT_BLACK, true);
     display.setTextDatum(MC_DATUM);
     display.drawString("NA", (display.width() / 2), (display.height() / 2));
   }
   else {
     // display generalized CO₂ level
     display.setTextDatum(BL_DATUM);
-    display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()));
+    display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()), TFT_BLACK, true);
     display.drawString(getWarningLabel(CO2_DATA,totalCO2.getCurrent()),kXMargins, yValue - 3);
 
     // display current CO₂ value
     display.setFreeFont(&FreeSans18pt7b);
     display.setTextDatum(BR_DATUM);
-    display.setTextColor(TFT_WHITE);
+    display.setTextColor(TFT_WHITE, TFT_BLACK, true);
     display.drawString((String(uint16_t(totalCO2.getCurrent())) + "ppm"), (display.width()-(2*kXMargins)), yValue - 3);
 
     // recent CO₂ graph
@@ -337,7 +336,7 @@ void screenNOX()
     display.loadFont(Roboto_Bold_36);
     // display.setFreeFont(&FreeSans24pt7b);
     display.setTextDatum(MC_DATUM);
-    display.setTextColor(TFT_RED);
+    display.setTextColor(TFT_RED, TFT_BLACK, true);
     display.drawString("Not Available", xCircle, (display.height()/2));
   }
   else {
@@ -348,11 +347,11 @@ void screenNOX()
     display.loadFont(Roboto_Bold_60);
     // display.setFreeFont(&FreeSans24pt7b);
     display.setTextDatum(MC_DATUM);
-    display.setTextColor(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()));  // Use highlight color look-up 
+    display.setTextColor(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()), TFT_BLACK, true);  // Use highlight color look-up 
     display.drawFloat((totalNOxIndex.getCurrent() +.5), 0, xValue, yValue);
     display.loadFont(Roboto_Regular_24);
     // display.setFreeFont(&FreeSans18pt7b);
-    display.setTextColor(TFT_WHITE);
+    display.setTextColor(TFT_WHITE, TFT_BLACK, true);
     display.drawString(getWarningLabel(NOX_DATA,totalNOxIndex.getCurrent()), xValue, yCircle);
   }
   display.unloadFont();
@@ -478,14 +477,19 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
 
     // indoor/outdoor labels
     // display.setFreeFont(&FreeSans12pt7b);
-    display.setTextColor(TFT_WHITE);
+    display.setTextColor(TFT_WHITE, TFT_BLACK, true);
     display.setTextDatum(MC_DATUM);
     display.drawString("Indoor", display.width()/4, yLabels);
     display.drawString("Outside", (display.width()*3/4), yLabels);
+
+    // set the color for the header bar label
+    display.setTextColor(TFT_BLACK,TFT_DARKGREY, true);
   }
   else {
-    // bar is colored with the warning color of the most recent sample
+    // set header bar color and background text color to the most recent sample warning color
     display.fillRect(0,0,display.width(),kYStatusRegion,getWarningColor(datatype,measure.getMember(measure.getCurrent())));
+    display.setTextColor(TFT_BLACK,getWarningColor(datatype,measure.getMember(measure.getCurrent())), true);
+
   }
   // screen helpers in status region
   screenHelperWiFiStatus((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), yStatusRegionFloor, wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
@@ -493,7 +497,6 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
 
   // header bar label
   // display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(TFT_BLACK);
   display.setTextDatum(L_BASELINE);
   display.drawString(header, ((display.width()/2)-(display.textWidth(header)/2)), yStatusRegionFloor);
 
@@ -663,7 +666,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t width, uin
   display.loadFont(Roboto_Regular_12);
   //display.setFreeFont(&FreeSans9pt7b);
   display.setTextDatum(TL_DATUM);
-  display.setTextColor(TFT_WHITE);
+  display.setTextColor(TFT_WHITE, TFT_BLACK, true);
 
   // draw the X axis description, if provided
   text1Height = display.fontHeight();
