@@ -1613,6 +1613,7 @@ bool sensorSEN554Read()
 
     debugMessage(String("sensorSEN554Read() updating pm25: ") + totalPM25.getCurrent() + "ppm, total: " + totalPM25.getTotal(),2);
     debugMessage(String("sensorSEN554Read() updating vocIndex: ") + totalVOCIndex.getCurrent() + ", total: " + totalVOCIndex.getTotal(),2);
+    debugMessage(String("sensorSEN554Read() NOxIndex is NAN"),2);
   }
 
   debugMessage("sensorSEN554Read() end",1);
