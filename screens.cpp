@@ -8,12 +8,13 @@
 #include "config.h"
 #include "powered_air_quality.h"
 #include <TFT_eSPI.h> // https://github.com/Bodmer/TFT_eSPI
-#include <PNGdec.h>   // https://github.com/bitbank2/PNGdec
+// #include <PNGdec.h>   // https://github.com/bitbank2/PNGdec
 
 // fonts and glyphs
 #include "ui/meteocons24pt7b.h"
 #include "ui/glyphs.h"
 
+// https://fonts.google.com/specimen/Roboto
 #include "ui/fonts/Roboto_Regular_12.h"
 #include "ui/fonts/Roboto_Regular_18.h"
 #include "ui/fonts/Roboto_Regular_24.h"
@@ -36,25 +37,26 @@ extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, tota
 void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<kSampleCapacity>, uint8_t, String);
 void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, String header);
 String getWarningLabel(uint8_t, float);
-void screenHelperWiFiStatus(uint16_t, uint16_t, uint8_t, uint8_t, uint8_t);
-void screenHelperReportStatus(uint16_t, uint16_t);
+// void screenHelperWiFiStatus(uint16_t, uint16_t, uint8_t, uint8_t, uint8_t);
+void screenHelperWiFiStatus(uint16_t, uint16_t, uint16_t);
+void screenHelperPostStatus(uint16_t, uint16_t, uint16_t, uint16_t);
 uint8_t co2Range(float); 
 uint8_t pm25Range(float);
 uint8_t vocRange(float);
 uint8_t noxRange(float);
 char OWMtoMeteoconIcon(const char*);
 void arcMeter(uint16_t, uint16_t, uint16_t, uint16_t);
-int pngDraw(PNGDRAW *pDraw);
-void drawPNGFromFlash(const uint8_t *imageData, size_t imageSize, TFT_eSPI &display, int16_t xpos, int16_t ypos);
+// int pngDraw(PNGDRAW *pDraw);
+// void drawPNGFromFlash(const uint8_t *imageData, size_t imageSize, TFT_eSPI &display, int16_t xpos, int16_t ypos);
 void fillSmoothRoundRectWithBorder(int32_t x, int32_t y, int32_t w, int32_t h, int32_t radius, uint16_t fillColor, uint16_t borderColor, int32_t borderWidth = 2);
 
-PNG png; // PNG decoder instance
+// PNG png; // PNG decoder instance
 
-struct DrawContext {
-  TFT_eSPI *display;
-  int16_t xpos;
-  int16_t ypos;
-};
+// struct DrawContext {
+//   TFT_eSPI *display;
+//   int16_t xpos;
+//   int16_t ypos;
+// };
 
 // ***** Screen display routines, typically one per major screen ***** //
 
@@ -106,8 +108,8 @@ display.fillScreen(TFT_BLACK);
   // temp/humdity
   display.drawSmoothRoundRect(10,11,4,2,90,95,TFT_WHITE,TFT_BLACK);
   // CO2
-  // display.drawSmoothRoundRect(110,11,4,2,200,95,TFT_WHITE,TFT_BLACK);
-  drawPNGFromFlash(co2_base_png, sizeof(co2_base_png), display,110,11);
+  display.drawSmoothRoundRect(110,11,4,2,200,95,TFT_WHITE,TFT_BLACK);
+  // drawPNGFromFlash(co2_base_png, sizeof(co2_base_png), display,110,11);
   // VOC
   fillSmoothRoundRectWithBorder(10,117,91,112,cornerRoundRadius,getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()),TFT_WHITE);
   display.setTextColor(TFT_BLACK,getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()), true);
@@ -446,10 +448,14 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
   // screen layout assists in pixels
   const uint8_t yStatusRegionFloor = kYStatusRegion - 7;
   const uint8_t yLabels = display.height() / 4; 
-  constexpr uint8_t helperXSpacing = 15;
+  constexpr uint8_t kHelperXSpacing = 3;
   constexpr uint8_t wifiBarHeightIncrement = 3;
   constexpr uint8_t wifiBarWidth = 3;
   constexpr uint8_t wifiBarSpacing = 5;
+  constexpr uint8_t kIconHeight = 20;
+  constexpr uint8_t kIconWidth = 20;
+
+  uint16_t fgColor, bgColor;
 
   debugMessage("screenHelperHeaderBar() start",1);
 
@@ -458,10 +464,11 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
   display.fillScreen(TFT_BLACK);
   if ((datatype == PM_DATA) || (datatype == UNK_DATA)) {
     // when displaying multiple data sources the header bare is a neutral color
-    display.fillRect(0,0,display.width(),kYStatusRegion,TFT_DARKGREY);
+    bgColor = TFT_DARKGREY;
+    display.fillRect(0,0,display.width(),kYStatusRegion, bgColor);
 
     // vertical separator for indoor/outdoor
-    display.drawFastVLine((display.width() / 2), kYStatusRegion, display.height(), TFT_DARKGREY);
+    display.drawFastVLine((display.width() / 2), kYStatusRegion, display.height(), bgColor);
 
     // indoor/outdoor labels
     // display.setFreeFont(&FreeSans12pt7b);
@@ -471,17 +478,35 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
     display.drawString("Outside", (display.width()*3/4), yLabels);
 
     // set the color for the header bar label
-    display.setTextColor(TFT_BLACK,TFT_DARKGREY, true);
+    display.setTextColor(TFT_BLACK, bgColor, true);
   }
   else {
     // set header bar color and background text color to the most recent sample warning color
-    display.fillRect(0,0,display.width(),kYStatusRegion,getWarningColor(datatype,measure.getMember(measure.getCurrent())));
-    display.setTextColor(TFT_BLACK,getWarningColor(datatype,measure.getMember(measure.getCurrent())), true);
+    bgColor = getWarningColor(datatype,measure.getMember(measure.getCurrent()));
+    display.fillRect(0,0,display.width(),kYStatusRegion, bgColor);
+    display.setTextColor(TFT_BLACK, bgColor, true);
 
   }
   // screen helpers in status region
-  screenHelperWiFiStatus((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), yStatusRegionFloor, wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
-  screenHelperReportStatus(((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-helperXSpacing), (yStatusRegionFloor-15));
+  // screenHelperWiFiStatus((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), yStatusRegionFloor, wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
+  screenHelperWiFiStatus((display.width() - kXMargins - kIconWidth), yStatusRegionFloor, bgColor);
+  
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+    if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (timeReportMS * reportFailureThreshold))) {
+      // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
+      // display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
+      fgColor = TFT_RED;
+      debugMessage(String("Post status in header bar is false"),2);
+    }
+    else {
+      fgColor = TFT_BLACK;
+      //drawPNGFromFlash(network_store_png, sizeof(network_store_png),display,initialX, initialY);
+      //display.drawiBtmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
+      debugMessage(String("Post status in header bar is true"),2);
+    }
+    //screenHelperPostStatus(((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-(kHelperXSpacing + kIconWidth)), (yStatusRegionFloor-kIconHeight), fgColor, bgColor);
+    screenHelperPostStatus((display.width() - kXMargins - (2 * kIconWidth) - kHelperXSpacing), (yStatusRegionFloor-kIconHeight), fgColor, bgColor);
+  #endif
 
   // header bar label
   // display.setFreeFont(&FreeSans12pt7b);
@@ -492,7 +517,8 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
   debugMessage("screenHelperHeaderBar() end",1);
 }
 
-void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
+void screenHelperWiFiStatus(uint16_t x, uint16_t y, uint16_t bgColor)
+// void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWidth, uint8_t barHeightIncrement, uint8_t barSpacing)
 // Description: helper function for screenXXX() routines drawing WiFi RSSI strength
 // Parameters: 
 // Output : NA
@@ -501,54 +527,104 @@ void screenHelperWiFiStatus(uint16_t initialX, uint16_t initialY, uint8_t barWid
 {
   debugMessage("screenHelperWiFiStatus() start",1);
 
+  uint16_t circleColor, arcOneColor, arcTwoColor;
+
+  constexpr uint8_t dotRadius = 3;  
+  const uint16_t cx = x + 10;
+  const uint16_t cy = y - dotRadius;
+
   hardwareData.rssi = networkRSSIRead();
 
-  if (hardwareData.rssi != 255) {
-    uint8_t barCount;
-    if (hardwareData.rssi < 55) barCount = 5;
-    if (hardwareData.rssi < 67) barCount = 4;
-    if (hardwareData.rssi < 70) barCount = 3;
-    if (hardwareData.rssi < 80) 
-      barCount = 2;
-    else
-      barCount = 1;
-
-    for (uint8_t loop = 1; loop <= barCount; loop++) {
-      display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_BLACK);
-    }
-    debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
+  if (hardwareData.rssi > 80) {
+    // not usable internet, all white
+    circleColor = TFT_WHITE;
+    arcOneColor = TFT_WHITE;
+    arcTwoColor = TFT_WHITE;
+    // add debug message
+  }
+  if (hardwareData.rssi > 70) {
+    // poor internet, circle black, arcs white
+    circleColor = TFT_BLACK;
+    arcOneColor = TFT_WHITE;
+    arcTwoColor = TFT_WHITE;
+    // add debug message
+  }
+  if (hardwareData.rssi > 60) {
+    // moderate internet, circle and first arc black, last arc grey
+    circleColor = TFT_BLACK;
+    arcOneColor = TFT_BLACK;
+    arcTwoColor = TFT_WHITE;
+    // add debug message
   }
   else {
-    // draw bars in red to represent no WiFi signal
-    for (uint8_t loop = 1; loop <= 5; loop++) {
-      display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_RED);
-    }
-    debugMessage("WiFi signal strength via red bars because no WiFi connection", 1);
+    // excellent internet, all black
+    circleColor = TFT_BLACK;
+    arcOneColor = TFT_BLACK;
+    arcTwoColor = TFT_BLACK;
+    // add debug message
   }
+
+  // signal circle
+  display.fillSmoothCircle(cx, cy, dotRadius, circleColor, bgColor);
+
+  // Inner signal arc: 3 pixels thick
+  display.drawSmoothArc(cx, cy, 9, 7, 138, 222, arcOneColor, bgColor, true);
+
+  // Outer signal arc: 3 pixels thick.
+  display.drawSmoothArc(cx, cy, 16, 14, 144, 216, arcTwoColor, bgColor, true);
+
+    // uint8_t barCount;
+    // if (hardwareData.rssi < 55) barCount = 5;
+    // if (hardwareData.rssi < 67) barCount = 4;
+    // if (hardwareData.rssi < 70) barCount = 3;
+    // if (hardwareData.rssi < 80) 
+    //   barCount = 2;
+    // else
+    //   barCount = 1;
+
+    // for (uint8_t loop = 1; loop <= barCount; loop++) {
+    //   display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_BLACK);
+    // }
+    // debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
+  // }
+  // else {
+  //   // draw bars in red to represent no WiFi signal
+  //   for (uint8_t loop = 1; loop <= 5; loop++) {
+  //     display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_RED);
+  //   }
+  //   debugMessage("WiFi signal strength via red bars because no WiFi connection", 1);
+  // }
   debugMessage("screenHelperWiFiStatus() end",1);
 }
 
-void screenHelperReportStatus(uint16_t initialX, uint16_t initialY)
-// Description: helper function for screenXXX() routines that displays an icon relaying success of network endpoint writes
-// Parameters: initial x and y coordinate to draw from
-// Output : NA
-// Improvement : NA
-// 
+void screenHelperPostStatus(uint16_t x, uint16_t y, uint16_t fgColor, uint16_t bgColor) 
 {
-  debugMessage(String("screenHelperReportStatus() start"), 1); 
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-    if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (timeReportMS * reportFailureThreshold))) {
-      // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
-      // display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
-      debugMessage(String("Report status on screen as false"),2);
-    }
-    else {
-      drawPNGFromFlash(network_store_png, sizeof(network_store_png),display,initialX, initialY);
-      //display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
-      debugMessage(String("Report status on screen as true"),2);
-    }
-  #endif
-  debugMessage(String("screenHelperReportStatus() end"), 1);   
+  debugMessage(String("screenHelperPostStatus() start"), 1); 
+
+    constexpr int16_t W = 20;
+
+    constexpr int16_t R_OUT = 8;
+    constexpr int16_t R_IN  = 7;
+
+    const int16_t cx = x + W / 2;
+
+    const int16_t yTop = y + 5;
+    const int16_t yMid = y + 10;
+    const int16_t yBot = y + 15;
+
+    // Solid filled cylinder body.
+    display.fillRect(x + 2, yTop, 17, yBot - yTop + 1, fgColor);
+
+    // Top cap: fill the lower/front half so the top reads as a filled cap.
+    display.drawSmoothArc(cx, yTop, R_OUT, 0, 90, 270, fgColor, fgColor, false);
+
+    // Bottom cap: filled lower/front half.
+    display.drawSmoothArc(cx, yBot, R_OUT, 0, 270, 90, fgColor, fgColor, false);
+
+    // Interior separator: cut out with bg.
+    display.drawSmoothArc(cx, yMid, R_OUT, R_IN, 270, 90, bgColor, fgColor, false);
+
+  debugMessage(String("screenHelperPostStatus() end"), 1);   
 }
 
 // Range and math functions
@@ -840,73 +916,52 @@ void arcMeter(uint16_t xcenter, uint16_t ycenter, uint16_t width, uint16_t quali
   }
 }
 
-void drawPNGFromFlash(
-  const uint8_t *imageData,
-  size_t imageSize,
-  TFT_eSPI &display,
-  int16_t xpos,
-  int16_t ypos
-) {
-  DrawContext ctx = {
-    &display,
-    xpos,
-    ypos
-  };
+// void drawPNGFromFlash(
+//   const uint8_t *imageData,
+//   size_t imageSize,
+//   TFT_eSPI &display,
+//   int16_t xpos,
+//   int16_t ypos
+// ) {
+//   DrawContext ctx = {
+//     &display,
+//     xpos,
+//     ypos
+//   };
 
-  if (png.openFLASH((uint8_t *)imageData, imageSize, pngDraw) == PNG_SUCCESS) {
-    display.startWrite();
-    png.decode(&ctx, 0);
-    display.endWrite();
-    //png.close();
-  }
-}
+//   if (png.openFLASH((uint8_t *)imageData, imageSize, pngDraw) == PNG_SUCCESS) {
+//     display.startWrite();
+//     png.decode(&ctx, 0);
+//     display.endWrite();
+//     //png.close();
+//   }
+// }
 
-// Callback function to renders each image line to the TFT
-int pngDraw(PNGDRAW *pDraw) {
-  DrawContext *ctx = (DrawContext *)pDraw->pUser;
+// // Callback function to renders each image line to the TFT
+// int pngDraw(PNGDRAW *pDraw) {
+//   DrawContext *ctx = (DrawContext *)pDraw->pUser;
 
-  uint16_t lineBuffer[ctx->display->width()];
-  uint8_t maskBuffer[1 + ((ctx->display->width() + 7) / 8)];
+//   uint16_t lineBuffer[ctx->display->width()];
+//   uint8_t maskBuffer[1 + ((ctx->display->width() + 7) / 8)];
 
-  png.getLineAsRGB565(pDraw, lineBuffer, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
+//   png.getLineAsRGB565(pDraw, lineBuffer, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
 
-  // for getAlphaMask's third parameter
-  // 1 -> preserve all visible alpha pixels
-  // 128 ->  cleaner hard edge, ignores faint antialiasing
-  // 255  -> only fully opaque pixels; often too aggressive
+//   // for getAlphaMask's third parameter
+//   // 1 -> preserve all visible alpha pixels
+//   // 128 ->  cleaner hard edge, ignores faint antialiasing
+//   // 255  -> only fully opaque pixels; often too aggressive
 
-  if (png.getAlphaMask(pDraw, maskBuffer, 100)) {
-    display.pushMaskedImage(ctx->xpos, ctx->ypos + pDraw->y, pDraw->iWidth, 1, lineBuffer, maskBuffer);
-  }
+//   if (png.getAlphaMask(pDraw, maskBuffer, 100)) {
+//     display.pushMaskedImage(ctx->xpos, ctx->ypos + pDraw->y, pDraw->iWidth, 1, lineBuffer, maskBuffer);
+//   }
 
-  return 1;  // non-zero = continue decoding
-}
+//   return 1;  // non-zero = continue decoding
+// }
 
-void fillSmoothRoundRectWithBorder(
-    int32_t x, int32_t y,
-    int32_t w, int32_t h,
-    int32_t radius,
-    uint16_t fillColor,
-    uint16_t borderColor,
-    int32_t borderWidth)
+void fillSmoothRoundRectWithBorder(int32_t x, int32_t y, int32_t w, int32_t h, int32_t radius, uint16_t fillColor, uint16_t borderColor, int32_t borderWidth)
 {
     // Outer (border)
-    display.fillSmoothRoundRect(
-        x,
-        y,
-        w,
-        h,
-        radius,
-        borderColor
-    );
-
+    display.fillSmoothRoundRect(x, y, w, h, radius, borderColor);
     // Inner (fill)
-    display.fillSmoothRoundRect(
-        x + borderWidth,
-        y + borderWidth,
-        w - (2 * borderWidth),
-        h - (2 * borderWidth),
-        radius - borderWidth,
-        fillColor
-    );
+    display.fillSmoothRoundRect(x + borderWidth, y + borderWidth, w - (2 * borderWidth), h - (2 * borderWidth), radius - borderWidth, fillColor);
 }
