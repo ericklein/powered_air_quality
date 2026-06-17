@@ -45,20 +45,8 @@ uint8_t noxRange(float);
 char OWMtoMeteoconIcon(const char*);
 void arcMeter(uint16_t, uint16_t, uint16_t, uint16_t);
 int pngDraw(PNGDRAW *pDraw);
-void drawPNGFromFlash(
-  const uint8_t *imageData,
-  size_t imageSize,
-  TFT_eSPI &display,
-  int16_t xpos,
-  int16_t ypos
-);
-void fillSmoothRoundRectWithBorder(
-    int32_t x, int32_t y,
-    int32_t w, int32_t h,
-    int32_t radius,
-    uint16_t fillColor,
-    uint16_t borderColor,
-    int32_t borderWidth = 2);
+void drawPNGFromFlash(const uint8_t *imageData, size_t imageSize, TFT_eSPI &display, int16_t xpos, int16_t ypos);
+void fillSmoothRoundRectWithBorder(int32_t x, int32_t y, int32_t w, int32_t h, int32_t radius, uint16_t fillColor, uint16_t borderColor, int32_t borderWidth = 2);
 
 PNG png; // PNG decoder instance
 
