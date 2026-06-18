@@ -46,6 +46,12 @@ uint8_t vocRange(float);
 uint8_t noxRange(float);
 char OWMtoMeteoconIcon(const char*);
 void arcMeter(uint16_t, uint16_t, uint16_t, uint16_t);
+void arcGauge(uint16_t, uint16_t, uint16_t, uint16_t);
+uint16_t arcGaugeHeight(uint16_t);
+uint16_t arcGaugeWidth(uint16_t);
+
+
+
 // int pngDraw(PNGDRAW *pDraw);
 // void drawPNGFromFlash(const uint8_t *imageData, size_t imageSize, TFT_eSPI &display, int16_t xpos, int16_t ypos);
 void fillSmoothRoundRectWithBorder(int32_t x, int32_t y, int32_t w, int32_t h, int32_t radius, uint16_t fillColor, uint16_t borderColor, int32_t borderWidth = 2);
@@ -91,7 +97,7 @@ void screenSaver()
   debugMessage("screenSaver() end",1);
 }
 
-void screenMain()
+void screenMain2()
 {
   // screen assists
   constexpr uint8_t halfBorderWidth = 2;
@@ -964,4 +970,246 @@ void fillSmoothRoundRectWithBorder(int32_t x, int32_t y, int32_t w, int32_t h, i
     display.fillSmoothRoundRect(x, y, w, h, radius, borderColor);
     // Inner (fill)
     display.fillSmoothRoundRect(x + borderWidth, y + borderWidth, w - (2 * borderWidth), h - (2 * borderWidth), radius - borderWidth, fillColor);
+}
+
+
+// Display Climatron main screen
+void screenMain() {
+  int32_t i, me, mt, mm, ws, hs, wl;
+  int32_t x0, y0, w, h, mx, my;
+  uint16_t wcolor, windex;
+
+  debugMessage("screenMain() start",1);
+
+  // Panel sizing for a 320x240 display. Important to have all these be integer values
+  // but also fill up the screen.  Any unallocated pixels will be at the right and bottom
+  // edges.
+  me = 17;  // left edge margin
+  ws = 86;  // width of small panels
+  mm = 15;  // middle margin (between panels both horizontally and vertically)
+  wl = 187; // width of large panel on top row (for CO2 value)
+  mt = 17;  // top edge margin
+  hs = 97;  // height of small panels, which is also the height of the large panel
+
+  // Clear the screen
+  display.fillScreen(TFT_BLACK);
+
+  // Temperature and Humidity subpanel (leftmost on the top row)
+  display.loadFont(Roboto_Regular_24);
+  display.setTextDatum(MC_DATUM);
+  x0 = me + (ws/2);
+  y0 = mt + 36;
+  display.setTextColor(TFT_WHITE,TFT_BLACK);
+  display.drawString(String((uint16_t)(totalTemperatureF.getCurrent() + .5))+"°F",x0,y0);
+  display.setTextColor(TFT_CYAN, TFT_BLACK);
+  display.drawString(String((uint16_t)(totalHumidity.getCurrent() + .5))+"%",x0+10,y0+36);
+  display.drawSmoothRoundRect(me,mt,8,6,ws,hs,TFT_WHITE);
+
+  // Position arcGauges in the second (bottom) row given the panel sizing and layout
+  
+  // VOC gauge
+  x0 = me;
+  mx = x0 + (ws/2);
+  y0 = mt + hs + mm;
+  my = y0 + arcGaugeHeight(ws) + 10;
+  wcolor = getWarningColor(VOC_DATA,totalVOCIndex.getCurrent());
+  windex = vocRange(totalVOCIndex.getCurrent());
+  display.fillRoundRect(x0,y0,ws,hs,8,wcolor);  // Panel background
+  arcGauge(mx,my,ws,windex);  // Gauge
+  display.loadFont(Roboto_Regular_24);
+  display.setTextDatum(MC_DATUM);
+  if(windex == 1) {
+    display.setTextColor(TFT_BLACK,wcolor,true);
+  }
+  else {
+    display.setTextColor(TFT_WHITE,wcolor,true);
+  }
+  display.drawString("VOC",mx,my+14);
+  display.drawSmoothRoundRect(x0,y0,8,6,ws,hs,TFT_WHITE);  // Panel border
+
+  // PM2.5 gauge
+  // y0 and my don't change (all in the same horizontal row)
+  x0 = me + ws + mm;
+  mx = x0 + (ws/2);
+  wcolor = getWarningColor(PM_DATA,totalPM25.getCurrent());
+  windex = pm25Range(totalPM25.getCurrent());
+  display.fillRoundRect(x0,y0,ws,hs,8,wcolor);  // Panel background
+  arcGauge(mx,my,ws,windex);  // Gauge
+  display.loadFont(Roboto_Regular_24);
+  if(windex == 1) {
+    display.setTextColor(TFT_BLACK,wcolor,true);
+  }
+  else {
+    display.setTextColor(TFT_WHITE,wcolor,true);
+  }
+  display.drawString("PM25",mx,my+14);
+  display.drawSmoothRoundRect(x0,y0,8,6,ws,hs,TFT_WHITE);
+
+  // NOX gauge
+  // y0 and my don't change (all in the same horizontal row)
+  x0 = me + (2*ws) + (2*mm);
+  mx = x0 + (ws/2);
+  wcolor = getWarningColor(NOX_DATA,totalNOxIndex.getCurrent());
+  windex = noxRange(totalNOxIndex.getCurrent());
+  display.fillRoundRect(x0,y0,ws,hs,8,wcolor);  // Panel background
+  arcGauge(mx,my,ws,windex);  // Gauge
+  display.loadFont(Roboto_Regular_24);
+  if(windex == 1) {
+    display.setTextColor(TFT_BLACK,wcolor,true);
+  }
+  else {
+    display.setTextColor(TFT_WHITE,wcolor,true);
+  }
+  display.drawString("NOX",mx,my+14);
+  display.drawSmoothRoundRect(x0,y0,8,6,ws,hs,TFT_WHITE);
+
+  // Now the wide CO2 panel on the right side of the top row
+
+  wcolor = getWarningColor(CO2_DATA,totalCO2.getCurrent());
+  windex = co2Range(totalCO2.getCurrent());
+
+  // First draw the CO2 subpanel's quality scale. The dimensions of each element
+  // are hand-calculated based on the width of the subpanel, which for this layout
+  // works out to be (46x18)
+  x0 = me + ws + mm + 1;
+  y0 = mt + hs - 20;  // panel height of 18 + 2 pixels of panel border thickness
+  display.fillRect(x0,y0,46,18,warningColor[0]);
+  display.fillRect(x0+46,y0,46,18,warningColor[1]);
+  display.fillRect(x0+92,y0,46,18,warningColor[2]);
+  display.fillRect(x0+138,y0,46,18,warningColor[3]);
+
+  // Add the current value indicator. Horizontal position is calculated based on
+  // knowledge of the sizes of the quality scale element as handled above.
+  mx = x0 + 23 + (windex * 46);  // Simulate quality value placement for CO2
+  display.fillSmoothCircle(mx,y0+8,8,TFT_WHITE);
+  display.fillSmoothCircle(mx,y0+8,4,TFT_BLACK);
+
+  // Add twelve vertical rule markings, offset from the left edge by half a marking widtth
+  y0 = y0 - 25;  // Above the quality panels by 25 pixels (15 rule height + 10 space)
+  for(i=0;i<12;i++) {
+    mx = x0 + 13 + (0.5 + (i*wl/13.0));
+    display.drawWideLine(mx,y0,mx,y0 + 15, 2, TFT_LIGHTGREY);
+  }
+
+  // Add current CO2 value panel, which sits above the quality band
+  // it corresponds to, overwriting some of the rule markings. It is 46 pixels wide
+  // (same as the quality scale elements) and 24 pixels tall to allow for value display,
+  // and with rounded ends of radius 12 (half of the 24 pixel height).
+  mx = x0 + (windex * 46);  // Simulate quality value placement for CO2
+  display.fillSmoothRoundRect(mx,y0-4,46,24,12,wcolor);
+  display.loadFont(Roboto_Regular_18);
+  display.setTextDatum(MC_DATUM);
+  // Display CO2 values consistent with the quality zone
+  if(windex == 1) {
+    display.setTextColor(TFT_BLACK,wcolor,true);
+  }
+  else {
+    display.setTextColor(TFT_WHITE,wcolor,true);
+  }
+  display.drawString(String((uint16_t)(totalCO2.getCurrent()+0.5)),mx+23,y0+8);
+
+  // And the panel's label with quality string
+  x0 = me + ws + mm + 44;
+  y0 = mt + 16;
+  display.loadFont(Roboto_Regular_24);
+  display.setTextColor(TFT_WHITE,TFT_BLACK,true);
+  display.setTextDatum(TL_DATUM);
+  display.drawString("CO2: ", x0, y0);
+  display.setTextColor(wcolor,TFT_BLACK,true);
+  display.drawString(warningLabel[windex],x0+62,y0);
+
+  // And then the CO2 subpanel's border last so it overlays everything.
+  display.drawSmoothRoundRect(me+ws+mm,mt,8,6,wl,hs,TFT_WHITE);
+
+}
+
+// Draw a wedge-shaped "arc gauge" that can be used to indicate the current quality of 
+// an environmental measurement.  Size of the gauge is determined by the width
+// parameter, such that the resulting gauge will fill 90% of that width (leaving some
+// margin to enhance visual appearance).  The gauge will be positioned with the center
+// of the overall arc (wedge) shape at (xcenter,ycenter).  The height of the gauge is
+// determined internally, but if needed the arcGaugeHeight() utility function can be
+// used to obtain the height for a gauge of any specified width.
+void arcGauge(uint16_t xcenter, uint16_t ycenter, uint16_t width, uint16_t quality)
+{
+  float ax, ay, bx, by, lwidth;
+  uint16_t delta;
+  double angle;
+
+  // Calculate the radii to use in drawing the meter. The goal is to have it take up
+  // 90% of the specified width, taking into account that it's a wedge that's only
+  // a fraction of a semicircle.
+  angle = 40 * PI / 180.0;   // The side angle of the wedge, measured from horizontal
+  const uint16_t arcOuterRadius = 0.5 + ( (0.9 * width)/(2*cos(angle)) );
+  const uint16_t arcInnerRadius = 0.5 + (0.4 * arcOuterRadius);
+  const uint16_t arcZoneRadius = 0.5 + arcInnerRadius + (0.6 * (arcOuterRadius - arcInnerRadius));
+
+  lwidth = width/200.0;  // Heuristic for unit line width;
+
+  display.drawArc(xcenter,ycenter,arcOuterRadius,arcZoneRadius,205,230, warningColor[3],TFT_DARKGREY, true);
+  display.drawArc(xcenter,ycenter,arcOuterRadius,arcZoneRadius,130,155, warningColor[0],TFT_DARKGREY, true);
+  display.drawArc(xcenter,ycenter,arcOuterRadius,arcZoneRadius,180,205, warningColor[2],TFT_DARKGREY, true);
+  display.drawArc(xcenter,ycenter,arcOuterRadius,arcZoneRadius,155,180, warningColor[1],TFT_DARKGREY, true);
+
+  display.drawArc(xcenter,ycenter,arcZoneRadius,arcInnerRadius,130,230, TFT_WHITE,TFT_WHITE, true);
+
+  delta = 0.5 + (2 * lwidth);  // Arc radii are integers
+  display.drawSmoothArc(xcenter,ycenter,arcOuterRadius,arcOuterRadius-delta,130,230, TFT_BLACK,TFT_DARKGREY, false);
+  display.drawSmoothArc(xcenter,ycenter,arcInnerRadius+delta,arcInnerRadius,130,230, TFT_BLACK,TFT_DARKGREY, false);
+
+  // Draw left edge of the meter outline
+  angle = 40 * PI / 180.0;
+  ax = xcenter - (0.5 + (cos(angle)*arcOuterRadius)) + 1;
+  ay = ycenter - (0.5 + (sin(angle)*arcOuterRadius)) + 1;
+  bx = xcenter - (0.5 + (cos(angle)*arcInnerRadius)) - 1;
+  by = ycenter - (0.5 + (sin(angle)*arcInnerRadius)) - 1;
+  display.drawWideLine(ax,ay,bx,by,(2*lwidth),TFT_BLACK);
+
+  // Draw right edge of the meter outline
+  angle = 40 * PI / 180.0;
+  ax = xcenter + (0.5 + (cos(angle)*arcOuterRadius)) - 1;
+  ay = ycenter - (0.5 + (sin(angle)*arcOuterRadius)) + 1;
+  bx = xcenter + (0.5 + (cos(angle)*arcInnerRadius)) + 1;
+  by = ycenter - (0.5 + (sin(angle)*arcInnerRadius)) - 1;
+  display.drawWideLine(ax,ay,bx,by,(2*lwidth),TFT_BLACK);
+
+
+  // Add a pointer to the quadrant corresponding to the specified quality value. Confirms
+  // that the quality value is in the valid range before drawing.
+  if( (quality >= 0) && (quality <= 3)) {
+    uint16_t dotrblack = 0.2*(width/2);  // radius of the black ring surrounding the indicator dot
+    uint16_t dotrwhite = 0.1*(width/2);   // radius of the white circle inside the surrounding ring
+    angle = (52.5 + (quality * 25.0)) * PI / 180.0;  // Convert to radians for cos() and sin() below
+
+    uint16_t pointerRadius = (arcOuterRadius + arcZoneRadius)/2.0;
+    ax = xcenter - (0.5 + (cos(angle) * pointerRadius));
+    ay = ycenter - (0.5 + (sin(angle) * pointerRadius));
+    bx = xcenter;
+    by = ycenter - arcInnerRadius + dotrwhite;
+    display.drawWedgeLine(ax,ay,bx,by,3*lwidth,(dotrwhite),TFT_BLACK);
+    
+    display.fillSmoothCircle(xcenter,ycenter-arcInnerRadius+dotrwhite,dotrblack,TFT_BLACK);
+    display.fillSmoothCircle(xcenter,ycenter-arcInnerRadius+dotrwhite,dotrwhite,TFT_WHITE);
+  }
+}
+
+// Convenience function to calculate the height of an arcGauge bounding box for any specified 
+// bounding box width. To keep use and placement of the gauge simple, everything about the 
+// gauge's geometry is calculated internal to the gauge drawing function based on a specified 
+// bounding box width into which the gauge should fit.  The resulting bounding box height is  
+// not easy to specify or derive exernally from the drawing function given complex internal 
+// calculations.  This function allows determining the height from any specific width to simplify 
+// meter placement, as the gauge's (x,y) position needs to be provided in drawing it.
+uint16_t arcGaugeHeight(uint16_t width) {
+  float angle = 40.0 * PI / 180.0;
+  uint16_t height = width/(2.0 * cos(angle));
+  return(height);
+}
+
+// Similar function for calculating the width of an arcGauge bounding box for any specified 
+// bounding box height
+uint16_t arcGaugeWidth(uint16_t height) {
+  float angle = 40.0 * PI / 180.0;
+  uint16_t width = height * 2.0 * cos(angle);
+  return(width);
 }
