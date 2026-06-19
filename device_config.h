@@ -1,5 +1,15 @@
-#pragma once
+/*
+  Project:      Powered Air Quality
+  Description:  public (non-secret) hardware configuration
+*/
 
+#pragma once
+#ifndef DEVICE_CONFIG_H
+#define DEVICE_CONFIG_H
+
+// Configuration Step 1: Define base hardware platform
+// PAQ: CYD ESP32-2432S028R (2.8" TFT, micro-USB, 2 GPIO pin connectors), no LEDs
+// Climatron: CYD JC2432W328 (2.8" TFT, USB-C, 3 GPIO pin connectors), LED strip
 // #define PAQ
 #define CLIMATRON
 
@@ -11,12 +21,58 @@
   #error "Define one device target: PAQ or CLIMATRON"
 #endif
 
-// Configuration Step 7: Which sensor configuration do we have?  Later generation devices
-// use Sensirion SEN66 sensor which measures CO2, particulates, VOC, NOX, temperature and humidity
-// in one package.  Earlier generation devices use a combination of the SEN54 particulates
-// sensor and the SCD40 CO2 sensor (which also provides VOC, temperature and humidity readings).
-// Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
-// NOX Index).
-// Use the one that corresponds to your device hardware and leave the other commented out.
-// #define SENSOR_SEN66
-#define SENSOR_SEN54SCD40
+// Configuration Step 2: Define sensor platform
+// Climatron has as Sensirion SEN66 embedded (temp, humidity, PM25, CO2, VOC, NOx)
+// PAQ can use either Sensirion SCD40 (temp, humidity, CO2) + SEN54 (PM25) or SEN66
+#ifdef CLIMATRON
+  #define SENSOR_SEN66
+#else
+  #define SENSOR_SEN54SCD40
+  // #define SENSOR_SEN66
+#endif
+
+// Configuration Step 3: If storing data to a network endpoint, set default endpoint path.
+// This will only be used if the user doesn't enter then in the configuration AP portal.
+ #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
+  const String defaultSite = "7828";
+  const String defaultLocation = "inside";
+  const String defaultRoom = "dev";
+#endif
+
+#ifdef PAQ
+  const String hardwareDeviceType = "AirQuality";
+  constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
+  constexpr uint8_t pinSensorSDA = 22;
+  constexpr uint8_t pinSensorSCL = 27;
+  constexpr uint8_t pinTouchIRQ = 36;
+  constexpr uint8_t pinTouchMOSI = 32;
+  constexpr uint8_t pinTouchMISO = 39;
+  constexpr uint8_t pinTouchCLK = 25;
+  constexpr uint8_t pinTouchCS = 33;
+  constexpr uint8_t pinAudio = 26;
+  constexpr uint32_t audioFrequency = 2000; // Hz
+  constexpr uint8_t  audioResolution = 8;    // bit
+  // touchscreen calibration
+  constexpr uint16_t touchscreenMinX = 200;
+  constexpr uint16_t touchscreenMaxX = 3700;
+  constexpr uint16_t touchscreenMinY = 240;
+  constexpr uint16_t touchscreenMaxY = 3800;
+#endif
+
+#ifdef CLIMATRON
+  const String hardwareDeviceType = "Climatron";
+  constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
+  constexpr uint8_t pinSensorSDA = 22;
+  constexpr uint8_t pinSensorSCL = 21;
+  constexpr uint8_t pinTouchSDA = 33;
+  constexpr uint8_t pinTouchSCL = 32;
+  constexpr uint8_t pinTouchRST = 25;
+  constexpr int8_t pinTouchIRQ = -1;
+  constexpr uint8_t pinLEDStripOne = 4;
+  constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
+  constexpr int8_t pinAudio = 26;
+  constexpr uint32_t audioFrequency = 1000; // Hz
+  constexpr uint8_t  audioResolution = 8;    // bit
+#endif
+
+  #endif // DEVICE_CONFIG_H

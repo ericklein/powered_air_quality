@@ -1,3 +1,8 @@
+/*
+  Project:      Powered Air Quality
+  Description:  user interface symbol definitions
+*/
+
 #ifndef GLYPHS_H
 #define GLYPHS_H
 

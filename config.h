@@ -3,26 +3,27 @@
   Description:  public (non-secret) configuration data
 */
 
+#pragma once
+
 // Configuration Step 1: Create and/or configure secrets.h. Use secrets_template.h as guide to create secrets.h
+
+// Configuration Step 2: Set network data endpoints
+// #define MQTT     // log sensor data to MQTT broker
+// #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
+#define INFLUX // Log data to InfluxDB server
+#define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration Step 3: Define hardware parameters in device_config.h
 // this is needed until we branch PAQ and Climatron
-#pragma once
 #include "device_config.h"
 
-// Configuration Step 4: Set debug message output
+// Configuration Step 5: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
 #define DEBUG 2
 
 // Configuration Step 5: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
 // #define HARDWARE_SIMULATE
-
-// Configuration Step 6: Set network data endpoints
-// #define MQTT     // log sensor data to MQTT broker
-// #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-// #define INFLUX // Log data to InfluxDB server
-#define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration variables that are less likely to require changes
 
@@ -155,43 +156,3 @@ constexpr uint16_t sensorNOxFair =  49;
 constexpr uint16_t sensorNOxPoor =  150;
 constexpr uint16_t sensorNOxBad =   300;
 constexpr uint16_t sensorNOxMax =   500;  // per SEN66 datasheet
-
-// CYD variations
-
-#ifdef PAQ
-  // CYD ESP32-2432S028R (2.8" TFT, micro-USB, 2 GPIO pin connectors)
-  const String hardwareDeviceType = "AirQuality";
-  constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
-  constexpr uint8_t pinSensorSDA = 22;
-  constexpr uint8_t pinSensorSCL = 27;
-  constexpr uint8_t pinTouchIRQ = 36;
-  constexpr uint8_t pinTouchMOSI = 32;
-  constexpr uint8_t pinTouchMISO = 39;
-  constexpr uint8_t pinTouchCLK = 25;
-  constexpr uint8_t pinTouchCS = 33;
-  constexpr uint8_t pinAudio = 26;
-  constexpr uint32_t audioFrequency = 2000; // Hz
-  constexpr uint8_t  audioResolution = 8;    // bit
-  // touchscreen calibration
-  constexpr uint16_t touchscreenMinX = 200;
-  constexpr uint16_t touchscreenMaxX = 3700;
-  constexpr uint16_t touchscreenMinY = 240;
-  constexpr uint16_t touchscreenMaxY = 3800;
-#endif
-
-#ifdef CLIMATRON
-  // CYD JC2432W328 (2.8" TFT, USB-C, 3 GPIO pin connectors)
-  const String hardwareDeviceType = "Climatron";
-  constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
-  constexpr uint8_t pinSensorSDA = 22;
-  constexpr uint8_t pinSensorSCL = 21;
-  constexpr uint8_t pinTouchSDA = 33;
-  constexpr uint8_t pinTouchSCL = 32;
-  constexpr uint8_t pinTouchRST = 25;
-  constexpr int8_t pinTouchIRQ = -1;
-  constexpr uint8_t pinLEDStripOne = 4;
-  constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
-  constexpr int8_t pinAudio = 26;
-  constexpr uint32_t audioFrequency = 1000; // Hz
-  constexpr uint8_t  audioResolution = 8;    // bit
-#endif

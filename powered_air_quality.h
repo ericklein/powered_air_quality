@@ -1,3 +1,8 @@
+/*
+  Project:      Powered Air Quality
+  Description:  core data structures
+*/
+
 #ifndef PAQ_H
   #define PAQ_H
 

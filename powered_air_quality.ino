@@ -283,10 +283,13 @@ void loop() {
           screenCurrent = sVOC;
         }
         else {
-          #ifdef CLIMATRON
+          #ifdef SENSOR_SEN66
             (calibratedX < 214) ? screenCurrent = sPM25 : screenCurrent = sNOX;
           #else
-            screenCurrent = sPM25;
+            // only PM25 guage displayed
+            if (calibratedX < 214) {
+              screenCurrent = sPM25;
+            }
           #endif
         }
       }
@@ -1345,6 +1348,8 @@ bool sensorRead()
 // Initialize SEN66 sensor
 bool sensorSEN6xInit()
 {
+  debugMessage ("sensorSEN6xInit() start",1);
+
   #ifdef HARDWARE_SIMULATE
     return true;
   #else
@@ -1422,6 +1427,8 @@ bool sensorSEN6xRead()
   float NOxIndex = 0.0f;
   uint16_t co2 = 0;
 
+  debugMessage ("sensorSEN6xRead() start",1);
+
   #ifdef HARDWARE_SIMULATE
     sensorSEN6xSimulate(temperatureF, humidity, co2, pm25, VOCIndex, NOxIndex);
     success = true;
@@ -1493,6 +1500,7 @@ bool sensorSEN6xRead()
     debugMessage(String("SEN66 VOC index ") + totalVOCIndex.getCurrent() + ", total: " + totalVOCIndex.getTotal(),2);
     debugMessage(String("SEN66 NOx index ") + totalNOxIndex.getCurrent() + ", total: " + totalNOxIndex.getTotal(),2);
   }
+  debugMessage ("sensorSEN6xRead() end",1);
   return (success);
 }
 

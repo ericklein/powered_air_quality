@@ -8,7 +8,6 @@
 #include "config.h"
 #include "powered_air_quality.h"
 #include <TFT_eSPI.h> // https://github.com/Bodmer/TFT_eSPI
-// #include <PNGdec.h>   // https://github.com/bitbank2/PNGdec
 
 // fonts and glyphs
 #include "ui/meteocons24pt7b.h"
@@ -37,7 +36,6 @@ extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, tota
 void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<kSampleCapacity>, uint8_t, String);
 void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, String header);
 String getWarningLabel(uint8_t, float);
-// void screenHelperWiFiStatus(uint16_t, uint16_t, uint8_t, uint8_t, uint8_t);
 void screenHelperWiFiStatus(uint16_t, uint16_t, uint16_t);
 void screenHelperPostStatus(uint16_t, uint16_t, uint16_t, uint16_t);
 uint8_t co2Range(float); 
@@ -49,23 +47,9 @@ void arcMeter(uint16_t, uint16_t, uint16_t, uint16_t);
 void arcGauge(uint16_t, uint16_t, uint16_t, uint16_t);
 uint16_t arcGaugeHeight(uint16_t);
 uint16_t arcGaugeWidth(uint16_t);
-
-
-
-// int pngDraw(PNGDRAW *pDraw);
-// void drawPNGFromFlash(const uint8_t *imageData, size_t imageSize, TFT_eSPI &display, int16_t xpos, int16_t ypos);
 void fillSmoothRoundRectWithBorder(int32_t x, int32_t y, int32_t w, int32_t h, int32_t radius, uint16_t fillColor, uint16_t borderColor, int32_t borderWidth = 2);
 
-// PNG png; // PNG decoder instance
-
-// struct DrawContext {
-//   TFT_eSPI *display;
-//   int16_t xpos;
-//   int16_t ypos;
-// };
-
 // ***** Screen display routines, typically one per major screen ***** //
-
 void screenSaver()
 {
   // screen assist in pixels
@@ -115,7 +99,6 @@ display.fillScreen(TFT_BLACK);
   display.drawSmoothRoundRect(10,11,4,2,90,95,TFT_WHITE,TFT_BLACK);
   // CO2
   display.drawSmoothRoundRect(110,11,4,2,200,95,TFT_WHITE,TFT_BLACK);
-  // drawPNGFromFlash(co2_base_png, sizeof(co2_base_png), display,110,11);
   // VOC
   fillSmoothRoundRectWithBorder(10,117,91,112,cornerRoundRadius,getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()),TFT_WHITE);
   display.setTextColor(TFT_BLACK,getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()), true);
@@ -506,7 +489,6 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
     }
     else {
       fgColor = TFT_BLACK;
-      //drawPNGFromFlash(network_store_png, sizeof(network_store_png),display,initialX, initialY);
       //display.drawiBtmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
       debugMessage(String("Post status in header bar is true"),2);
     }
@@ -922,48 +904,6 @@ void arcMeter(uint16_t xcenter, uint16_t ycenter, uint16_t width, uint16_t quali
   }
 }
 
-// void drawPNGFromFlash(
-//   const uint8_t *imageData,
-//   size_t imageSize,
-//   TFT_eSPI &display,
-//   int16_t xpos,
-//   int16_t ypos
-// ) {
-//   DrawContext ctx = {
-//     &display,
-//     xpos,
-//     ypos
-//   };
-
-//   if (png.openFLASH((uint8_t *)imageData, imageSize, pngDraw) == PNG_SUCCESS) {
-//     display.startWrite();
-//     png.decode(&ctx, 0);
-//     display.endWrite();
-//     //png.close();
-//   }
-// }
-
-// // Callback function to renders each image line to the TFT
-// int pngDraw(PNGDRAW *pDraw) {
-//   DrawContext *ctx = (DrawContext *)pDraw->pUser;
-
-//   uint16_t lineBuffer[ctx->display->width()];
-//   uint8_t maskBuffer[1 + ((ctx->display->width() + 7) / 8)];
-
-//   png.getLineAsRGB565(pDraw, lineBuffer, PNG_RGB565_BIG_ENDIAN, 0xffffffff);
-
-//   // for getAlphaMask's third parameter
-//   // 1 -> preserve all visible alpha pixels
-//   // 128 ->  cleaner hard edge, ignores faint antialiasing
-//   // 255  -> only fully opaque pixels; often too aggressive
-
-//   if (png.getAlphaMask(pDraw, maskBuffer, 100)) {
-//     display.pushMaskedImage(ctx->xpos, ctx->ypos + pDraw->y, pDraw->iWidth, 1, lineBuffer, maskBuffer);
-//   }
-
-//   return 1;  // non-zero = continue decoding
-// }
-
 void fillSmoothRoundRectWithBorder(int32_t x, int32_t y, int32_t w, int32_t h, int32_t radius, uint16_t fillColor, uint16_t borderColor, int32_t borderWidth)
 {
     // Outer (border)
@@ -1045,23 +985,25 @@ void screenMain() {
   display.drawString("PM25",mx,my+14);
   display.drawSmoothRoundRect(x0,y0,8,6,ws,hs,TFT_WHITE);
 
-  // NOX gauge
-  // y0 and my don't change (all in the same horizontal row)
-  x0 = me + (2*ws) + (2*mm);
-  mx = x0 + (ws/2);
-  wcolor = getWarningColor(NOX_DATA,totalNOxIndex.getCurrent());
-  windex = noxRange(totalNOxIndex.getCurrent());
-  display.fillRoundRect(x0,y0,ws,hs,8,wcolor);  // Panel background
-  arcGauge(mx,my,ws,windex);  // Gauge
-  display.loadFont(Roboto_Regular_24);
-  if(windex == 1) {
-    display.setTextColor(TFT_BLACK,wcolor,true);
-  }
-  else {
-    display.setTextColor(TFT_WHITE,wcolor,true);
-  }
-  display.drawString("NOX",mx,my+14);
-  display.drawSmoothRoundRect(x0,y0,8,6,ws,hs,TFT_WHITE);
+  #ifdef SENSOR_SEN66
+    // NOX gauge
+    // y0 and my don't change (all in the same horizontal row)
+    x0 = me + (2*ws) + (2*mm);
+    mx = x0 + (ws/2);
+    wcolor = getWarningColor(NOX_DATA,totalNOxIndex.getCurrent());
+    windex = noxRange(totalNOxIndex.getCurrent());
+    display.fillRoundRect(x0,y0,ws,hs,8,wcolor);  // Panel background
+    arcGauge(mx,my,ws,windex);  // Gauge
+    display.loadFont(Roboto_Regular_24);
+    if(windex == 1) {
+      display.setTextColor(TFT_BLACK,wcolor,true);
+    }
+    else {
+      display.setTextColor(TFT_WHITE,wcolor,true);
+    }
+    display.drawString("NOX",mx,my+14);
+    display.drawSmoothRoundRect(x0,y0,8,6,ws,hs,TFT_WHITE);
+  #endif
 
   // Now the wide CO2 panel on the right side of the top row
 
