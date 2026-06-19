@@ -943,6 +943,10 @@ void screenMain() {
   display.drawString(String((uint16_t)(totalTemperatureF.getCurrent() + .5))+"°F",x0,y0);
   display.setTextColor(TFT_CYAN, TFT_BLACK);
   display.drawString(String((uint16_t)(totalHumidity.getCurrent() + .5))+"%",x0+10,y0+36);
+  // Humidity "droplet" symbol
+  display.fillSmoothCircle(x0-25,y0+35,7,TFT_CYAN,TFT_BLACK);
+  display.fillTriangle(x0-25,y0+25,x0-20,y0+30,x0-30,y0+30,TFT_CYAN);
+  // Panel border
   display.drawSmoothRoundRect(me,mt,8,6,ws,hs,TFT_WHITE);
 
   // Position arcGauges in the second (bottom) row given the panel sizing and layout
