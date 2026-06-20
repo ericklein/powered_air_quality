@@ -89,12 +89,11 @@ void screenMain2()
 
   debugMessage("screenMain() start",1);
 
+  display.fillScreen(TFT_BLACK);
   display.loadFont(Roboto_Regular_24);
   //display.setFreeFont(&FreeSans12pt7b);
-  display.setTextColor(TFT_BLACK);
   display.setTextDatum(MC_DATUM);
 
-display.fillScreen(TFT_BLACK);
   // temp/humdity
   display.drawSmoothRoundRect(10,11,4,2,90,95,TFT_WHITE,TFT_BLACK);
   // CO2
@@ -238,7 +237,8 @@ void screenVOC()
 
   // If VOCIndex has no values, alert the user
   if (totalVOCIndex.getStored() == 0) {
-    display.setFreeFont(&FreeSans18pt7b);
+    // display.setFreeFont(&FreeSans18pt7b);
+    display.loadFont(Roboto_Regular_18);
     display.setTextColor(TFT_RED, TFT_BLACK, true);
     display.drawString("No data", (display.width() / 2), (display.height() / 2));
   }
@@ -256,7 +256,6 @@ void screenVOC()
     display.setTextColor(TFT_WHITE, TFT_BLACK, true);
     display.drawString(getWarningLabel(VOC_DATA,totalVOCIndex.getCurrent()), xValue, yCircle);
   }
-
   display.unloadFont();
   debugMessage("screenVOC() end",1);
 }
@@ -286,7 +285,8 @@ void screenCO2()
     display.drawString(getWarningLabel(CO2_DATA,totalCO2.getCurrent()),kXMargins, yValue - 3);
 
     // display current CO₂ value
-    display.setFreeFont(&FreeSans18pt7b);
+    //display.setFreeFont(&FreeSans18pt7b);
+    display.loadFont(Roboto_Regular_36);
     display.setTextDatum(BR_DATUM);
     display.setTextColor(TFT_WHITE, TFT_BLACK, true);
     display.drawString((String(uint16_t(totalCO2.getCurrent())) + "ppm"), (display.width()-(2*kXMargins)), yValue - 3);

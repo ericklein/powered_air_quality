@@ -16,6 +16,10 @@
 #include <Measure.hpp>            // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
 #include <Preferences.h>          // read-write to ESP32 persistent storage
 #include <TFT_eSPI.h>             // https://github.com/Bodmer/TFT_eSPI
+#include "ui/fonts/Roboto_Regular_12.h"
+#include "ui/fonts/Roboto_Regular_18.h"
+#include "ui/fonts/Roboto_Regular_24.h"
+
 #ifdef CLIMATRON
   #include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
   #include <LEDControl.h>           // https://github.com/disquisitioner/LEDControl, multi LED strip async control
@@ -156,9 +160,10 @@ void setup() {
   display.fillScreen(TFT_BLACK);
   ledcAttach(TFT_BL, 5000, 8); // 5000 = pwm frequency, 8 = bit resolution
   ledcWrite(TFT_BL, screenBLMax);
-  display.setFreeFont(&FreeSans24pt7b);
+  //display.setFreeFont(&FreeSans24pt7b);
+  display.loadFont(Roboto_Regular_24);
   screenHelperAlert("Initializing",TFT_WHITE,TFT_BLACK,TFT_WHITE);
-
+  display.unloadFont();
   // generate truely random numbers
   randomSeed(esp_random());
 
@@ -192,8 +197,10 @@ void setup() {
   // initialize sensor(s)
   if( !sensorInit()) {
     // error often occurs after firmware flash/reset
-    display.setFreeFont(&FreeSans18pt7b);
+    //display.setFreeFont(&FreeSans18pt7b);
+    display.loadFont(Roboto_Regular_18);
     deviceReboot("Sensor failure, rebooting", 5000);
+    display.unloadFont();
   }
 
   // initialize variables
@@ -326,8 +333,10 @@ void loop() {
           stripOne.setOneColor(CRGB::Red);
         #endif
         ledcWriteTone(pinAudio, audioFrequency);
-        display.setFreeFont(&FreeSans18pt7b);
+        // display.setFreeFont(&FreeSans18pt7b);
+        display.loadFont(Roboto_Regular_18);
         screenHelperAlert("CO2 rising rapidly", TFT_WHITE,TFT_BLACK,TFT_RED);
+        display.unloadFont();
       }
     }
     else {
@@ -335,8 +344,10 @@ void loop() {
       alertScreen = true;
       alertLengthMS = 5000;
       alertStartMS = millis();
-      display.setFreeFont(&FreeSans18pt7b);
+      display.loadFont(Roboto_Regular_18);
+      // display.setFreeFont(&FreeSans18pt7b);
       screenHelperAlert("AQ sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
+      display.unloadFont();
     }
     // Save last sample time
     timeLastSampleMS = millis();
@@ -420,23 +431,17 @@ void screenUpdate(uint8_t screenCurrent)
  * - If one line is drawn, the text itself is centered on the screen.
  *
  * @param messageText Message to render inside the bubble.
- * @param textColor   Text color.
- * @param fillColor   Bubble fill color (also used as text background color).
+ * @param fgColor   Text color.
+ * @param bgColor   Bubble fill color (also used as text background color).
  * @param borderColor Bubble outline color.
  * @param kXMargins    Horizontal safe margin in pixels applied to both left and right edges.
  *
  * @note Set the desired font and text size on @p display before calling this function.
  */
-void screenHelperAlert(
-  const String &messageText,
-  uint16_t textColor,
-  uint16_t fillColor,
-  uint16_t borderColor
-) 
-{
+void screenHelperAlert( const String &messageText, uint16_t fgColor, uint16_t bgColor, uint16_t borderColor) {
   debugMessage(String("screenHelperAlert start()"),1);
 
-  display.setTextColor(textColor, fillColor);
+  display.setTextColor(fgColor, bgColor, true);
   display.setTextPadding(0);
 
   const int16_t screenW = (int16_t)display.width();
@@ -506,7 +511,7 @@ void screenHelperAlert(
 
   const int16_t rectCenterX = rectX + rectW / 2;
 
-  display.fillRoundRect(rectX, rectY, rectW, rectH, radius, fillColor);
+  display.fillRoundRect(rectX, rectY, rectW, rectH, radius, bgColor);
   display.drawRoundRect(rectX, rectY, rectW, rectH, radius, borderColor);
 
   display.setTextDatum(TC_DATUM);
@@ -709,9 +714,10 @@ void samplePost(uint8_t& numSamples)
       stripOne.setOneColor(CRGB::Red);
     #endif
     ledcWriteTone(pinAudio, audioFrequency);
-    display.setFreeFont(&FreeSans18pt7b);
+    // display.setFreeFont(&FreeSans18pt7b);
+    display.loadFont(Roboto_Regular_18);
     screenHelperAlert("No samples available", TFT_WHITE,TFT_BLACK,TFT_RED);
-
+    display.unloadFont();
     debugMessage(String("samplePost() no samples to process this cycle"),1);
   }
   // Reset sample counters
@@ -744,12 +750,13 @@ void networkWiFiMgrPortalCallback()
 
 void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
   debugMessage(String("networkWiFiMgrAPCallback() start"),1);
-
   debugMessage(String("did not connect to stored AP, starting WiFi Manager config portal"),1);
-  display.setFreeFont(&FreeSans12pt7b);
   // This alert is intentionally a UI blocker, handled by WiFiManager, not alertHandle()
   display.fillScreen(TFT_BLACK);
+  // display.setFreeFont(&FreeSans12pt7b);
+  display.loadFont(Roboto_Regular_12);
   screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_GREEN);
+  display.unloadFont();
   debugMessage(String("networkWiFiMgrAPCallback() end"),1);
 }
 
@@ -895,9 +902,11 @@ bool networkOpenWiFiManager()
 
 void networkStartWiFiMgrPortal()
 {
-  display.setFreeFont(&FreeSans18pt7b);
   // ALERT handled by WiFiManager, not alertHandle()
+  //display.setFreeFont(&FreeSans18pt7b);
+  display.loadFont(Roboto_Regular_18);
   screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_GREEN);
+  display.unloadFont();
   wfm.startWebPortal();
   screenUpdate(screenCurrent);
 }
@@ -1899,8 +1908,10 @@ String deviceGetID(String prefix)
 void deviceReboot(String messageText, uint16_t timeAlertMS)
 {
   debugMessage("deviceReboot() start",1);
-  display.setFreeFont(&FreeSans18pt7b);
+  // display.setFreeFont(&FreeSans18pt7b);
+  display.loadFont(Roboto_Regular_18);
   screenHelperAlert(messageText,TFT_WHITE,TFT_BLACK,TFT_RED);
+  display.unloadFont();
   networkDisconnect();
 
   uint32_t timeRebootStartMS = millis();
