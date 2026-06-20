@@ -493,7 +493,7 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
       debugMessage(String("Post status in header bar is true"),2);
     }
     //screenHelperPostStatus(((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-(kHelperXSpacing + kIconWidth)), (yStatusRegionFloor-kIconHeight), fgColor, bgColor);
-    screenHelperPostStatus((display.width() - kXMargins - (2 * kIconWidth) - kHelperXSpacing), (yStatusRegionFloor-kIconHeight), fgColor, bgColor);
+    screenHelperPostStatus((display.width() - kXMargins - (2 * kIconWidth) - kHelperXSpacing), (kYStatusRegion-24), fgColor, bgColor);
   #endif
 
   // header bar label
@@ -589,7 +589,7 @@ void screenHelperPostStatus(uint16_t x, uint16_t y, uint16_t fgColor, uint16_t b
 {
   debugMessage(String("screenHelperPostStatus() start"), 1); 
 
-    constexpr int16_t W = 20;
+    constexpr int16_t W = 16;
 
     constexpr int16_t R_OUT = 8;
     constexpr int16_t R_IN  = 7;
@@ -597,11 +597,11 @@ void screenHelperPostStatus(uint16_t x, uint16_t y, uint16_t fgColor, uint16_t b
     const int16_t cx = x + W / 2;
 
     const int16_t yTop = y + 5;
-    const int16_t yMid = y + 10;
-    const int16_t yBot = y + 15;
+    const int16_t yMid = y + 5;
+    const int16_t yBot = y + 10;
 
     // Solid filled cylinder body.
-    display.fillRect(x + 2, yTop, 17, yBot - yTop + 1, fgColor);
+    display.fillRect(x, yTop, W, yBot - yTop, fgColor);
 
     // Top cap: fill the lower/front half so the top reads as a filled cap.
     display.drawSmoothArc(cx, yTop, R_OUT, 0, 90, 270, fgColor, fgColor, false);
@@ -609,7 +609,7 @@ void screenHelperPostStatus(uint16_t x, uint16_t y, uint16_t fgColor, uint16_t b
     // Bottom cap: filled lower/front half.
     display.drawSmoothArc(cx, yBot, R_OUT, 0, 270, 90, fgColor, fgColor, false);
 
-    // Interior separator: cut out with bg.
+    // Interior separator: cut out with bg. 
     display.drawSmoothArc(cx, yMid, R_OUT, R_IN, 270, 90, bgColor, fgColor, false);
 
   debugMessage(String("screenHelperPostStatus() end"), 1);   
