@@ -131,7 +131,8 @@ Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCInd
 uint32_t timeLastReportMS = 0;  // timestamp for last report to network endpoints
 
 bool saveWFMConfig = false;
-enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
+// enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
+enum screenNames screenCurrent = sMain; // Initial screen to display (on startup)
 
 uint32_t alertStartMS, alertLengthMS;
 bool alertScreen, alertLED, alertSound = false;
@@ -153,6 +154,8 @@ void setup() {
   display.setRotation(screenRotation);
   display.setTextWrap(false);
   display.fillScreen(TFT_BLACK);
+  ledcAttach(TFT_BL, 5000, 8); // 5000 = pwm frequency, 8 = bit resolution
+  ledcWrite(TFT_BL, screenBLMax);
   display.setFreeFont(&FreeSans24pt7b);
   screenHelperAlert("Initializing",TFT_WHITE,TFT_BLACK,TFT_WHITE);
 
@@ -269,6 +272,7 @@ void loop() {
   #endif
   if (touchEvent) {
     debugMessage(String("touch input x=") + calibratedX + ", y=" + calibratedY,2);
+    ledcWrite(TFT_BL, screenBLMax);
     if (screenCurrent == sMain) {
       if (calibratedY < 122) { // top components
         if (calibratedX < 107) {
@@ -340,9 +344,10 @@ void loop() {
 
   // is it time to enable the screensaver AND we're not in screen saver mode already?
   if ((screenCurrent != sSaver) && ((millis() - timeLastInputMS) > timeScreenSaverStartMS)) {
-    screenCurrent = sSaver;
-    debugMessage("loop(): screen saver engaged after timeout in another screen",2);
-    screenUpdate(screenCurrent);
+    ledcWrite(TFT_BL, screenBLLow);
+    // screenCurrent = sSaver;
+    // debugMessage("loop(): screen saver engaged after timeout in another screen",2);
+    // screenUpdate(screenCurrent);
   }
 
   // is it time to write to the network endpoints?

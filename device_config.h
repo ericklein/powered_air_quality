@@ -39,6 +39,9 @@
   const String defaultRoom = "dev";
 #endif
 
+constexpr uint8_t screenBLMax = 255;
+constexpr uint8_t screenBLLow  = 52;   // 255 * 0.20
+
 #ifdef PAQ
   const String hardwareDeviceType = "AirQuality";
   constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
