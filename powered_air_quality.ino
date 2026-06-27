@@ -21,6 +21,10 @@
 #include "ui/fonts/Roboto_Regular_24.h"
 
 #ifdef CLIMATRON
+  #define FASTLED_ESP32_MINIMAL_ERROR_HANDLING 1
+  #define FASTLED_RMT_MAX_CHANNELS 1  // Restricts driver to 1 hardware channel instead of 8
+  #define FASTLED_ESP32_NO_LOGGING 1  // Directly removes verbose runtime diagnostic strings
+  #define FASTLED_INTERNAL            // Prevents extra warning string printing
   #include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
   #include <LEDControl.h>           // https://github.com/disquisitioner/LEDControl, multi LED strip async control
   // CYD JC2432W328 -> CST820 capacitive touchscreen controller
@@ -2106,7 +2110,7 @@ void ledInit()
 {
   debugMessage("ledInit() start",1);  
   #ifdef CLIMATRON
-    FastLED.addLeds<WS2812B, pinLEDStripOne, GRB>(ledsOne,ledStripPixelCount);
+    FastLED.addLeds<NEOPIXEL, pinLEDStripOne, GRB>(ledsOne,ledStripPixelCount);
     FastLED.setBrightness(200);
     stripOne.setOneColor(CRGB::Black);
   #endif

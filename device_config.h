@@ -27,8 +27,8 @@
 #ifdef CLIMATRON
   #define SENSOR_SEN66
 #else
-  #define SENSOR_SEN54SCD40
-  // #define SENSOR_SEN66
+  // #define SENSOR_SEN54SCD40
+  #define SENSOR_SEN66
 #endif
 
 // Configuration Step 3: If storing data to a network endpoint, set default endpoint path.
