@@ -2110,7 +2110,7 @@ void ledInit()
 {
   debugMessage("ledInit() start",1);  
   #ifdef CLIMATRON
-    FastLED.addLeds<NEOPIXEL, pinLEDStripOne, GRB>(ledsOne,ledStripPixelCount);
+    FastLED.addLeds<WS2812, pinLEDStripOne, GRB>(ledsOne,ledStripPixelCount);
     FastLED.setBrightness(200);
     stripOne.setOneColor(CRGB::Black);
   #endif
