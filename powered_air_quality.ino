@@ -16,6 +16,7 @@
 #include <Measure.hpp>            // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
 #include <Preferences.h>          // read-write to ESP32 persistent storage
 #include <TFT_eSPI.h>             // https://github.com/Bodmer/TFT_eSPI
+#include <TimeLib.h>              // https://github.com/PaulStoffregen/Time, used to process OWM Forecast
 #include "ui/fonts/Roboto_Regular_12.h"
 #include "ui/fonts/Roboto_Regular_18.h"
 #include "ui/fonts/Roboto_Regular_24.h"
@@ -80,6 +81,7 @@ extern void screenNOX();
 extern void screenCO2();
 extern void screenPM25();
 extern void screenTempHumidity();
+extern void screenForecast();
 // other functions residing in screens.cpp
 extern uint8_t co2Range(float);
 extern uint8_t pm25Range(float);
@@ -129,6 +131,9 @@ networkEndpointConfig endpointPath;
 hdweData hardwareData;
 OpenWeatherMapCurrentData owmCurrentData;
 OpenWeatherMapAirQuality owmAirQuality; 
+
+SiteForecast siteForecast;
+String wkdayname[7] = {"SUN","MON","TUE","WED","THU","FRI","SAT"};
 
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.  Each
 // instance contains storage to retain points for subsequent processing, which are used
@@ -225,6 +230,7 @@ void setup() {
       delay(7000);
     #endif
   #endif
+
 }
 
 void loop() {
@@ -414,7 +420,7 @@ void screenUpdate(uint8_t screenCurrent)
       #endif
       break;
     case sTempHum:
-      screenTempHumidity();
+      screenForecast();
       #ifdef CLIMATRON
         stripOne.setOneColor(CRGB::Black);
       #endif
@@ -1105,6 +1111,173 @@ void checkButtonPress() {
       }
     }
   }
+}
+
+void OWMForecastSimulate()
+// Description : Simulates Open Weather Map (OWM) Current Weather data
+// Parameters: NA
+// Return : NA
+// Improvement : variable city name and days of the week
+{
+  int i;
+  float midpoint;
+
+  midpoint = (sensorTempFMin + sensorTempFMax)/2.0;
+  siteForecast.cityName = String("Pleasantville (US)");
+  for(i=0;i<5;i++) {
+    siteForecast.forecastData[i].maxTempF = randomFloatRange(midpoint,sensorTempFMax);
+    siteForecast.forecastData[i].minTempF = randomFloatRange(sensorTempFMin,midpoint);
+    siteForecast.forecastData[i].humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+    siteForecast.forecastData[i].wxFcst = random(1,6);  // Confirm consistent with forecast defines FCST_*
+    siteForecast.forecastData[i].count = 40;
+    siteForecast.forecastData[i].wday = i;
+  }
+  debugMessage(String("SIMULATED OWM Forecast for ") + siteForecast.cityName, 1);
+}
+
+/**
+ * @brief Retreives weather forecast data from Open Weather Maps.
+ *
+ * Fetch weather forecast information from OWM using the 3-hour API. Extract
+ * overall daily forecast info from the 3-hour elements as apppropriate and store
+ * those daily aggregates in the global data structure used separately to display
+ * a 5-day forecast information in the UI.
+ *
+ * If device is in hardware simulation mode, calls OWMCurrentWeatherSimulate() and returns.
+ *
+ * @param 
+ *
+ * @return BOOL true if the function has successfully retrieved weather forecast data
+ *
+ * @note 
+ *
+ * @warning 
+ */
+boolean OWMFetchForecast()
+{
+  uint16_t httpResponseCode, wxcond, wxrange;
+  uint32_t dt, lt;
+  int32_t i, count, tzoffset;
+  uint8_t wd, today, condflags, forecastday;
+  float maxtemp, mintemp, curtemp, humidity;
+  String wxcondname;
+  JsonDocument doc;
+
+  #ifdef HARDWARE_SIMULATE
+    OWMForecastSimulate();
+    return true;
+  #else
+    HTTPClient http;
+    // Attempt to connect to OWM service for 3-hour forecast data
+    static String serverPath = OWMServer + OWMForecastPath + 
+      "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&units=imperial&APPID=" + OWMKey;
+    debugMessage("OWM Forecast fetch: " + String(serverPath),1);
+    if(!http.begin(serverPath)) {
+          debugMessage("OWM weather forecast connection failed",1);
+      return false;
+    }
+
+    // Successfully connected, see if forecast data was returned
+    httpResponseCode = http.GET();
+    if(httpResponseCode != HTTP_CODE_OK) {
+      debugMessage(String("OWM Forecast HTTP GET error code: ") + httpResponseCode,1);
+      http.end();
+      return false;
+    }
+
+    // Retrieved forecast data, so process it
+    debugMessage("OWM HTTP GET success",2);
+
+    // Obtain the HTTP GET result payload and convert to a JSON doc
+    DeserializationError error = deserializeJson(doc,http.getStream());
+    http.end();   
+
+    /*
+    * Print the full payload (to assist in development)
+    Serial.println("**** OWM payload returned *****");
+    serializeJsonPretty(doc,Serial);
+    Serial.println("***** End of Payload *****");
+    */
+    
+    // Extract overall info from OWM forecast payload
+
+    count = doc["cnt"];  // Number of forecasts in the payload list
+    tzoffset = doc["city"]["timezone"];  // Used to adjust UTC forecasts to local time
+
+    condflags = 0;  // Clear out wx condition accumulator
+    forecastday = 0;  // Start storing forecast data on the zeroth day
+    // Clear temperature and humidity accumulation so we start fresh
+    totalTemperatureF.clear();
+    totalHumidity.clear();
+
+    // Process all forecasts returned, which are in the "list" element of the JSON doc
+    for(i=0;i<count;i++) {
+      dt = doc["list"][i]["dt"];  // UTC of forecast
+      lt = dt + tzoffset;         // Convert to local time
+      wd = weekday(lt);           // Use Time library to determine day of week
+
+      // Fetch key forecast elements from the payload
+      curtemp = doc["list"][i]["main"]["temp"];
+      humidity = doc["list"][i]["main"]["humidity"];
+      wxcond = doc["list"][i]["weather"][0]["id"];
+      wxcondname = String(doc["list"][i]["weather"][0]["main"]);
+      siteForecast.cityName = String(doc["city"]["name"]) + " (" + String(doc["city"]["country"]) + ")" ;
+
+      // Aggregate daily data
+      if(i == 0) {
+        today = wd;  // Set today based on the first forecast element
+      }
+      // If the forecast info is not for today then we need wrap up today's
+      // info, store it for future use, and reset for this new day.
+      if(wd != today) {
+        // Retain daily forecast elements in the global data structure ***
+        siteForecast.forecastData[forecastday].maxTempF = totalTemperatureF.getMax();
+        siteForecast.forecastData[forecastday].minTempF = totalTemperatureF.getMin();
+        siteForecast.forecastData[forecastday].humidity = totalHumidity.getAverage();
+        siteForecast.forecastData[forecastday].wxFcst   = forecastMap[condflags];
+        siteForecast.forecastData[forecastday].count    = totalTemperatureF.getCount();
+        siteForecast.forecastData[forecastday].wday     = today-1;
+
+        //Reset things for the new day, including clearing min/max/avg accumulation
+        today = wd;
+        condflags = 0;
+        forecastday++;
+        totalTemperatureF.clear();
+        totalHumidity.clear();
+      }
+      // Now process this daily forecast element
+      totalTemperatureF.include(curtemp);
+      totalHumidity.include(humidity);
+      // Aggregate conditions across wide range of possible values returned by OWM
+      // See https://openweathermap.org/api/weather-conditions#Weather-Condition-Codes-2 for details
+      wxrange = wxcond / 100; // Identify OWM condition group (hundreds digit)
+      if(wxcond == 800) {
+        condflags |= WX_CLEAR;
+      }
+      // Any 2xx, 3xx, or 5xx code translates to Rainy
+      if(wxrange == 2 || wxrange == 3 || wxrange == 5) {
+        condflags |= WX_RAINY;
+      }
+      // Recognize various cloud cover conditions, and treat Atmospheric as cloudy
+      if(wxcond == 801 || wxcond == 802 || wxcond == 803 || wxcond == 804 || wxrange == 7) {
+        condflags |= WX_CLOUDY;
+      }
+      if(wxrange == 6) {
+        condflags |= WX_SNOWY;
+      }
+    }  
+    // Summarize what we have for the last day
+    // Retain daily forecast elements in the global data structure ***
+    siteForecast.forecastData[forecastday].maxTempF = totalTemperatureF.getMax();
+    siteForecast.forecastData[forecastday].minTempF = totalTemperatureF.getMin();
+    siteForecast.forecastData[forecastday].humidity = totalHumidity.getAverage();
+    siteForecast.forecastData[forecastday].wxFcst   = forecastMap[condflags];
+    siteForecast.forecastData[forecastday].count    = totalTemperatureF.getCount();
+    siteForecast.forecastData[forecastday].wday     = today-1;
+
+    return true;
+  #endif
+  return true;
 }
 
 void OWMCurrentWeatherSimulate()

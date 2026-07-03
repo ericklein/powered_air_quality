@@ -15,10 +15,12 @@
 
 // https://fonts.google.com/specimen/Roboto
 #include "ui/fonts/Roboto_Regular_12.h"
+#include "ui/fonts/Roboto_Regular_16.h"  // Just used for Weather Forecast screen
 #include "ui/fonts/Roboto_Regular_18.h"
 #include "ui/fonts/Roboto_Regular_24.h"
 #include "ui/fonts/Roboto_Regular_36.h"
 
+#include "ui/fonts/Roboto_Bold_12.h"    // Just used for Weather Forecast screen
 #include "ui/fonts/Roboto_Bold_36.h"
 #include "ui/fonts/Roboto_Bold_60.h"
 
@@ -26,11 +28,14 @@
 extern uint8_t networkRSSIRead();
 extern bool OWMAirPollutionRead();
 extern bool OWMCurrentWeatherRead();
+extern bool OWMFetchForecast();
 extern void debugMessage(String messageText, uint8_t messageLevel);
 extern uint16_t getWarningColor(uint8_t, float);
 extern TFT_eSPI display;
 extern uint32_t timeLastReportMS;
 extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
+extern struct SiteForecast siteForecast;
+String wdayname[7] = {"SUN","MON","TUE","WED","THU","FRI","SAT"};
 
 // Forward declarations for local functions to help make ordering in this file easier
 void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<kSampleCapacity>, uint8_t, String);
@@ -48,6 +53,15 @@ void arcGauge(uint16_t, uint16_t, uint16_t, uint16_t);
 uint16_t arcGaugeHeight(uint16_t);
 uint16_t arcGaugeWidth(uint16_t);
 void fillSmoothRoundRectWithBorder(int32_t x, int32_t y, int32_t w, int32_t h, int32_t radius, uint16_t fillColor, uint16_t borderColor, int32_t borderWidth = 2);
+// Weather forecast drawing functions
+void wxSunnyIcon(uint16_t, uint16_t, uint32_t);
+void wxCloudyIcon(uint16_t, uint16_t, uint32_t);
+void wxRainyIcon(uint16_t, uint16_t, uint32_t);
+void wxPartlyCloudyIcon(uint16_t, uint16_t, uint32_t);
+void wxSnowIcon(uint16_t, uint16_t, uint32_t);
+void wxDay(String, uint16_t, uint16_t, uint32_t);
+void wxTemperatures(uint16_t, uint16_t, uint16_t, uint16_t, uint32_t);
+void wxHumidity(uint16_t, uint16_t, uint16_t, uint32_t);
 
 // ***** Screen display routines, typically one per major screen ***** //
 void screenSaver()
@@ -123,6 +137,7 @@ void screenTempHumidity()
 // Improvement: 
 {
   debugMessage("screenTempHumidity() start",1);
+
 
   screenHelperHeaderBar(totalTemperatureF, UNK_DATA, "Temp/Humidity");
 
@@ -1158,4 +1173,184 @@ uint16_t arcGaugeWidth(uint16_t height) {
   float angle = 40.0 * PI / 180.0;
   uint16_t width = height * 2.0 * cos(angle);
   return(width);
+}
+
+// Display a 5-day weather forecast as a screen, using data fetched elsewhere
+// from OpenWeatherMap
+void screenForecast() {
+  uint8_t i;
+  uint16_t x0, y0;
+  uint32_t bgcolor;
+  int cond;
+
+  debugMessage("screenForecast() start",1);
+
+  // Retrieve forecast data from OpenWeatherMap
+  if(!OWMFetchForecast()) {
+    // Unable to fetch forecast from OWM. 
+    debugMessage("OWM Forecast - fetch failed!",1); 
+    //TODO: What else to do here??
+    return;
+  }
+
+  // Erase the screen
+  display.fillScreen(TFT_BLACK);
+  display.setTextColor(TFT_WHITE, TFT_BLACK);  // Adding a background colour erases previous text automatically
+
+  // Draw status bar at the top of the screen
+  display.fillRect(0,0,320,30,TFT_DARKGREY);
+  display.loadFont(Roboto_Regular_18);
+  display.setTextDatum(MC_DATUM);
+  display.setTextColor(TFT_WHITE,TFT_DARKGREY,true);
+  display.drawString(siteForecast.cityName,160,15);
+
+  x0 = 32;
+  for(i=0;i<5;i++,x0+=64) {
+    // Day label
+    y0 = 45;
+    if(i==0) {
+      bgcolor = TFT_TODAYBG;
+      display.fillRect(0,30,64,240,bgcolor);  // Today's info has a special background color
+      wxDay("TODAY",x0,y0,bgcolor);
+    }
+    else {
+      bgcolor = TFT_BLACK;
+      wxDay(wdayname[siteForecast.forecastData[i].wday],x0,y0,bgcolor);
+    }
+
+    // Add weather condition icon
+    y0 = 80;
+    switch(siteForecast.forecastData[i].wxFcst) {
+      case FCST_NONE:
+        // TODO: How to handle?  Ignore? Question mark??
+        break;
+      case FCST_CLEAR:
+        wxSunnyIcon(x0,y0,bgcolor);
+        break;
+      case FCST_CLOUDY:
+        wxCloudyIcon(x0,y0,bgcolor);
+        break;
+      case FCST_PTCLOUDY:
+        wxPartlyCloudyIcon(x0,y0,bgcolor);
+        break;
+      case FCST_RAIN:
+        wxRainyIcon(x0,y0,bgcolor);
+        break;
+      case FCST_SNOW:
+        wxSnowIcon(x0,y0,bgcolor);
+        break;    
+    }
+
+    // High and Low temperatures for the day
+    y0 = 140;
+    wxTemperatures(siteForecast.forecastData[i].maxTempF,
+      siteForecast.forecastData[i].minTempF,x0,y0,bgcolor);
+
+    // Humidity for the day
+    y0 = 200;
+    wxHumidity(siteForecast.forecastData[i].humidity,x0,y0,bgcolor);
+  }
+  debugMessage("screenForecast() end",1);
+
+}
+
+
+// Draw the weather condition icon for "sunny".
+void wxSunnyIcon(uint16_t x0, uint16_t y0, uint32_t bgcolor) {
+  display.fillSmoothCircle(x0,y0,8,TFT_ORANGE,TFT_TODAYBG);
+  display.drawWideLine(x0,y0-12,x0,y0-16,4,TFT_ORANGE,bgcolor);
+  display.drawWideLine(x0,y0+12,x0,y0+16,4,TFT_ORANGE,bgcolor);
+  display.drawWideLine(x0+12,y0,x0+16,y0,4,TFT_ORANGE,bgcolor);
+  display.drawWideLine(x0-12,y0,x0-16,y0,4,TFT_ORANGE,bgcolor);
+  display.drawWideLine(x0+9,y0-9,x0+12,y0-12,4,TFT_ORANGE,bgcolor);
+  display.drawWideLine(x0+9,y0+9,x0+12,y0+12,4,TFT_ORANGE,bgcolor);
+  display.drawWideLine(x0-9,y0+9,x0-12,y0+12,4,TFT_ORANGE,bgcolor);
+  display.drawWideLine(x0-9,y0-9,x0-12,y0-12,4,TFT_ORANGE,bgcolor);
+}
+
+// Draw the weather condition icon for "cloudy"
+void wxCloudyIcon(uint16_t x0, uint16_t y0, uint32_t bgcolor) {
+  display.fillSmoothCircle(x0,y0-4,10,TFT_CYAN,bgcolor);
+  display.fillSmoothCircle(x0-10,y0+2,8,TFT_CYAN,bgcolor);
+  display.fillSmoothCircle(x0+10,y0+4,6,TFT_CYAN,bgcolor);
+  display.fillRect(x0-10,y0-6,20,17,TFT_CYAN);
+}
+
+// Draw the weather condition icon for "rainy" (reusing "cloudy" design)
+void wxRainyIcon(uint16_t x0, uint16_t y0, uint32_t bgcolor) {
+  // Cloud should be same as wxCloudyIcon()
+  display.fillSmoothCircle(x0,y0-6,10,TFT_CYAN,bgcolor);
+  display.fillSmoothCircle(x0-10,y0,8,TFT_CYAN,bgcolor);
+  display.fillSmoothCircle(x0+10,y0+2,6,TFT_CYAN,bgcolor);
+  display.fillRect(x0-10,y0-8,20,17,TFT_CYAN);
+  // Now draw lines representing rain
+  display.drawWideLine(x0-1,y0+12,x0-4,y0+16,4,TFT_CYAN,bgcolor);
+  display.drawWideLine(x0-11,y0+12,x0-15,y0+16,4,TFT_CYAN,bgcolor);
+  display.drawWideLine(x0+9,y0+12,x0+5,y0+16,4,TFT_CYAN,bgcolor);
+}
+
+void wxPartlyCloudyIcon(uint16_t x0, uint16_t y0, uint32_t bgcolor) {
+  // Render the same sun as used for Sunny weather but obscure part of
+  // it with a small cloud
+  display.fillSmoothCircle(x0+2 ,y0  ,8,TFT_ORANGE,bgcolor);   // Sun's disc
+  display.fillSmoothCircle(x0   ,y0+4,8,TFT_CYAN,TFT_ORANGE);  // Cloud that entirely overlaps sun
+  display.fillSmoothCircle(x0-8 ,y0+8,6,TFT_CYAN,bgcolor);     // Left cloud part
+  display.fillSmoothCircle(x0+11,y0+9,5,TFT_CYAN,bgcolor);     // Right cloud part
+  display.fillRect(x0-6,y0+2,10,13,TFT_CYAN);                  // Cover smoothing on cloud parts
+  display.fillRect(x0+4,y0+4,8,11,TFT_CYAN);                   // Cover smoothing on cloud parts
+
+  // Sun's rays, only some of which are visible (not behind the cloud)
+  display.drawWideLine(x0+2,y0-12,x0+2,y0-16,4,TFT_ORANGE,bgcolor);
+  display.drawWideLine(x0+14,y0,x0+18,y0,4,TFT_ORANGE,bgcolor);
+  display.drawWideLine(x0-10,y0,x0-14,y0,4,TFT_ORANGE,bgcolor);
+  display.drawWideLine(x0+11,y0-9,x0+13,y0-12,4,TFT_ORANGE,bgcolor);
+  display.drawWideLine(x0-7,y0-9,x0-10,y0-12,4,TFT_ORANGE,bgcolor);
+}
+
+void wxSnowIcon(uint16_t x0, uint16_t y0, uint32_t bgcolor) {
+  // Small, white cloud
+  display.fillSmoothCircle(x0   ,y0-9,8,TFT_WHITE,bgcolor);     // Top cloud
+  display.fillSmoothCircle(x0-8 ,y0-5,6,TFT_WHITE,bgcolor);     // Left cloud part
+  display.fillSmoothCircle(x0+11,y0-4,5,TFT_WHITE,bgcolor);     // Right cloud part
+  display.fillRect(x0-6,y0-11,10,13,TFT_WHITE);                  // Cover smoothing on cloud parts
+  display.fillRect(x0+4,y0-9 ,8,11,TFT_WHITE);                   // Cover smoothing on cloud parts
+  // Add some snow flakes
+  // display.fillSmoothCircle(x0+12,y0+9,2,TFT_WHITE,bgcolor);
+  display.fillSmoothCircle(x0+11,y0+6 ,2,TFT_WHITE,bgcolor);
+  display.fillSmoothCircle(x0+1 ,y0+6 ,2,TFT_WHITE,bgcolor);
+  display.fillSmoothCircle(x0-9 ,y0+6 ,2,TFT_WHITE,bgcolor);
+  display.fillSmoothCircle(x0-14,y0+11,2,TFT_WHITE,bgcolor);
+  display.fillSmoothCircle(x0-4 ,y0+11,2,TFT_WHITE,bgcolor);
+  display.fillSmoothCircle(x0+6 ,y0+11,2,TFT_WHITE,bgcolor);
+  display.fillSmoothCircle(x0+11,y0+16,2,TFT_WHITE,bgcolor);
+  display.fillSmoothCircle(x0+1 ,y0+16,2,TFT_WHITE,bgcolor);
+  display.fillSmoothCircle(x0-9 ,y0+16,2,TFT_WHITE,bgcolor);
+}
+
+void wxDay(String label, uint16_t x0, uint16_t y0, uint32_t bgcolor) {
+  display.loadFont(Roboto_Bold_12);
+  display.setTextDatum(MC_DATUM);
+  display.setTextColor(TFT_YELLOW,bgcolor,true);
+  display.drawString(label,x0,y0);
+}
+
+void wxTemperatures(uint16_t high, uint16_t low, uint16_t x0, uint16_t y0, uint32_t bgcolor) {
+  display.loadFont(Roboto_Regular_24);
+  display.setTextDatum(MC_DATUM);
+  display.drawWideLine(x0-16,y0,x0+16,y0,4,TFT_WHITE,bgcolor);
+  display.setTextColor(TFT_WHITE,bgcolor,true);
+  display.drawString(String(high)+"°",x0,y0-12);
+  display.drawString(String(low)+"°",x0,y0+17);
+}
+
+void wxHumidity(uint16_t humidity, uint16_t x0, uint16_t y0, uint32_t bgcolor) {
+  // Hollow (layered) indicator
+  display.fillSmoothCircle(x0,y0,14,TFT_CYAN,bgcolor);
+  display.fillTriangle(x0-10,y0-10,x0,y0-20,x0+10,y0-10,TFT_CYAN);
+  display.fillSmoothCircle(x0,y0,12,bgcolor,TFT_CYAN);
+  display.fillTriangle(x0-9,y0-9,x0,y0-18,x0+9,y0-9,bgcolor);
+  display.loadFont(Roboto_Regular_16);
+  display.setTextDatum(MC_DATUM);
+  display.setTextColor(TFT_WHITE,bgcolor,true);
+  display.drawString(String(humidity),x0,y0+2);
 }

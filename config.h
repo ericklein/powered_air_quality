@@ -31,6 +31,8 @@
 const String OWMServer = "http://api.openweathermap.org/data/2.5/";
 const String OWMWeatherPath =  "weather?";
 const String OWMAQMPath = "air_pollution?";
+const String OWMForecastPath = "forecast?";
+
 // OWM Air Pollution scale from https://openweathermap.org/api/air-pollution
 const String OWMPollutionLabel[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 
@@ -54,6 +56,9 @@ constexpr uint16_t warningColor[4] = {
     0xFD20, // Orange = "Poor"
     0xF800  // Red = "Bad"
   };
+
+// The  background color used for the "TODAY" column in the Weather Forecast screen (see screens.cpp)
+#define TFT_TODAYBG 0x41e8
 
 // timers
 // Internet and network endpoints
