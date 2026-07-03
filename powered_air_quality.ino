@@ -1162,6 +1162,7 @@ boolean OWMFetchForecast()
   float maxtemp, mintemp, curtemp, humidity;
   String wxcondname;
   JsonDocument doc;
+  Measure fcstTemperatureF, fcstHumidity;
 
   #ifdef HARDWARE_SIMULATE
     OWMForecastSimulate();
@@ -1207,8 +1208,8 @@ boolean OWMFetchForecast()
     condflags = 0;  // Clear out wx condition accumulator
     forecastday = 0;  // Start storing forecast data on the zeroth day
     // Clear temperature and humidity accumulation so we start fresh
-    totalTemperatureF.clear();
-    totalHumidity.clear();
+    fcstTemperatureF.clear();
+    fcstHumidity.clear();
 
     // Process all forecasts returned, which are in the "list" element of the JSON doc
     for(i=0;i<count;i++) {
@@ -1231,23 +1232,23 @@ boolean OWMFetchForecast()
       // info, store it for future use, and reset for this new day.
       if(wd != today) {
         // Retain daily forecast elements in the global data structure ***
-        siteForecast.forecastData[forecastday].maxTempF = totalTemperatureF.getMax();
-        siteForecast.forecastData[forecastday].minTempF = totalTemperatureF.getMin();
-        siteForecast.forecastData[forecastday].humidity = totalHumidity.getAverage();
+        siteForecast.forecastData[forecastday].maxTempF = fcstTemperatureF.getMax();
+        siteForecast.forecastData[forecastday].minTempF = fcstTemperatureF.getMin();
+        siteForecast.forecastData[forecastday].humidity = fcstHumidity.getAverage();
         siteForecast.forecastData[forecastday].wxFcst   = forecastMap[condflags];
-        siteForecast.forecastData[forecastday].count    = totalTemperatureF.getCount();
+        siteForecast.forecastData[forecastday].count    = fcstTemperatureF.getCount();
         siteForecast.forecastData[forecastday].wday     = today-1;
 
         //Reset things for the new day, including clearing min/max/avg accumulation
         today = wd;
         condflags = 0;
         forecastday++;
-        totalTemperatureF.clear();
-        totalHumidity.clear();
+        fcstTemperatureF.clear();
+        fcstHumidity.clear();
       }
       // Now process this daily forecast element
-      totalTemperatureF.include(curtemp);
-      totalHumidity.include(humidity);
+      fcstTemperatureF.include(curtemp);
+      fcstHumidity.include(humidity);
       // Aggregate conditions across wide range of possible values returned by OWM
       // See https://openweathermap.org/api/weather-conditions#Weather-Condition-Codes-2 for details
       wxrange = wxcond / 100; // Identify OWM condition group (hundreds digit)
@@ -1268,11 +1269,11 @@ boolean OWMFetchForecast()
     }  
     // Summarize what we have for the last day
     // Retain daily forecast elements in the global data structure ***
-    siteForecast.forecastData[forecastday].maxTempF = totalTemperatureF.getMax();
-    siteForecast.forecastData[forecastday].minTempF = totalTemperatureF.getMin();
-    siteForecast.forecastData[forecastday].humidity = totalHumidity.getAverage();
+    siteForecast.forecastData[forecastday].maxTempF = fcstTemperatureF.getMax();
+    siteForecast.forecastData[forecastday].minTempF = fcstTemperatureF.getMin();
+    siteForecast.forecastData[forecastday].humidity = fcstHumidity.getAverage();
     siteForecast.forecastData[forecastday].wxFcst   = forecastMap[condflags];
-    siteForecast.forecastData[forecastday].count    = totalTemperatureF.getCount();
+    siteForecast.forecastData[forecastday].count    = fcstTemperatureF.getCount();
     siteForecast.forecastData[forecastday].wday     = today-1;
 
     return true;
