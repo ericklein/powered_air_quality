@@ -20,6 +20,7 @@
 #include "ui/fonts/Roboto_Regular_12.h"
 #include "ui/fonts/Roboto_Regular_18.h"
 #include "ui/fonts/Roboto_Regular_24.h"
+#include "ui/fonts/Roboto_Regular_36.h"
 
 #ifdef CLIMATRON
   #define FASTLED_ESP32_MINIMAL_ERROR_HANDLING 1
@@ -170,7 +171,7 @@ void setup() {
   ledcAttach(TFT_BL, 5000, 8); // 5000 = pwm frequency, 8 = bit resolution
   ledcWrite(TFT_BL, screenBLMax);
   //display.setFreeFont(&FreeSans24pt7b);
-  display.loadFont(Roboto_Regular_24);
+  display.loadFont(Roboto_Regular_36);
   screenHelperAlert("Initializing",TFT_WHITE,TFT_BLACK,TFT_WHITE);
   display.unloadFont();
   // generate truely random numbers
@@ -207,7 +208,7 @@ void setup() {
   if( !sensorInit()) {
     // error often occurs after firmware flash/reset
     //display.setFreeFont(&FreeSans18pt7b);
-    display.loadFont(Roboto_Regular_18);
+    display.loadFont(Roboto_Regular_24);
     deviceReboot("Sensor failure, rebooting", 5000);
     display.unloadFont();
   }
@@ -764,7 +765,7 @@ void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
   // This alert is intentionally a UI blocker, handled by WiFiManager, not alertHandle()
   display.fillScreen(TFT_BLACK);
   // display.setFreeFont(&FreeSans12pt7b);
-  display.loadFont(Roboto_Regular_12);
+  display.loadFont(Roboto_Regular_18);
   screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_GREEN);
   display.unloadFont();
   debugMessage(String("networkWiFiMgrAPCallback() end"),1);

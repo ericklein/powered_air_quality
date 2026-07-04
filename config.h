@@ -10,7 +10,7 @@
 // Configuration Step 2: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-#define INFLUX // Log data to InfluxDB server
+// #define INFLUX // Log data to InfluxDB server
 #define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration Step 3: Define hardware parameters in device_config.h
@@ -19,7 +19,7 @@
 
 // Configuration Step 5: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-#define DEBUG 2
+// #define DEBUG 2
 
 // Configuration Step 5: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -64,12 +64,7 @@ constexpr uint16_t warningColor[4] = {
 // Internet and network endpoints
 constexpr uint8_t timeConnectTimeoutSeconds = 10; // how long WFM attempts network connect before failing
 constexpr uint32_t timeOWMRenewMS = 1800000; // min time between OWM calls
-#ifdef DEBUG
-  constexpr uint8_t timeConfigPortalTimeOutSeconds = 60;
-#else
-  constexpr uint8_t timeConfigPortalTimeOutSeconds = 180;
-#endif
-
+constexpr uint8_t timeConfigPortalTimeOutSeconds = 150;
 
 constexpr uint32_t timeHardwareSleepTimeμS = 10000000;  // sleep time if hardware error occurs
 // button

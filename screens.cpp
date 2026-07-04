@@ -977,7 +977,7 @@ void screenMain() {
   arcGauge(mx,my,ws,windex);  // Gauge
   display.loadFont(Roboto_Regular_24);
   display.setTextDatum(MC_DATUM);
-  if(windex == 1) {
+  if((windex == 1) || (windex == 0)) {
     display.setTextColor(TFT_BLACK,wcolor,true);
   }
   else {
@@ -995,7 +995,7 @@ void screenMain() {
   display.fillRoundRect(x0,y0,ws,hs,8,wcolor);  // Panel background
   arcGauge(mx,my,ws,windex);  // Gauge
   display.loadFont(Roboto_Regular_24);
-  if(windex == 1) {
+  if((windex == 1) || (windex == 0)) {
     display.setTextColor(TFT_BLACK,wcolor,true);
   }
   else {
@@ -1014,7 +1014,7 @@ void screenMain() {
     display.fillRoundRect(x0,y0,ws,hs,8,wcolor);  // Panel background
     arcGauge(mx,my,ws,windex);  // Gauge
     display.loadFont(Roboto_Regular_24);
-    if(windex == 1) {
+    if((windex == 1) || (windex == 0)) {
       display.setTextColor(TFT_BLACK,wcolor,true);
     }
     else {
@@ -1061,7 +1061,7 @@ void screenMain() {
   display.loadFont(Roboto_Regular_18);
   display.setTextDatum(MC_DATUM);
   // Display CO2 values consistent with the quality zone
-  if(windex == 1) {
+  if((windex == 1) || (windex == 0)) {
     display.setTextColor(TFT_BLACK,wcolor,true);
   }
   else {
