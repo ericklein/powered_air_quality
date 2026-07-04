@@ -31,6 +31,7 @@ extern bool OWMCurrentWeatherRead();
 extern bool OWMFetchForecast();
 extern void debugMessage(String messageText, uint8_t messageLevel);
 extern uint16_t getWarningColor(uint8_t, float);
+extern uint16_t getWarningTextColor(uint8_t, float);
 extern TFT_eSPI display;
 extern uint32_t timeLastReportMS;
 extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
@@ -39,7 +40,7 @@ String wdayname[7] = {"SUN","MON","TUE","WED","THU","FRI","SAT"};
 
 // Forward declarations for local functions to help make ordering in this file easier
 void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<kSampleCapacity>, uint8_t, String);
-void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, String header);
+void screenHelperHeaderBar(uint16_t, uint16_t, String header);
 String getWarningLabel(uint8_t, float);
 void screenHelperWiFiStatus(uint16_t, uint16_t, uint16_t);
 void screenHelperPostStatus(uint16_t, uint16_t, uint16_t, uint16_t);
@@ -95,108 +96,36 @@ void screenSaver()
   debugMessage("screenSaver() end",1);
 }
 
-void screenMain2()
-{
-  // screen assists
-  constexpr uint8_t halfBorderWidth = 2;
-  constexpr uint8_t cornerRoundRadius = 4;
-
-  debugMessage("screenMain() start",1);
-
-  display.fillScreen(TFT_BLACK);
-  display.loadFont(Roboto_Regular_24);
-  //display.setFreeFont(&FreeSans12pt7b);
-  display.setTextDatum(MC_DATUM);
-
-  // temp/humdity
-  display.drawSmoothRoundRect(10,11,4,2,90,95,TFT_WHITE,TFT_BLACK);
-  // CO2
-  display.drawSmoothRoundRect(110,11,4,2,200,95,TFT_WHITE,TFT_BLACK);
-  // VOC
-  fillSmoothRoundRectWithBorder(10,117,91,112,cornerRoundRadius,getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()),TFT_WHITE);
-  display.setTextColor(TFT_BLACK,getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()), true);
-  display.drawString("VOC",55,199);
-  // PM2.5
-  fillSmoothRoundRectWithBorder(111,117,97,112,cornerRoundRadius,getWarningColor(PM_DATA,totalPM25.getCurrent()),TFT_WHITE);
-  display.setTextColor(TFT_BLACK,getWarningColor(PM_DATA,totalPM25.getCurrent()), true);
-  display.drawString("PM25",155,199);
-  #ifdef CLIMATRON
-    // NOX
-    fillSmoothRoundRectWithBorder(218,117,96,112,cornerRoundRadius,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()),TFT_WHITE);
-    display.setTextColor(TFT_BLACK,getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()), true);
-    display.drawString("NOx",255,199);
-  #endif
-
-  debugMessage("screenMain() end",1);
-}
-
-void screenTempHumidity() 
-// Description: Displays indoor and outdoor temperature and humidity
-// Parameters:
-// Output: NA (void)
-// Improvement: 
-{
-  debugMessage("screenTempHumidity() start",1);
-
-
-  screenHelperHeaderBar(totalTemperatureF, UNK_DATA, "Temp/Humidity");
-
-  display.loadFont(Roboto_Bold_36);
-  //display.setFreeFont(&FreeSans24pt7b);
-  display.setTextDatum(MC_DATUM);
-
-  // Indoor
-  // Indoor temp
-  display.setTextColor(getWarningColor(TEMP_DATA,totalTemperatureF.getCurrent()),TFT_BLACK, true);
-  display.drawString(String((uint8_t)(totalTemperatureF.getCurrent() + .5)), (display.width()/4), (display.height()*3/8));
-  display.drawBitmap((display.width()/4 + 30), ((display.height()*3/8) - 14), bitmapTempFSmall, 20, 28, TFT_WHITE);
-
-  // Indoor humidity
-  display.setTextColor(getWarningColor(HUM_DATA,totalHumidity.getCurrent()), TFT_BLACK, true);
-  display.drawString(String((uint8_t)(totalHumidity.getCurrent() + 0.5)), (display.width()/4), (display.height()*5/8));
-  display.drawBitmap((display.width()/4 + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
-
-  // Outside
-  // do we have OWM Current data to display?
-  if ((OWMCurrentWeatherRead()) && (owmCurrentData.tempF != 255)) {
-    // Outside temp
-    display.setTextColor(getWarningColor(TEMP_DATA,owmCurrentData.tempF), TFT_BLACK, true);
-    display.drawString(String((uint8_t)(owmCurrentData.tempF + 0.5)), (display.width()*3/4), (display.height()*3/8));
-    display.drawBitmap(((display.width()*3/4) + 30), ((display.height()*3/8) - 14), bitmapTempFSmall, 20, 28, TFT_WHITE);
-
-    // Outside humidity
-    display.setTextColor(getWarningColor(HUM_DATA,owmCurrentData.humidity), TFT_BLACK, true);
-    display.drawString(String((uint8_t)(owmCurrentData.humidity + 0.5)), (display.width()*3/4), (display.height()*5/8));
-    display.drawBitmap(((display.width()*3/4) + 30), ((display.height()*5/8) - 14), bitmapHumidityIconSmall, 20, 28, TFT_WHITE);
-  }
-
-  display.unloadFont();
-
-  //weather icon
-  char weatherIcon = OWMtoMeteoconIcon(owmCurrentData.icon);
-  // if getMeteoIcon doesn't have a matching symbol, skip display
-  if (weatherIcon != '?') {
-    // display icon
-    display.setFreeFont(&meteocons24pt7b);
-    display.setTextColor(TFT_WHITE);
-    display.drawString(String(weatherIcon), ((display.width()*3/4)-12), (display.height()*7/8));
-  }
-  debugMessage("screenTempHumidity() end", 1);
-}
-
 void screenPM25() 
 {
   // screen layout assists in pixels
+  const uint8_t yLabels = display.height() / 4; 
   const uint16_t  xOutdoorMargin = ((display.width() / 2) + kXMargins);
   const uint16_t  xIndoorPMCircle = (display.width() / 4);
   const uint16_t  xOutdoorPMCircle = (display.width()*3/4);
   constexpr uint16_t  yPMCircles = 150;
   constexpr uint16_t  circleRadius = 65;
   constexpr uint16_t circleInnerRadius = circleRadius * 8 / 10;
+  uint16_t fgcolor, bgcolor;
 
   debugMessage("screenPM25() start",1);
 
-  screenHelperHeaderBar(totalPM25, PM_DATA, "PM 2.5");
+  // Draw header bar using appropriate color scheme
+  bgcolor = TFT_DARKGREY;
+  fgcolor = TFT_WHITE;
+
+  screenHelperHeaderBar(fgcolor,bgcolor,"PM 2.5");
+
+  // vertical separator for indoor/outdoor
+  display.drawFastVLine((display.width() / 2), kYStatusRegion, display.height(), bgcolor);
+
+  // indoor/outdoor labels
+  // display.setFreeFont(&FreeSans12pt7b);
+  display.loadFont(Roboto_Regular_24);
+  display.setTextColor(TFT_WHITE, TFT_BLACK, true);
+  display.setTextDatum(MC_DATUM);
+  display.drawString("Indoor", display.width()/4, yLabels);
+  display.drawString("Outside", (display.width()*3/4), yLabels);
 
   display.setTextDatum(MC_DATUM);
 
@@ -243,10 +172,13 @@ void screenVOC()
   const uint16_t yCircle = (display.height()*4/5);
   const uint16_t xValue = xCircle;
   const uint16_t yValue = yCircle - 50;
+  uint16_t fgcolor, bgcolor;
 
   debugMessage("screenVOC() start",1);
 
-  screenHelperHeaderBar(totalVOCIndex, VOC_DATA, "VOC Level");
+  bgcolor = getWarningColor(VOC_DATA,totalVOCIndex.getCurrent());
+  fgcolor = getWarningTextColor(VOC_DATA,totalVOCIndex.getCurrent());
+  screenHelperHeaderBar(fgcolor,bgcolor,"VOC Level");
 
   display.setTextDatum(MC_DATUM);
 
@@ -279,10 +211,13 @@ void screenCO2()
 {
   // screen layout assist(s) in pixels
   const uint16_t yValue = (display.height()*2/5);
+  uint16_t fgcolor, bgcolor;
 
   debugMessage("screenCO2() start",1);
 
-  screenHelperHeaderBar(totalCO2,CO2_DATA,"Recent CO2 Values");
+  bgcolor = getWarningColor(CO2_DATA,totalCO2.getCurrent());
+  fgcolor = getWarningTextColor(CO2_DATA,totalCO2.getCurrent());
+  screenHelperHeaderBar(fgcolor,bgcolor,"Recent CO2 Values");
 
   display.loadFont(Roboto_Regular_36);
   //display.setFreeFont(&FreeSans24pt7b);
@@ -320,10 +255,13 @@ void screenNOX()
   const uint16_t yCircle = (display.height()*4/5);
   const uint16_t xValue = xCircle;
   const uint16_t yValue = yCircle - 50;
+  uint16_t fgcolor, bgcolor;
 
   debugMessage("screenNOX() start",1);
 
-  screenHelperHeaderBar(totalNOxIndex, NOX_DATA, "NOx Level");
+  bgcolor = getWarningColor(NOX_DATA,totalNOxIndex.getCurrent());
+  fgcolor = getWarningTextColor(NOX_DATA,totalNOxIndex.getCurrent());
+  screenHelperHeaderBar(fgcolor,bgcolor,"NOx Level");
 
   // handle sensors without NOx, e.g. SEN54
   if(isnan(totalNOxIndex.getCurrent())) {
@@ -352,102 +290,7 @@ void screenNOX()
   debugMessage("screenNOX() end",1);
 }
 
-
-// void screenAggregateData()
-// // Displays minimum, average, and maximum values for primary sensor values
-// // using a table-style layout (with labels)
-// {
-//   const uint16_t xValueColumn =  10;
-//   const uint16_t xMinColumn   = 115;
-//   const uint16_t xAvgColumn   = 185;
-//   const uint16_t xMaxColumn   = 255;
-//   const uint16_t yHeaderRow   =  10;
-//   const uint16_t yPM25Row     =  40;
-//   const uint16_t yAQIRow      =  70;
-//   const uint16_t yCO2Row      = 100;
-//   const uint16_t yVOCRow      = 130;
-//   const uint16_t yNOXRow      = 170;
-//   const uint16_t yTempFRow    = 200;
-//   const uint16_t yHumidityRow = 220;
-
-//   debugMessage("screenAggregateData() start",1);
-
-//   // clear screen and initialize properties
-//   display.fillScreen(TFT_BLACK);
-//   display.setFreeFont();  // Revert to built-in font
-//   display.setTextSize(2);
-//   display.setTextColor(TFT_WHITE);
-
-//   // Display column heaings
-//   display.setTextColor(TFT_BLUE);
-//   display.setCursor(xAvgColumn, yHeaderRow); display.print("Avg");
-//   display.drawLine(0,yPM25Row-10,display.width(),yPM25Row-10,TFT_BLUE);
-//   display.setTextColor(TFT_WHITE);
-
-//   // Display a unique unit ID based on the high-order 16 bits of the
-//   // ESP32 MAC address (as the header for the data name column)
-//   display.setCursor(0,yHeaderRow);
-//   display.print(deviceGetID("AQ"));
-
-//   // Display column headers
-//   display.setCursor(xMinColumn, yHeaderRow); display.print("Min");
-//   display.setCursor(xMaxColumn, yHeaderRow); display.print("Max");
-
-//   // Display row headings
-//   display.setCursor(xValueColumn, yPM25Row); display.print("PM25");
-//   display.setCursor(xValueColumn, yAQIRow); display.print("AQI");
-//   display.setCursor(xValueColumn, yCO2Row); display.print("CO2");
-//   display.setCursor(xValueColumn, yVOCRow); display.print("VOC");
-//   display.setCursor(xValueColumn, yNOXRow); display.print("NOx");
-//   display.setCursor(xValueColumn, yTempFRow); display.print(" F");
-//   display.setCursor(xValueColumn, yHumidityRow); display.print("%RH");
-
-//   // PM2.5
-//   display.setCursor(xMinColumn,yPM25Row); display.print(totalPM25.getMin(),1);
-//   display.setCursor(xAvgColumn,yPM25Row); display.print(totalPM25.getAverage(),1);
-//   display.setCursor(xMaxColumn,yPM25Row); display.print(totalPM25.getMax(),1);
-
-//   // AQI
-//   display.setCursor(xMinColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMin()),1);
-//   display.setCursor(xAvgColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getAverage()),1);
-//   display.setCursor(xMaxColumn,yAQIRow); display.print(pm25toAQI_US(totalPM25.getMax()),1);
-
-//   // CO2 color coded
-//   display.setTextColor(warningColor[co2Range(totalCO2.getMin())]);  // Use highlight color look-up table
-//   display.setCursor(xMinColumn,yCO2Row); display.print(totalCO2.getMin(),0);
-//   display.setTextColor(warningColor[co2Range(totalCO2.getAverage())]);
-//   display.setCursor(xAvgColumn,yCO2Row); display.print(totalCO2.getAverage(),0);
-//   display.setTextColor(warningColor[co2Range(totalCO2.getMax())]);
-//   display.setCursor(xMaxColumn,yCO2Row); display.print(totalCO2.getMax(),0);
-//   display.setTextColor(TFT_WHITE);  // Restore text color
-
-//   //VOC index
-//   display.setCursor(xMinColumn,yVOCRow); display.print(totalVOCIndex.getMin(),0);
-//   display.setCursor(xAvgColumn,yVOCRow); display.print(totalVOCIndex.getAverage(),0);
-//   display.setCursor(xMaxColumn,yVOCRow); display.print(totalVOCIndex.getMax(),0);
-
-//   // NOx index
-//   display.setCursor(xMinColumn,yNOXRow); display.print(totalNOxIndex.getMin(),1);
-//   display.setCursor(xAvgColumn,yNOXRow); display.print(totalNOxIndex.getAverage(),1);
-//   display.setCursor(xMaxColumn,yNOXRow); display.print(totalNOxIndex.getMax(),1);
-
-//   // temperature
-//   display.setCursor(xMinColumn,yTempFRow); display.print(totalTemperatureF.getMin(),1);
-//   display.setCursor(xAvgColumn,yTempFRow); display.print(totalTemperatureF.getAverage(),1);
-//   display.setCursor(xMaxColumn,yTempFRow); display.print(totalTemperatureF.getMax(),1);
-
-//   // humidity
-//   display.setCursor(xMinColumn,yHumidityRow); display.print(totalHumidity.getMin(),0);
-//   display.setCursor(xAvgColumn,yHumidityRow); display.print(totalHumidity.getAverage(),0);
-//   display.setCursor(xMaxColumn,yHumidityRow); display.print(totalHumidity.getMax(),0);
-
-//   // return to default text size
-//   display.setTextSize(1);
-
-//   debugMessage("screenAggregateData() end",1);
-// }
-
-void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, String header)
+void screenHelperHeaderBar(uint16_t fgcolor, uint16_t bgcolor, String header)
 {
   // screen layout assists in pixels
   const uint8_t yStatusRegionFloor = kYStatusRegion - 7;
@@ -458,57 +301,37 @@ void screenHelperHeaderBar(Measure<kSampleCapacity> measure, uint8_t datatype, S
   constexpr uint8_t wifiBarSpacing = 5;
   constexpr uint8_t kIconHeight = 20;
   constexpr uint8_t kIconWidth = 20;
-
-  uint16_t fgColor, bgColor;
+  uint16_t iconfgcolor;
 
   debugMessage("screenHelperHeaderBar() start",1);
 
-  display.loadFont(Roboto_Regular_24);
+  display.loadFont(Roboto_Regular_18);
 
   display.fillScreen(TFT_BLACK);
-  if ((datatype == PM_DATA) || (datatype == UNK_DATA)) {
-    // when displaying multiple data sources the header bare is a neutral color
-    bgColor = TFT_DARKGREY;
-    display.fillRect(0,0,display.width(),kYStatusRegion, bgColor);
 
-    // vertical separator for indoor/outdoor
-    display.drawFastVLine((display.width() / 2), kYStatusRegion, display.height(), bgColor);
+  // Draw header bar background and set matching text color based on
+  // values passed in
+  display.fillRect(0,0,display.width(),kYStatusRegion, bgcolor);
+  display.setTextColor(fgcolor, bgcolor, true);
 
-    // indoor/outdoor labels
-    // display.setFreeFont(&FreeSans12pt7b);
-    display.setTextColor(TFT_WHITE, TFT_BLACK, true);
-    display.setTextDatum(MC_DATUM);
-    display.drawString("Indoor", display.width()/4, yLabels);
-    display.drawString("Outside", (display.width()*3/4), yLabels);
-
-    // set the color for the header bar label
-    display.setTextColor(TFT_BLACK, bgColor, true);
-  }
-  else {
-    // set header bar color and background text color to the most recent sample warning color
-    bgColor = getWarningColor(datatype,measure.getMember(measure.getCurrent()));
-    display.fillRect(0,0,display.width(),kYStatusRegion, bgColor);
-    display.setTextColor(TFT_BLACK, bgColor, true);
-
-  }
   // screen helpers in status region
   // screenHelperWiFiStatus((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing))), yStatusRegionFloor, wifiBarWidth, wifiBarHeightIncrement, wifiBarSpacing);
-  screenHelperWiFiStatus((display.width() - kXMargins - kIconWidth), yStatusRegionFloor, bgColor);
+  screenHelperWiFiStatus((display.width() - kXMargins - kIconWidth), yStatusRegionFloor, bgcolor);
   
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
     if ((timeLastReportMS == 0) || ((millis() - timeLastReportMS) >= (timeReportMS * reportFailureThreshold))) {
       // we haven't successfully written to a network endpoint at all or before the reportFailureThreshold
       // display.drawBitmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
-      fgColor = TFT_RED;
+      iconfgcolor = TFT_RED;
       debugMessage(String("Post status in header bar is false"),2);
     }
     else {
-      fgColor = TFT_BLACK;
+      iconfgcolor = TFT_BLACK;
       //display.drawiBtmap(initialX, initialY, checkmark_12x15, 12, 15, TFT_BLACK);
       debugMessage(String("Post status in header bar is true"),2);
     }
     //screenHelperPostStatus(((display.width() - kXMargins - ((5*wifiBarWidth)+(4*wifiBarSpacing)))-(kHelperXSpacing + kIconWidth)), (yStatusRegionFloor-kIconHeight), fgColor, bgColor);
-    screenHelperPostStatus((display.width() - kXMargins - (2 * kIconWidth) - kHelperXSpacing), (kYStatusRegion-24), fgColor, bgColor);
+    screenHelperPostStatus((display.width() - kXMargins - (2 * kIconWidth) - kHelperXSpacing), (kYStatusRegion-24), iconfgcolor, bgcolor);
   #endif
 
   // header bar label
@@ -532,49 +355,49 @@ void screenHelperWiFiStatus(uint16_t x, uint16_t y, uint16_t bgColor)
 
   uint16_t circleColor, arcOneColor, arcTwoColor;
 
-  constexpr uint8_t dotRadius = 3;  
+  constexpr uint8_t dotRadius = 2;  
   const uint16_t cx = x + 10;
   const uint16_t cy = y - dotRadius;
 
   hardwareData.rssi = networkRSSIRead();
 
   if (hardwareData.rssi > 80) {
-    // not usable internet, all white
-    circleColor = TFT_WHITE;
-    arcOneColor = TFT_WHITE;
-    arcTwoColor = TFT_WHITE;
-    // add debug message
-  }
-  if (hardwareData.rssi > 70) {
-    // poor internet, circle black, arcs white
-    circleColor = TFT_BLACK;
-    arcOneColor = TFT_WHITE;
-    arcTwoColor = TFT_WHITE;
-    // add debug message
-  }
-  if (hardwareData.rssi > 60) {
-    // moderate internet, circle and first arc black, last arc grey
-    circleColor = TFT_BLACK;
-    arcOneColor = TFT_BLACK;
-    arcTwoColor = TFT_WHITE;
-    // add debug message
-  }
-  else {
-    // excellent internet, all black
+    // not usable internet, all black
     circleColor = TFT_BLACK;
     arcOneColor = TFT_BLACK;
     arcTwoColor = TFT_BLACK;
+    // add debug message
+  }
+  if (hardwareData.rssi > 70) {
+    // poor internet, circle white, arcs black
+    circleColor = TFT_WHITE;
+    arcOneColor = TFT_BLACK;
+    arcTwoColor = TFT_BLACK;
+    // add debug message
+  }
+  if (hardwareData.rssi > 60) {
+    // moderate internet, circle and first arc white, last arc black
+    circleColor = TFT_WHITE;
+    arcOneColor = TFT_WHITE;
+    arcTwoColor = TFT_BLACK;
+    // add debug message
+  }
+  else {
+    // excellent internet, all white
+    circleColor = TFT_WHITE;
+    arcOneColor = TFT_WHITE;
+    arcTwoColor = TFT_WHITE;
     // add debug message
   }
 
   // signal circle
   display.fillSmoothCircle(cx, cy, dotRadius, circleColor, bgColor);
 
-  // Inner signal arc: 3 pixels thick
-  display.drawSmoothArc(cx, cy, 9, 7, 138, 222, arcOneColor, bgColor, true);
+  // Inner signal arc: 4 pixels thick
+  display.drawSmoothArc(cx, cy, 9, 6, 135, 225, arcOneColor, bgColor, false);
 
-  // Outer signal arc: 3 pixels thick.
-  display.drawSmoothArc(cx, cy, 16, 14, 144, 216, arcTwoColor, bgColor, true);
+  // Outer signal arc: 4 pixels thick.
+  display.drawSmoothArc(cx, cy, 16, 13, 135, 225, arcTwoColor, bgColor, false);
 
     // uint8_t barCount;
     // if (hardwareData.rssi < 55) barCount = 5;
@@ -604,17 +427,28 @@ void screenHelperPostStatus(uint16_t x, uint16_t y, uint16_t fgColor, uint16_t b
 {
   debugMessage(String("screenHelperPostStatus() start"), 1); 
 
-    constexpr int16_t W = 16;
+    constexpr int16_t W = 10;
+    constexpr int16_t H = 16;
 
     constexpr int16_t R_OUT = 8;
     constexpr int16_t R_IN  = 7;
 
     const int16_t cx = x + W / 2;
+    const int16_t cy = y + 9;
 
     const int16_t yTop = y + 5;
     const int16_t yMid = y + 5;
     const int16_t yBot = y + 10;
 
+    float theta;
+
+    theta = 180.0*atan(((float)W)/(H))/PI;
+    display.drawSmoothArc(cx,cy+(H/2),H+4,0,180-theta,180+theta,fgColor,bgColor,false);
+    display.drawSmoothArc(cx,cy-(H/2),H+4,0,360-theta,theta    ,fgColor,bgColor,false);
+    display.fillRect(cx-W-1,cy-(H/2),2*(W+1)+1,H,fgColor);
+    display.drawSmoothArc(cx,cy-H-4,H+4,H+3,360-theta,theta,bgColor,fgColor,false);
+
+/*
     // Solid filled cylinder body.
     display.fillRect(x, yTop, W, yBot - yTop, fgColor);
 
@@ -626,6 +460,7 @@ void screenHelperPostStatus(uint16_t x, uint16_t y, uint16_t fgColor, uint16_t b
 
     // Interior separator: cut out with bg. 
     display.drawSmoothArc(cx, yMid, R_OUT, R_IN, 270, 90, bgColor, fgColor, false);
+*/
 
   debugMessage(String("screenHelperPostStatus() end"), 1);   
 }
@@ -1198,11 +1033,14 @@ void screenForecast() {
   display.setTextColor(TFT_WHITE, TFT_BLACK);  // Adding a background colour erases previous text automatically
 
   // Draw status bar at the top of the screen
+  screenHelperHeaderBar(TFT_WHITE,TFT_DARKGREY,siteForecast.cityName);
+  /*
   display.fillRect(0,0,320,30,TFT_DARKGREY);
   display.loadFont(Roboto_Regular_18);
   display.setTextDatum(MC_DATUM);
   display.setTextColor(TFT_WHITE,TFT_DARKGREY,true);
   display.drawString(siteForecast.cityName,160,15);
+  */
 
   x0 = 32;
   for(i=0;i<5;i++,x0+=64) {

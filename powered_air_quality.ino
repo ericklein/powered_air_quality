@@ -1223,7 +1223,7 @@ boolean OWMFetchForecast()
       humidity = doc["list"][i]["main"]["humidity"];
       wxcond = doc["list"][i]["weather"][0]["id"];
       wxcondname = String(doc["list"][i]["weather"][0]["main"]);
-      siteForecast.cityName = String(doc["city"]["name"]) + " (" + String(doc["city"]["country"]) + ")" ;
+      siteForecast.cityName = String(doc["city"]["name"]);
 
       // Aggregate daily data
       if(i == 0) {
@@ -2358,6 +2358,45 @@ uint16_t getWarningColor(uint8_t datatype, float datavalue)
     default:
       return(TFT_WHITE);
   }
+}
+
+// Determine the right text color to use in writing on a region colored according to
+// warning level of the type of data in question.  
+uint16_t getWarningTextColor(uint8_t datatype, float datavalue)
+{
+  uint16_t windex;
+
+  switch(datatype) {
+    case CO2_DATA:
+      windex = co2Range(datavalue);
+      break;
+    case VOC_DATA:
+      windex = vocRange(datavalue);
+      break;
+    case NOX_DATA:
+      windex = noxRange(datavalue);
+      break;
+    case PM_DATA:
+      windex = pm25Range(datavalue);
+      break;
+    case TEMP_DATA:
+      if( (datavalue < sensorTempFComfortMin) || (datavalue > sensorTempFComfortMax) ) windex = 1; // "Fair"
+      else windex = 0;  // "Good"
+      break;
+    case HUM_DATA:
+      if( (datavalue < sensorHumidityComfortMin) || (datavalue > sensorHumidityComfortMax) ) windex = 1; // "Fair"
+      else windex = 0; // "Good"
+      break;
+    default:
+      // Don't know what to do, so just return white
+      return(TFT_WHITE);
+  }
+  // For warning levels 0 (Green) and 1 (Yellow) use black text
+  // For warning levels 2 (Orange) and 3 (Red) use white text
+  if( (windex == 0) || (windex == 1)) {
+    return(TFT_BLACK);
+  }
+  else return(TFT_WHITE);
 }
 
 void debugMessage(String messageText, uint8_t messageLevel)
