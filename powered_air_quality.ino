@@ -182,8 +182,15 @@ void setup() {
     ledInit();
   #endif
 
-  // execute before sensorInit() to load altitude
-  loadNVConfig();    
+  // get configuration data before calling sensorInit() to load altitude value
+  if(!nvconfigRead()) {
+    // no configuration parameters in non-volatile storage, so write defaults
+    nvconfigDefaultsLoad();
+    nvconfigWrite();
+  }   
+
+  // initialize variables
+  owmCurrentData.tempF = 255.0f; // 255 indicates no data
 
   // initialize sensor(s)
   if( !sensorInit()) {
@@ -191,25 +198,7 @@ void setup() {
     display.setFreeFont(&FreeSans18pt7b);
     deviceReboot("Sensor failure, rebooting", 5000);
   }
-
-  // initialize variables
-  owmCurrentData.tempF = 255.0f; // 255 indicates no data
-  owmAirQuality.aqi = 255; // 255 indicates no data
-  hardwareData.rssi = 255; // 255 indicates no WiFi connection
-
-  networkOpenWiFiManager();
-
-  #ifndef HARDWARE_SIMULATE
-    // Explicit start-up delay
-    // SEN66 takes 5-6 seconds to return valid CO2 readings, 10-11 seconds for valid NOx index values
-    // SEN554 takes up to 6 seconds to return valid NOx index values.
-    #ifdef SENSOR_SEN66
-      delay(12000);
-    #endif
-    #ifdef SENSOR_SEN54SCD40
-      delay(7000);
-    #endif
-  #endif
+  networkWiFiManagerOpen();
 }
 
 void loop() {
@@ -753,10 +742,10 @@ void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
   debugMessage(String("networkWiFiMgrAPCallback() end"),1);
 }
 
-bool networkOpenWiFiManager()
+bool networkWiFiManagerOpen()
 // Connect to WiFi network using WiFiManager library
 {
-  debugMessage("networkOpenWiFiManager() start",1);
+  debugMessage("networkWiFiManagerOpen() start",1);
   // make sure Wi-Fi is fully stopped before setting hostname
   WiFi.mode(WIFI_MODE_NULL);
   WiFi.setHostname(endpointPath.deviceID.c_str());
@@ -766,20 +755,16 @@ bool networkOpenWiFiManager()
   wfm.setSaveConfigCallback(networkWiFiMgrPortalCallback);
   wfm.setConnectTimeout(timeConnectTimeoutSeconds); // how long to try connecting before continuing
   wfm.setConfigPortalTimeout(timeConfigPortalTimeOutSeconds); // auto close configportal after n seconds
-  // wifi scan settings
   // wm.setRemoveDuplicateAPs(false); // do not remove duplicate ap names (true)
   // wm.setMinimumSignalQuality(20);  // set min RSSI (percentage) to show in scans, null = 8%
   // wm.setShowInfoErase(false);      // do not show erase button on info page
   // wm.setScanDispPerc(true);       // show RSSI as percentage not graph icons
 
-  // Enable WiFiManager debug mode if DEBUG is set and equal to 2, disabled otherwise
-  #ifdef DEBUG
-    if(DEBUG >= 2) wfm.setDebugOutput(true);
-    else wfm.setDebugOutput(false);
-  #endif
-  #ifndef DEBUG
-    // if (DEBUG < 2)
-    wfm.setDebugOutput(false);
+  // Enable WiFiManager debug outyput based on DEBUG definition
+  #if defined(DEBUG) && (DEBUG >= 2)
+      wfm.setDebugOutput(true);
+  #else
+      wfm.setDebugOutput(false);
   #endif
 
   // set WiFiManager portal parameters
@@ -791,10 +776,9 @@ bool networkOpenWiFiManager()
   wfm.addParameter(&hint_text);
 
   // collect common parameters in AP portal mode
-  WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude","",9);
-  WiFiManagerParameter deviceLongitude("deviceLongitude", "device longitude","",9);
-  // String altitude = to_string(defaultAltitude);
-  WiFiManagerParameter deviceAltitude("deviceAltitude", "Meters above sea level",defaultAltitude.c_str(),5);
+  WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude",hardwareData.latitude,9);
+  WiFiManagerParameter deviceLongitude("deviceLongitude", "device longitude",hardwareData.longitude,9);
+  WiFiManagerParameter deviceAltitude("deviceAltitude", "Meters above sea level",hardwareData.altitude,5);
   WiFiManagerParameter deviceID("deviceID", "unique name for device", endpointPath.deviceID.c_str(), 30);
 
   wfm.addParameter(&deviceLatitude);
@@ -803,11 +787,11 @@ bool networkOpenWiFiManager()
   wfm.addParameter(&deviceID);
 
 
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-    // collect network endpoint path in AP portal mode
-    WiFiManagerParameter deviceSite("deviceSite", "device site", defaultSite.c_str(), 20);
-    WiFiManagerParameter deviceLocation("deviceLocation", "indoor or outdoor", defaultLocation.c_str(), 20);
-    WiFiManagerParameter deviceRoom("deviceRoom", "what room is the device in", defaultRoom.c_str(), 20);
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
+    // collect network endpoint path in web portal mode
+    WiFiManagerParameter deviceSite("deviceSite", "device site", endpointPath.site.c_str(), 20);
+    WiFiManagerParameter deviceLocation("deviceLocation", "indoor or outdoor", endpointPath.location.c_str(), 20);
+    WiFiManagerParameter deviceRoom("deviceRoom", "what room is the device in", endpointPath.room.c_str(), 20);
 
     wfm.addParameter(&deviceSite);
     wfm.addParameter(&deviceLocation);
@@ -815,11 +799,11 @@ bool networkOpenWiFiManager()
   #endif
 
   #ifdef MQTT
-     // collect MQTT parameters in AP portal mode
-    WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",defaultMQTTBroker.c_str(),30);;
-    WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", defaultMQTTPort.c_str(), 5);
-    WiFiManagerParameter mqttUser("mqttUser", "MQTT username", defaultMQTTUser.c_str(), 20);
-    WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", defaultMQTTPassword.c_str(), 20);
+     // collect MQTT parameters in web portal mode
+    WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",mqttBrokerConfig.host.c_str(),30);;
+    WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", mqttBrokerConfig.port.c_str(), 5);
+    WiFiManagerParameter mqttUser("mqttUser", "MQTT username", mqttBrokerConfig.user.c_str(), 20);
+    WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", mqttBrokerConfig.password.c_str(), 20);
 
     wfm.addParameter(&mqttBroker);
     wfm.addParameter(&mqttPort);
@@ -828,12 +812,12 @@ bool networkOpenWiFiManager()
   #endif
 
   #ifdef INFLUX
-    WiFiManagerParameter influxBroker("influxBroker","influxdb server address",defaultInfluxAddress.c_str(),30);;
-    WiFiManagerParameter influxPort("influxPort", "influxdb server port", defaultInfluxPort.c_str(), 5);
-    WiFiManagerParameter influxOrg("influxOrg", "influx organization name", defaultInfluxOrg.c_str(),20);
-    WiFiManagerParameter influxBucket("influxBucket", "influx bucket name", defaultInfluxBucket.c_str(),20);
-    WiFiManagerParameter influxEnvMeasurement("influxEnvMeasurement", "influx environment measurement", defaultInfluxEnvMeasurement.c_str(),20);
-    WiFiManagerParameter influxDevMeasurement("influxDevMeasurement", "influx device measurement", defaultInfluxDevMeasurement.c_str(),20);
+    WiFiManagerParameter influxBroker("influxBroker","influxdb server address",influxdbConfig.host.c_str(),30);;
+    WiFiManagerParameter influxPort("influxPort", "influxdb server port", influxdbConfig.port.c_str(), 5);
+    WiFiManagerParameter influxOrg("influxOrg", "influx organization name", influxdbConfig.org.c_str(),20);
+    WiFiManagerParameter influxBucket("influxBucket", "influx bucket name", influxdbConfig.bucket.c_str(),20);
+    WiFiManagerParameter influxEnvMeasurement("influxEnvMeasurement", "influx environment measurement", influxdbConfig.envMeasurement.c_str(),20);
+    WiFiManagerParameter influxDevMeasurement("influxDevMeasurement", "influx device measurement", influxdbConfig.devMeasurement.c_str(),20);
 
     wfm.addParameter(&influxBroker);
     wfm.addParameter(&influxPort);
@@ -849,6 +833,7 @@ bool networkOpenWiFiManager()
 
   if(!connected) {
     debugMessage("WiFi connection failure; local sensor data ONLY", 1);
+    hardwareData.rssi = 255; // 255 indicates no WiFi connection
     #ifdef HARDWARE_SIMULATE
       networkRSSISimulate();
     #endif
@@ -883,13 +868,13 @@ bool networkOpenWiFiManager()
         influxdbConfig.devMeasurement = influxDevMeasurement.getValue();
       #endif
 
-      saveNVConfig();
+      nvconfigWrite();
       saveWFMConfig = false;
     }
     hardwareData.rssi = networkRSSIRead();
     debugMessage(endpointPath.deviceID + " connected to " + WiFi.SSID() + ", " + WiFi.localIP().toString() + ", " + hardwareData.rssi + "dBm RSSI", 2);
   }
-  debugMessage("networkOpenWiFiManager() end", 1);
+  debugMessage("networkWiFiManagerOpen() end", 1);
   return (connected);
 }
 
@@ -939,94 +924,152 @@ void networkDisconnect()
 }
 
 // Preferences helper routines
-void loadNVConfig() {
-  debugMessage("loadNVConfig() start",1);
-  nvConfig.begin("config", true); // read-only
+bool nvconfigRead() {
+  bool success = false;
 
-  hardwareData.altitude = nvConfig.getUShort("altitude", uint16_t(defaultAltitude.toInt()));
-  debugMessage(String("Device altitude is ") + hardwareData.altitude + " meters",2);
-  hardwareData.latitude = nvConfig.getFloat("latitude");
-  debugMessage(String("Device latitude is ") + hardwareData.latitude,2);
-  hardwareData.longitude = nvConfig.getFloat("longitude");
-  debugMessage(String("Device longitude is ") + hardwareData.longitude,2);
-  // generate default unique device identifier based on ESP32 MAC address and hardware device type specified in config.h.
-  endpointPath.deviceID = nvConfig.getString("deviceID", deviceGetID(hardwareDeviceType));
-  debugMessage(String("Device ID is ") + endpointPath.deviceID,1);
+  debugMessage("nvconfigRead() start",1);
+  // open config read-only
+  if (nvConfig.begin("config", true)) {
+    // check to see if there are pre-existing parameters
+    if (nvConfig.isKey("altitude")) {
+      // config data exists
+      hardwareData.altitude = nvConfig.getUShort("altitude");
+      debugMessage(String("Altitude from nvconfig is ") + hardwareData.altitude + " meters",2);
+      hardwareData.latitude = nvConfig.getFloat("latitude");
+      debugMessage(String("Latitude from nvconfig is ") + hardwareData.latitude,2);
+      hardwareData.longitude = nvConfig.getFloat("longitude");
+      debugMessage(String("Longitude from nvconfig is ") + hardwareData.longitude,2);
+      // generate default unique device identifier based on ESP32 MAC address and hardware device type specified in config.h.
+      endpointPath.deviceID = nvConfig.getString("deviceID");
+      debugMessage(String("Device ID from nvconfig is ") + endpointPath.deviceID,1);
 
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-    endpointPath.site = nvConfig.getString("site", defaultSite);
-    debugMessage(String("Device site is ") + endpointPath.site,2);
-    endpointPath.location = nvConfig.getString("location", defaultLocation);
-    debugMessage(String("Device location is ") + endpointPath.location,2);
-    endpointPath.room = nvConfig.getString("room", defaultRoom);
-    debugMessage(String("Device room is ") + endpointPath.room,2);
-  #endif
+      #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
+        endpointPath.site = nvConfig.getString("site");
+        debugMessage(String("Device site from nvconfig is ") + endpointPath.site,2);
+        endpointPath.location = nvConfig.getString("location");
+        debugMessage(String("Device location from nvconfig is ") + endpointPath.location,2);
+        endpointPath.room = nvConfig.getString("room", kDefaultRoom);
+        debugMessage(String("Device room from nvconfig is ") + endpointPath.room,2);
+      #endif
 
-  #ifdef MQTT
-    mqttBrokerConfig.host     = nvConfig.getString("mqttHost", defaultMQTTBroker);
-    debugMessage(String("MQTT broker is ") + mqttBrokerConfig.host,2);
-    mqttBrokerConfig.port     = nvConfig.getUShort("mqttPort", uint16_t(defaultMQTTPort.toInt()));
-    debugMessage(String("MQTT broker port is ") + mqttBrokerConfig.port,2);
-    mqttBrokerConfig.user     = nvConfig.getString("mqttUser", defaultMQTTUser);
-    debugMessage(String("MQTT username is ") + mqttBrokerConfig.user,2);
-    mqttBrokerConfig.password = nvConfig.getString("mqttPassword", defaultMQTTPassword);
-    debugMessage(String("MQTT user password is ") + mqttBrokerConfig.password,2);
-  #endif
+      #ifdef MQTT
+        mqttBrokerConfig.host = nvConfig.getString("mqttHost");
+        debugMessage(String("MQTT broker address from nvconfig is ") + mqttBrokerConfig.host,2);
+        mqttBrokerConfig.port = nvConfig.getUShort("mqttPort");
+        debugMessage(String("MQTT broker port from nvconfig is ") + mqttBrokerConfig.port,2);
+        mqttBrokerConfig.user = nvConfig.getString("mqttUser");
+        debugMessage(String("MQTT username from nvconfig is ") + mqttBrokerConfig.user,2);
+        mqttBrokerConfig.password = nvConfig.getString("mqttPassword");
+        debugMessage(String("MQTT user password from nvconfig is ") + mqttBrokerConfig.password,2);
+      #endif
 
-  #ifdef INFLUX
-    influxdbConfig.host     = nvConfig.getString("influxHost", defaultInfluxAddress);
-    debugMessage(String("influxdb server address is ") + influxdbConfig.host,2);
-    influxdbConfig.port     = nvConfig.getUShort("influxPort", uint16_t(defaultInfluxPort.toInt()));
-    debugMessage(String("influxdb server port is ") + influxdbConfig.port,2);
-    influxdbConfig.org     = nvConfig.getString("influxOrg", defaultInfluxOrg);
-    debugMessage(String("influxdb org is ") + influxdbConfig.org,2);
-    influxdbConfig.bucket = nvConfig.getString("influxBucket", defaultInfluxBucket);
-    debugMessage(String("influxdb bucket is ") + influxdbConfig.bucket,2);
-    influxdbConfig.envMeasurement = nvConfig.getString("influxEnvMeasure", defaultInfluxEnvMeasurement);
-    debugMessage(String("influxdb environment measurement is ") + influxdbConfig.envMeasurement,2);
-    influxdbConfig.devMeasurement = nvConfig.getString("influxDevMeasure", defaultInfluxDevMeasurement);
-    debugMessage(String("influxdb device measurement is ") + influxdbConfig.devMeasurement,2);
-  #endif
-
-  nvConfig.end();
-  debugMessage("loadNVConfig() end",1);
+      #ifdef INFLUX
+        influxdbConfig.host = nvConfig.getString("influxHost");
+        debugMessage(String("influxdb server address from nvconfig is ") + influxdbConfig.host,2);
+        influxdbConfig.port = nvConfig.getUShort("influxPort");
+        debugMessage(String("influxdb server port from nvconfig is ") + influxdbConfig.port,2);
+        influxdbConfig.org = nvConfig.getString("influxOrg");
+        debugMessage(String("influxdb org from nvconfig is ") + influxdbConfig.org,2);
+        influxdbConfig.bucket = nvConfig.getString("influxBucket");
+        debugMessage(String("influxdb bucket from nvconfig is ") + influxdbConfig.bucket,2);
+        influxdbConfig.envMeasurement = nvConfig.getString("influxEnvMeasure");
+        debugMessage(String("influxdb environment measurement from nvconfig is ") + influxdbConfig.envMeasurement,2);
+        influxdbConfig.devMeasurement = nvConfig.getString("influxDevMeasure");
+        debugMessage(String("influxdb device measurement from nvconfig is ") + influxdbConfig.devMeasurement,2);
+      #endif
+      success = true;
+    }
+    else {
+      // there is no existing data, causing function to return false
+    }
+    nvConfig.end();
+  }
+  else {
+    // non-volatile storage issue, causing function to return false
+    // TODO : handle this error condition
+    debugMessage(String("Non-volatile storage issue"),1);
+  }
+  debugMessage("nvconfigRead() end",1);
+  return success;
 }
 
-void saveNVConfig()
-// copy new config data to non-volatile storage
+void nvconfigDefaultsLoad()
+// load ALL default data values into appropriate locations so we can write defaults to nvconfig
 {
-  debugMessage("saveNVConfig() start",1);
+  debugMessage("nvconfigDefaultsLoad() start",1);
+
+  hardwareData.altitude = uint16_t(kDefaultAltitude.toInt());
+  debugMessage(String("Altitude not in nvconfig, using default; ") + hardwareData.altitude + " meters",2);
+  hardwareData.latitude = uint16_t(kDefaultLatitude.toInt());
+  debugMessage(String("Latitude not in nvconfig, using default; ") + hardwareData.latitude,2);
+  hardwareData.longitude = uint16_t(kDefaultLongitude.toInt());
+  debugMessage(String("Longitude not in nvconfig, using default; ") + hardwareData.longitude,2);
+  // generate default unique device identifier based on ESP32 MAC address and hardware device type specified in config.h.
+  endpointPath.deviceID = deviceGetID(hardwareDeviceType);
+  debugMessage(String("Device ID not in nvconfig, using default; ") + endpointPath.deviceID,1);
+  endpointPath.site = kDefaultSite;
+  debugMessage(String("Device site not in nvconfig, using default; ") + endpointPath.site,2);
+  endpointPath.location = kDefaultLocation;
+  debugMessage(String("Device location not in nvconfig, using default; ") + endpointPath.location,2);
+  endpointPath.room = kDefaultRoom;
+  debugMessage(String("Device room not in nvconfig, using default; ") + endpointPath.room,2);
+  mqttBrokerConfig.host = kDdefaultMQTTBroker;
+  debugMessage(String("MQTT broker address not in nvconfig, using default; ") + mqttBrokerConfig.host,2);
+  mqttBrokerConfig.port = uint16_t(kDdefaultMQTTPort.toInt());
+  debugMessage(String("MQTT broker port not in nvconfig, using default; ") + mqttBrokerConfig.port,2);
+  mqttBrokerConfig.user = kDdefaultMQTTUser;
+  debugMessage(String("MQTT username not in nvconfig, using default; ") + mqttBrokerConfig.user,2);
+  mqttBrokerConfig.password = kDdefaultMQTTPassword;
+  debugMessage(String("MQTT user password not in nvconfig, using default; ") + mqttBrokerConfig.password,2);
+  influxdbConfig.host = kDefaultInfluxAddress;
+  debugMessage(String("influxdb server address not in nvconfig, using default; ") + influxdbConfig.host,2);
+  influxdbConfig.port = uint16_t(kDefaultInfluxPort.toInt());
+  debugMessage(String("influxdb server port not in nvconfig, using default; ") + influxdbConfig.port,2);
+  influxdbConfig.org = kDefaultInfluxOrg;
+  debugMessage(String("influxdb org not in nvconfig, using default; ") + influxdbConfig.org,2);
+  influxdbConfig.bucket = kDefaultInfluxBucket;
+  debugMessage(String("influxdb bucket not in nvconfig, using default; ") + influxdbConfig.bucket,2);
+  influxdbConfig.envMeasurement = kDefaultInfluxEnvMeasurement;
+  debugMessage(String("influxdb environment measurement not in nvconfig, using default; ") + influxdbConfig.envMeasurement,2);
+  influxdbConfig.devMeasurement = kDefaultInfluxDevMeasurement;
+  debugMessage(String("influxdb device measurement not in nvconfig, using default; ") + influxdbConfig.devMeasurement,2);
+
+  debugMessage("nvconfigDefaultsLoad() end",1);  
+}
+
+void nvconfigWrite()
+// write configuration parameters to non-volatile storage
+{
+  debugMessage("nvconfigWrite() start",1);
   nvConfig.begin("config", false); // read-write
 
+  // general parameters
   nvConfig.putUShort("altitude", hardwareData.altitude);
   nvConfig.putFloat("latitude",hardwareData.latitude);
   nvConfig.putFloat("longitude", hardwareData.longitude);
   nvConfig.putString("deviceID", endpointPath.deviceID);
 
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-    nvConfig.putString("site", endpointPath.site);
-    nvConfig.putString("location", endpointPath.location);
-    nvConfig.putString("room", endpointPath.room);
-  #endif
+  // general endpoint parameters
+  nvConfig.putString("site", endpointPath.site);
+  nvConfig.putString("location", endpointPath.location);
+  nvConfig.putString("room", endpointPath.room);
 
-  #ifdef MQTT
-    nvConfig.putString("mqttHost",  mqttBrokerConfig.host);
-    nvConfig.putUShort("mqttPort",  mqttBrokerConfig.port);
-    nvConfig.putString("mqttUser",  mqttBrokerConfig.user);
-    nvConfig.putString("mqttPassword",  mqttBrokerConfig.password);
-  #endif
+  // MQTT parameters
+  nvConfig.putString("mqttHost",  mqttBrokerConfig.host);
+  nvConfig.putUShort("mqttPort",  mqttBrokerConfig.port);
+  nvConfig.putString("mqttUser",  mqttBrokerConfig.user);
+  nvConfig.putString("mqttPassword",  mqttBrokerConfig.password);
 
-  #ifdef INFLUX
-    nvConfig.putString("influxHost",  influxdbConfig.host);
-    nvConfig.putUShort("influxPort",  influxdbConfig.port);
-    nvConfig.putString("influxOrg",   influxdbConfig.org);
-    nvConfig.putString("influxBucket",influxdbConfig.bucket);
-    nvConfig.putString("influxEnvMeasure",influxdbConfig.envMeasurement);
-    nvConfig.putString("influxDevMeasure", influxdbConfig.devMeasurement);
-  #endif
+  // Influx parameters
+  nvConfig.putString("influxHost",  influxdbConfig.host);
+  nvConfig.putUShort("influxPort",  influxdbConfig.port);
+  nvConfig.putString("influxOrg",   influxdbConfig.org);
+  nvConfig.putString("influxBucket",influxdbConfig.bucket);
+  nvConfig.putString("influxEnvMeasure",influxdbConfig.envMeasurement);
+  nvConfig.putString("influxDevMeasure", influxdbConfig.devMeasurement);
 
   nvConfig.end();
-  debugMessage("saveNVConfig() end",1);
+  debugMessage("nvconfigWrite() end",1);
 }
 
   void deviceErasePrefsAndReboot() 
@@ -1296,6 +1339,12 @@ bool sensorInit()
 
   #ifdef SENSOR_SEN66
     success = sensorSEN6xInit();
+    if (success) {
+      #ifndef HARDWARE_SIMULATE
+        // Explicit delay as SEN66 takes 10-11 seconds for valid NOx index values
+        delay(12000);
+      #endif
+    }
   #endif
 
   #ifdef SENSOR_SEN54SCD40
@@ -1307,6 +1356,12 @@ bool sensorInit()
     if (!pmSuccess) {
       debugMessage("PM sensor init failed",1);
       success = false;
+    }
+    if (success) {
+      #ifndef HARDWARE_SIMULATE
+        // Explicit delay as SEN54 takes 6-7 seconds for valid NOx index values
+        delay(7000);
+      #endif
     }
   #endif // SENSOR_SEN54SCD40
 
@@ -1373,7 +1428,17 @@ bool sensorSEN6xInit()
           debugMessage(errorMessage,1);
           return false;
       }
-      delay(1200);
+
+      delay(1200);  // explicit delay per Sensirion docs
+
+      // modify configuration settings while not in active measurement mode
+      error = paqSensor.setSensorAltitude(hardwareData.altitude);  // optimizes return values
+      if (!error)
+        debugMessage(String("SEN66 altitude set to ") + hardwareData.altitude + " meters",2);
+      else {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " executing SEN66 setSensorAltitude()",1);
+      }
 
       error = paqSensor.startContinuousMeasurement();
       if (error != 0) {

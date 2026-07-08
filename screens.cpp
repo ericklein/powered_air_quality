@@ -223,9 +223,7 @@ void screenPM25()
   display.print("PM25");
   
   // Outside
-  // do we have OWM Air Quality data to display?
-  if ((OWMAirPollutionRead()) && (owmAirQuality.aqi != 255)) {
-    // Outside PM2.5
+  if (OWMAirPollutionRead()) {
     display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius,getWarningColor(PM_DATA,owmAirQuality.pm25));
     display.fillSmoothCircle(xOutdoorPMCircle,yPMCircles,circleRadius*0.8,TFT_BLACK);
 
