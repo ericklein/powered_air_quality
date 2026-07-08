@@ -95,13 +95,11 @@ extern uint8_t noxRange(float);
 #endif
 
 #ifdef INFLUX
-  influxConfig influxdbConfig;
   extern bool post_influx(float temperatureF, float humidity, uint16_t co2, float pm25, float vocIndex, float noxIndex, uint8_t rssi);
 #endif
 
 #ifdef MQTT
   #include <PubSubClient.h>     // https://github.com/knolleary/pubsubclient
-  MqttConfig mqttBrokerConfig;
   PubSubClient mqtt(client);
 
   extern bool mqttConnect();
@@ -119,7 +117,9 @@ extern uint8_t noxRange(float);
 networkEndpointConfig endpointPath;
 hdweData hardwareData;
 OpenWeatherMapCurrentData owmCurrentData;
-OpenWeatherMapAirQuality owmAirQuality; 
+OpenWeatherMapAirQuality owmAirQuality;
+influxConfig influxdbConfig; // available globally for nvconfig use
+MqttConfig mqttBrokerConfig; // available globally for nvconfig use
 
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.  Each
 // instance contains storage to retain points for subsequent processing, which are used
@@ -776,9 +776,13 @@ bool networkWiFiManagerOpen()
   wfm.addParameter(&hint_text);
 
   // collect common parameters in AP portal mode
-  WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude",hardwareData.latitude,9);
-  WiFiManagerParameter deviceLongitude("deviceLongitude", "device longitude",hardwareData.longitude,9);
-  WiFiManagerParameter deviceAltitude("deviceAltitude", "Meters above sea level",hardwareData.altitude,5);
+  char conversionStr[20];
+  dtostrf(hardwareData.latitude,0,5,conversionStr); // 5 digit accuracy ~ 1.1m precision
+  WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude",conversionStr,16);
+  dtostrf(hardwareData.longitude,0,5,conversionStr);  
+  WiFiManagerParameter deviceLongitude("deviceLongitude", "device longitude",conversionStr,16);
+  dtostrf(hardwareData.altitude,0,5,conversionStr);
+  WiFiManagerParameter deviceAltitude("deviceAltitude", "Meters above sea level",conversionStr,12);
   WiFiManagerParameter deviceID("deviceID", "unique name for device", endpointPath.deviceID.c_str(), 30);
 
   wfm.addParameter(&deviceLatitude);
@@ -798,10 +802,12 @@ bool networkWiFiManagerOpen()
     wfm.addParameter(&deviceRoom);
   #endif
 
+  char portStr[6];
   #ifdef MQTT
      // collect MQTT parameters in web portal mode
-    WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",mqttBrokerConfig.host.c_str(),30);;
-    WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", mqttBrokerConfig.port.c_str(), 5);
+    WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",mqttBrokerConfig.host.c_str(),30);
+    utoa(mqttBrokerConfig.port, portStr,10);
+    WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", portStr, 5);
     WiFiManagerParameter mqttUser("mqttUser", "MQTT username", mqttBrokerConfig.user.c_str(), 20);
     WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", mqttBrokerConfig.password.c_str(), 20);
 
@@ -812,8 +818,9 @@ bool networkWiFiManagerOpen()
   #endif
 
   #ifdef INFLUX
-    WiFiManagerParameter influxBroker("influxBroker","influxdb server address",influxdbConfig.host.c_str(),30);;
-    WiFiManagerParameter influxPort("influxPort", "influxdb server port", influxdbConfig.port.c_str(), 5);
+    WiFiManagerParameter influxBroker("influxBroker","influxdb server address",influxdbConfig.host.c_str(),30);
+    utoa(influxdbConfig.port,portStr,10);
+    WiFiManagerParameter influxPort("influxPort", "influxdb server port", portStr, 5);
     WiFiManagerParameter influxOrg("influxOrg", "influx organization name", influxdbConfig.org.c_str(),20);
     WiFiManagerParameter influxBucket("influxBucket", "influx bucket name", influxdbConfig.bucket.c_str(),20);
     WiFiManagerParameter influxEnvMeasurement("influxEnvMeasurement", "influx environment measurement", influxdbConfig.envMeasurement.c_str(),20);
@@ -943,40 +950,34 @@ bool nvconfigRead() {
       endpointPath.deviceID = nvConfig.getString("deviceID");
       debugMessage(String("Device ID from nvconfig is ") + endpointPath.deviceID,1);
 
-      #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
-        endpointPath.site = nvConfig.getString("site");
-        debugMessage(String("Device site from nvconfig is ") + endpointPath.site,2);
-        endpointPath.location = nvConfig.getString("location");
-        debugMessage(String("Device location from nvconfig is ") + endpointPath.location,2);
-        endpointPath.room = nvConfig.getString("room", kDefaultRoom);
-        debugMessage(String("Device room from nvconfig is ") + endpointPath.room,2);
-      #endif
+      endpointPath.site = nvConfig.getString("site");
+      debugMessage(String("Device site from nvconfig is ") + endpointPath.site,2);
+      endpointPath.location = nvConfig.getString("location");
+      debugMessage(String("Device location from nvconfig is ") + endpointPath.location,2);
+      endpointPath.room = nvConfig.getString("room", kDefaultRoom);
+      debugMessage(String("Device room from nvconfig is ") + endpointPath.room,2);
 
-      #ifdef MQTT
-        mqttBrokerConfig.host = nvConfig.getString("mqttHost");
-        debugMessage(String("MQTT broker address from nvconfig is ") + mqttBrokerConfig.host,2);
-        mqttBrokerConfig.port = nvConfig.getUShort("mqttPort");
-        debugMessage(String("MQTT broker port from nvconfig is ") + mqttBrokerConfig.port,2);
-        mqttBrokerConfig.user = nvConfig.getString("mqttUser");
-        debugMessage(String("MQTT username from nvconfig is ") + mqttBrokerConfig.user,2);
-        mqttBrokerConfig.password = nvConfig.getString("mqttPassword");
-        debugMessage(String("MQTT user password from nvconfig is ") + mqttBrokerConfig.password,2);
-      #endif
+      mqttBrokerConfig.host = nvConfig.getString("mqttHost");
+      debugMessage(String("MQTT broker address from nvconfig is ") + mqttBrokerConfig.host,2);
+      mqttBrokerConfig.port = nvConfig.getUShort("mqttPort");
+      debugMessage(String("MQTT broker port from nvconfig is ") + mqttBrokerConfig.port,2);
+      mqttBrokerConfig.user = nvConfig.getString("mqttUser");
+      debugMessage(String("MQTT username from nvconfig is ") + mqttBrokerConfig.user,2);
+      mqttBrokerConfig.password = nvConfig.getString("mqttPassword");
+      debugMessage(String("MQTT user password from nvconfig is ") + mqttBrokerConfig.password,2);
 
-      #ifdef INFLUX
-        influxdbConfig.host = nvConfig.getString("influxHost");
-        debugMessage(String("influxdb server address from nvconfig is ") + influxdbConfig.host,2);
-        influxdbConfig.port = nvConfig.getUShort("influxPort");
-        debugMessage(String("influxdb server port from nvconfig is ") + influxdbConfig.port,2);
-        influxdbConfig.org = nvConfig.getString("influxOrg");
-        debugMessage(String("influxdb org from nvconfig is ") + influxdbConfig.org,2);
-        influxdbConfig.bucket = nvConfig.getString("influxBucket");
-        debugMessage(String("influxdb bucket from nvconfig is ") + influxdbConfig.bucket,2);
-        influxdbConfig.envMeasurement = nvConfig.getString("influxEnvMeasure");
-        debugMessage(String("influxdb environment measurement from nvconfig is ") + influxdbConfig.envMeasurement,2);
-        influxdbConfig.devMeasurement = nvConfig.getString("influxDevMeasure");
-        debugMessage(String("influxdb device measurement from nvconfig is ") + influxdbConfig.devMeasurement,2);
-      #endif
+      influxdbConfig.host = nvConfig.getString("influxHost");
+      debugMessage(String("influxdb server address from nvconfig is ") + influxdbConfig.host,2);
+      influxdbConfig.port = nvConfig.getUShort("influxPort");
+      debugMessage(String("influxdb server port from nvconfig is ") + influxdbConfig.port,2);
+      influxdbConfig.org = nvConfig.getString("influxOrg");
+      debugMessage(String("influxdb org from nvconfig is ") + influxdbConfig.org,2);
+      influxdbConfig.bucket = nvConfig.getString("influxBucket");
+      debugMessage(String("influxdb bucket from nvconfig is ") + influxdbConfig.bucket,2);
+      influxdbConfig.envMeasurement = nvConfig.getString("influxEnvMeasure");
+      debugMessage(String("influxdb environment measurement from nvconfig is ") + influxdbConfig.envMeasurement,2);
+      influxdbConfig.devMeasurement = nvConfig.getString("influxDevMeasure");
+      debugMessage(String("influxdb device measurement from nvconfig is ") + influxdbConfig.devMeasurement,2);
       success = true;
     }
     else {
@@ -1000,9 +1001,9 @@ void nvconfigDefaultsLoad()
 
   hardwareData.altitude = uint16_t(kDefaultAltitude.toInt());
   debugMessage(String("Altitude not in nvconfig, using default; ") + hardwareData.altitude + " meters",2);
-  hardwareData.latitude = uint16_t(kDefaultLatitude.toInt());
+  hardwareData.latitude = kDefaultLatitude.toFloat();
   debugMessage(String("Latitude not in nvconfig, using default; ") + hardwareData.latitude,2);
-  hardwareData.longitude = uint16_t(kDefaultLongitude.toInt());
+  hardwareData.longitude = kDefaultLongitude.toFloat();
   debugMessage(String("Longitude not in nvconfig, using default; ") + hardwareData.longitude,2);
   // generate default unique device identifier based on ESP32 MAC address and hardware device type specified in config.h.
   endpointPath.deviceID = deviceGetID(hardwareDeviceType);
@@ -1013,13 +1014,13 @@ void nvconfigDefaultsLoad()
   debugMessage(String("Device location not in nvconfig, using default; ") + endpointPath.location,2);
   endpointPath.room = kDefaultRoom;
   debugMessage(String("Device room not in nvconfig, using default; ") + endpointPath.room,2);
-  mqttBrokerConfig.host = kDdefaultMQTTBroker;
+  mqttBrokerConfig.host = kDefaultMQTTBroker;
   debugMessage(String("MQTT broker address not in nvconfig, using default; ") + mqttBrokerConfig.host,2);
-  mqttBrokerConfig.port = uint16_t(kDdefaultMQTTPort.toInt());
+  mqttBrokerConfig.port = uint16_t(kDefaultMQTTPort.toInt());
   debugMessage(String("MQTT broker port not in nvconfig, using default; ") + mqttBrokerConfig.port,2);
-  mqttBrokerConfig.user = kDdefaultMQTTUser;
+  mqttBrokerConfig.user = kDefaultMQTTUser;
   debugMessage(String("MQTT username not in nvconfig, using default; ") + mqttBrokerConfig.user,2);
-  mqttBrokerConfig.password = kDdefaultMQTTPassword;
+  mqttBrokerConfig.password = kDefaultMQTTPassword;
   debugMessage(String("MQTT user password not in nvconfig, using default; ") + mqttBrokerConfig.password,2);
   influxdbConfig.host = kDefaultInfluxAddress;
   debugMessage(String("influxdb server address not in nvconfig, using default; ") + influxdbConfig.host,2);

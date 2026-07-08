@@ -14,7 +14,7 @@
 
 // Configuration Step 4: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-#define DEBUG 1
+#define DEBUG 2
 
 // Configuration Step 5: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -33,8 +33,8 @@
 // Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
-// #define SENSOR_SEN66
-#define SENSOR_SEN54SCD40
+#define SENSOR_SEN66
+// #define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 

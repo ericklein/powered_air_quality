@@ -1,7 +1,7 @@
 # Configuration
 $SKETCH = "."
 $BOARD = "esp32:esp32:esp32:PartitionScheme=min_spiffs"
-$BUILD_DIR = "./build"
+$BUILD_DIR = "c:\arduinobuild"
 $LIB_PATH = "$env:USERPROFILE\Dropbox\make\arduino\libraries"
 $PORT  = "COM9"
 
