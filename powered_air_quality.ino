@@ -129,11 +129,12 @@ Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCInd
 
 uint32_t timeLastReportMS = 0;  // timestamp for last report to network endpoints
 
-bool saveWFMConfig = false;
 enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
 
 uint32_t alertStartMS, alertLengthMS;
 bool alertScreen, alertLED, alertSound = false;
+
+bool saveWFMConfig = false;
 
 void setup() {
   // config Serial first for debugMessage()
@@ -725,20 +726,20 @@ uint8_t networkRSSISimulate()
   return(rssi);
 }
 
-void networkWiFiMgrPortalCallback() 
-//callback notifying us of the need to save config from WiFi Manager AP mode
-{
+// callback notifying us to save config from web configuration portal
+void networkWiFiMgrSaveParamsCallback() {
   saveWFMConfig = true;
+  debugMessage(String("networkWiFiMgrPortalCallback() sets saveWFMConfig to true"),1);
 }
 
+// callback notifying us WiFiManager did not connect to a (stored) WiFi AP
 void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
   debugMessage(String("networkWiFiMgrAPCallback() start"),1);
-
-  debugMessage(String("did not connect to stored AP, starting WiFi Manager config portal"),1);
-  display.setFreeFont(&FreeSans12pt7b);
   // This alert is intentionally a UI blocker, handled by WiFiManager, not alertHandle()
   display.fillScreen(TFT_BLACK);
+  display.setFreeFont(&FreeSans12pt7b);
   screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_GREEN);
+  debugMessage(String("Did not connect to (stored) AP, WiFiManager web config portal should start"),1);
   debugMessage(String("networkWiFiMgrAPCallback() end"),1);
 }
 
@@ -752,7 +753,8 @@ bool networkWiFiManagerOpen()
 
   // set WiFiManager parameters
   wfm.setAPCallback(networkWiFiMgrAPCallback);
-  wfm.setSaveConfigCallback(networkWiFiMgrPortalCallback);
+  wfm.setSaveParamsCallback(networkWiFiMgrSaveParamsCallback);
+  wfm.setBreakAfterConfig(true);
   wfm.setConnectTimeout(timeConnectTimeoutSeconds); // how long to try connecting before continuing
   wfm.setConfigPortalTimeout(timeConfigPortalTimeOutSeconds); // auto close configportal after n seconds
   // wm.setRemoveDuplicateAPs(false); // do not remove duplicate ap names (true)
@@ -770,20 +772,23 @@ bool networkWiFiManagerOpen()
   // set WiFiManager portal parameters
   // note: parameter order determines on-screen order
 
-  wfm.setTitle("Ola friend!");
+  wfm.setTitle("Climatron Configurator");
   WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
+  WiFiManagerParameter separator("<hr style='margin:20px 0; border:0; border-top:1px solid #888;'>");
   
   wfm.addParameter(&hint_text);
+  wfm.addParameter(&separator);
 
-  // collect common parameters in AP portal mode
+  // prompt for location and name parameters
   char conversionStr[20];
   dtostrf(hardwareData.latitude,0,5,conversionStr); // 5 digit accuracy ~ 1.1m precision
-  WiFiManagerParameter deviceLatitude("deviceLatitude", "device latitude",conversionStr,16);
+  WiFiManagerParameter deviceLatitude("deviceLatitude", "What is the latitude where this device is located?",conversionStr,16);
   dtostrf(hardwareData.longitude,0,5,conversionStr);  
-  WiFiManagerParameter deviceLongitude("deviceLongitude", "device longitude",conversionStr,16);
-  dtostrf(hardwareData.altitude,0,5,conversionStr);
-  WiFiManagerParameter deviceAltitude("deviceAltitude", "Meters above sea level",conversionStr,12);
-  WiFiManagerParameter deviceID("deviceID", "unique name for device", endpointPath.deviceID.c_str(), 30);
+  WiFiManagerParameter deviceLongitude("deviceLongitude", "What is the longitude where this device is located?",conversionStr,16);
+  char altitudeStr[6];  // five digits + '\0'
+  utoa(hardwareData.altitude, altitudeStr, 10);
+  WiFiManagerParameter deviceAltitude("deviceAltitude", "What is the altitude where this device is located?", altitudeStr, sizeof(altitudeStr));
+  WiFiManagerParameter deviceID("deviceID", "Optional: Give this device a unique name", endpointPath.deviceID.c_str(), 30);
 
   wfm.addParameter(&deviceLatitude);
   wfm.addParameter(&deviceLongitude);
@@ -792,10 +797,10 @@ bool networkWiFiManagerOpen()
 
 
   #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
-    // collect network endpoint path in web portal mode
-    WiFiManagerParameter deviceSite("deviceSite", "device site", endpointPath.site.c_str(), 20);
-    WiFiManagerParameter deviceLocation("deviceLocation", "indoor or outdoor", endpointPath.location.c_str(), 20);
-    WiFiManagerParameter deviceRoom("deviceRoom", "what room is the device in", endpointPath.room.c_str(), 20);
+    // prompt for network endpoint path parameters
+    WiFiManagerParameter deviceSite("deviceSite", "What is a single number or word to describe the building this device is in?", endpointPath.site.c_str(), 20);
+    WiFiManagerParameter deviceLocation("deviceLocation", "Is the device indoors or outdoors", endpointPath.location.c_str(), 20);
+    WiFiManagerParameter deviceRoom("deviceRoom", "What is a a good name for the room this device is in?", endpointPath.room.c_str(), 20);
 
     wfm.addParameter(&deviceSite);
     wfm.addParameter(&deviceLocation);
@@ -805,12 +810,14 @@ bool networkWiFiManagerOpen()
   char portStr[6];
   #ifdef MQTT
      // collect MQTT parameters in web portal mode
+    WiFiManagerParameter MQTTHeader("<h3 style='margin-top:20px;'>MQTT parameters</h3><hr>");
     WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",mqttBrokerConfig.host.c_str(),30);
     utoa(mqttBrokerConfig.port, portStr,10);
-    WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", portStr, 5);
+    WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", portStr, sizeof(portStr));
     WiFiManagerParameter mqttUser("mqttUser", "MQTT username", mqttBrokerConfig.user.c_str(), 20);
-    WiFiManagerParameter mqttPassword("mqttPassword", "MQTT user password", mqttBrokerConfig.password.c_str(), 20);
+    WiFiManagerParameter mqttPassword("mqttPassword", "MQTT password for username", mqttBrokerConfig.password.c_str(), 20);
 
+    wfm.addParameter(&MQTTHeader);
     wfm.addParameter(&mqttBroker);
     wfm.addParameter(&mqttPort);
     wfm.addParameter(&mqttUser);
@@ -818,14 +825,16 @@ bool networkWiFiManagerOpen()
   #endif
 
   #ifdef INFLUX
+    WiFiManagerParameter InfluxHeader("<h3 style='margin-top:20px;'>Influxdb parameters</h3><hr>");
     WiFiManagerParameter influxBroker("influxBroker","influxdb server address",influxdbConfig.host.c_str(),30);
     utoa(influxdbConfig.port,portStr,10);
-    WiFiManagerParameter influxPort("influxPort", "influxdb server port", portStr, 5);
+    WiFiManagerParameter influxPort("influxPort", "influxdb server port", portStr, sizeof(portStr));
     WiFiManagerParameter influxOrg("influxOrg", "influx organization name", influxdbConfig.org.c_str(),20);
     WiFiManagerParameter influxBucket("influxBucket", "influx bucket name", influxdbConfig.bucket.c_str(),20);
     WiFiManagerParameter influxEnvMeasurement("influxEnvMeasurement", "influx environment measurement", influxdbConfig.envMeasurement.c_str(),20);
     WiFiManagerParameter influxDevMeasurement("influxDevMeasurement", "influx device measurement", influxdbConfig.devMeasurement.c_str(),20);
 
+    wfm.addParameter(&InfluxHeader);
     wfm.addParameter(&influxBroker);
     wfm.addParameter(&influxPort);
     wfm.addParameter(&influxOrg);
@@ -836,50 +845,52 @@ bool networkWiFiManagerOpen()
 
   String parameterText = hardwareDeviceType + " setup";
   bool connected = wfm.autoConnect(parameterText.c_str()); // anonymous ap
-    // connected = wfm.autoConnect(hardwareDeviceType + " AP","password"); // password protected AP
+  // connected = wfm.autoConnect(hardwareDeviceType + " AP","password"); // password protected AP
 
-  if(!connected) {
+  if (saveWFMConfig) {
+    // IMPROVEMENT: Need to implement range checking
+    debugMessage("getting (new) config parameters from web configuration portal",2);
+    hardwareData.altitude = static_cast<uint16_t>(strtoul(deviceAltitude.getValue(), nullptr, 10));
+    hardwareData.latitude = strtof(deviceLatitude.getValue(), nullptr);
+    hardwareData.longitude = strtof(deviceLongitude.getValue(), nullptr);
+    endpointPath.deviceID = deviceID.getValue();
+
+    #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
+      endpointPath.site = deviceSite.getValue();
+      endpointPath.location = deviceLocation.getValue();
+      endpointPath.room = deviceRoom.getValue();
+    #endif
+
+    #ifdef MQTT
+      mqttBrokerConfig.host     = mqttBroker.getValue();
+      mqttBrokerConfig.port     = (uint16_t)strtoul(mqttPort.getValue(), nullptr, 10);
+      mqttBrokerConfig.user     = mqttUser.getValue();
+      mqttBrokerConfig.password = mqttPassword.getValue();
+    #endif
+
+    #ifdef INFLUX
+      influxdbConfig.host       = influxBroker.getValue();
+      influxdbConfig.port       = (uint16_t)strtoul(influxPort.getValue(), nullptr, 10);
+      influxdbConfig.org        = influxOrg.getValue();
+      influxdbConfig.bucket     = influxBucket.getValue();
+      influxdbConfig.envMeasurement = influxEnvMeasurement.getValue();
+      influxdbConfig.devMeasurement = influxDevMeasurement.getValue();
+    #endif
+
+    nvconfigWrite();
+    saveWFMConfig = false;
+  }
+
+  if(connected) {
+    hardwareData.rssi = networkRSSIRead();
+    debugMessage(endpointPath.deviceID + " connected to " + WiFi.SSID() + ", " + WiFi.localIP().toString() + ", " + hardwareData.rssi + "dBm RSSI", 2);
+  } 
+  else {
     debugMessage("WiFi connection failure; local sensor data ONLY", 1);
     hardwareData.rssi = 255; // 255 indicates no WiFi connection
     #ifdef HARDWARE_SIMULATE
       networkRSSISimulate();
     #endif
-  } 
-  else {
-    if (saveWFMConfig) {
-      debugMessage("getting new parameters from WiFi Mgr portal",2);
-      hardwareData.altitude = (uint16_t)strtoul(deviceAltitude.getValue(), nullptr, 10);
-      hardwareData.latitude = atof(deviceLatitude.getValue());
-      hardwareData.longitude =  atof(deviceLongitude.getValue());
-      // endpointPath.deviceID = deviceID.getValue();
-
-      #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-        endpointPath.site = deviceSite.getValue();
-        endpointPath.location = deviceLocation.getValue();
-        endpointPath.room = deviceRoom.getValue();
-      #endif
-
-      #ifdef MQTT
-        mqttBrokerConfig.host     = mqttBroker.getValue();
-        mqttBrokerConfig.port     = (uint16_t)strtoul(mqttPort.getValue(), nullptr, 10);
-        mqttBrokerConfig.user     = mqttUser.getValue();
-        mqttBrokerConfig.password = mqttPassword.getValue();
-      #endif
-
-      #ifdef INFLUX
-        influxdbConfig.host       = influxBroker.getValue();
-        influxdbConfig.port       = (uint16_t)strtoul(influxPort.getValue(), nullptr, 10);
-        influxdbConfig.org        = influxOrg.getValue();
-        influxdbConfig.bucket     = influxBucket.getValue();
-        influxdbConfig.envMeasurement = influxEnvMeasurement.getValue();
-        influxdbConfig.devMeasurement = influxDevMeasurement.getValue();
-      #endif
-
-      nvconfigWrite();
-      saveWFMConfig = false;
-    }
-    hardwareData.rssi = networkRSSIRead();
-    debugMessage(endpointPath.deviceID + " connected to " + WiFi.SSID() + ", " + WiFi.localIP().toString() + ", " + hardwareData.rssi + "dBm RSSI", 2);
   }
   debugMessage("networkWiFiManagerOpen() end", 1);
   return (connected);
