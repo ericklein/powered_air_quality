@@ -10,7 +10,7 @@
 // Configuration Step 2: Set network data endpoints
 // #define MQTT     // log sensor data to MQTT broker
 // #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-// #define INFLUX // Log data to InfluxDB server
+#define INFLUX // Log data to InfluxDB server
 #define THINGSPEAK  // Log data to ThingSpeak
 
 // Configuration Step 3: Define hardware parameters in device_config.h
@@ -19,7 +19,7 @@
 
 // Configuration Step 5: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-// #define DEBUG 2
+#define DEBUG 2
 
 // Configuration Step 5: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -29,7 +29,6 @@
 
 // Open Weather Map (OWM)
 const String OWMServer = "http://api.openweathermap.org/data/2.5/";
-const String OWMWeatherPath =  "weather?";
 const String OWMAQMPath = "air_pollution?";
 const String OWMForecastPath = "forecast?";
 
@@ -37,7 +36,7 @@ const String OWMForecastPath = "forecast?";
 const String OWMPollutionLabel[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 
 // UI
-enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX, sTempHum};
+enum screenNames {sMain, sCO2, sPM25, sVOC, sNOX, sForecast};
 
 // screen layout assists in pixels
 constexpr uint8_t kXMargins = 5;

@@ -31,14 +31,6 @@
   #define SENSOR_SEN66
 #endif
 
-// Configuration Step 3: If storing data to a network endpoint, set default endpoint path.
-// This will only be used if the user doesn't enter then in the configuration AP portal.
- #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT) || defined(THINGSPEAK)
-  const String defaultSite = "7828";
-  const String defaultLocation = "inside";
-  const String defaultRoom = "dev";
-#endif
-
 constexpr uint8_t screenBLMax = 255;
 constexpr uint8_t screenBLLow  = 52;   // 255 * 0.20
 

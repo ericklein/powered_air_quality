@@ -9,10 +9,6 @@
 #include "powered_air_quality.h"
 #include <TFT_eSPI.h> // https://github.com/Bodmer/TFT_eSPI
 
-// fonts and glyphs
-#include "ui/meteocons24pt7b.h"
-#include "ui/glyphs.h"
-
 // https://fonts.google.com/specimen/Roboto
 #include "ui/fonts/Roboto_Regular_12.h"
 #include "ui/fonts/Roboto_Regular_16.h"  // Just used for Weather Forecast screen
@@ -27,16 +23,14 @@
 // Shared helper function(s) and globals
 extern uint8_t networkRSSIRead();
 extern bool OWMAirPollutionRead();
-extern bool OWMCurrentWeatherRead();
-extern bool OWMFetchForecast();
+extern bool OWMForecastRead();
 extern void debugMessage(String messageText, uint8_t messageLevel);
 extern uint16_t getWarningColor(uint8_t, float);
 extern uint16_t getWarningTextColor(uint8_t, float);
 extern TFT_eSPI display;
 extern uint32_t timeLastReportMS;
 extern Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
-extern struct SiteForecast siteForecast;
-String wdayname[7] = {"SUN","MON","TUE","WED","THU","FRI","SAT"};
+extern struct SiteForecast owmSiteForecast;
 
 // Forward declarations for local functions to help make ordering in this file easier
 void screenHelperGraph(uint16_t, uint16_t, uint16_t, uint16_t, Measure<kSampleCapacity>, uint8_t, String);
@@ -48,7 +42,6 @@ uint8_t co2Range(float);
 uint8_t pm25Range(float);
 uint8_t vocRange(float);
 uint8_t noxRange(float);
-char OWMtoMeteoconIcon(const char*);
 void arcMeter(uint16_t, uint16_t, uint16_t, uint16_t);
 void arcGauge(uint16_t, uint16_t, uint16_t, uint16_t);
 uint16_t arcGaugeHeight(uint16_t);
@@ -65,37 +58,6 @@ void wxTemperatures(uint16_t, uint16_t, uint16_t, uint16_t, uint32_t);
 void wxHumidity(uint16_t, uint16_t, uint16_t, uint32_t);
 
 // ***** Screen display routines, typically one per major screen ***** //
-void screenSaver()
-{
-  // screen assist in pixels
-  constexpr uint8_t cornerRoundRadius = 4;
-
-  debugMessage("screenSaver() start",1);
-
-  display.fillScreen(TFT_BLACK);
-  display.setTextDatum(TL_DATUM);
-
-  // If no data available, display "Not available"
-  if (totalCO2.getStored() == 0) {
-    display.loadFont(Roboto_Regular_24);
-    // display.setFreeFont(&FreeSans18pt7b);
-    display.setTextColor(TFT_RED, TFT_BLACK, true);
-    uint16_t textWidth = display.textWidth("Not available");
-    display.drawString("Not available", random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
-  }
-  else {
-    // Otherwise display the latest CO2 reading
-    display.loadFont(Roboto_Bold_60);
-    // display.setFreeFont(&FreeSans24pt7b);
-    display.setTextColor(getWarningColor(CO2_DATA,totalCO2.getCurrent()), TFT_BLACK, true);
-    uint16_t textWidth = display.textWidth(String(totalCO2.getCurrent()));
-    // Display CO2 value in random, valid location
-    display.drawString(String(uint16_t(totalCO2.getCurrent())), random(kXMargins,display.width()-kXMargins-textWidth), random(kYMargins, display.height() - kYMargins - display.fontHeight()));
-  }
-  display.unloadFont();
-  debugMessage("screenSaver() end",1);
-}
-
 void screenPM25() 
 {
   // screen layout assists in pixels
@@ -120,7 +82,6 @@ void screenPM25()
   display.drawFastVLine((display.width() / 2), kYStatusRegion, display.height(), bgcolor);
 
   // indoor/outdoor labels
-  // display.setFreeFont(&FreeSans12pt7b);
   display.loadFont(Roboto_Regular_24);
   display.setTextColor(TFT_WHITE, TFT_BLACK, true);
   display.setTextDatum(MC_DATUM);
@@ -129,33 +90,19 @@ void screenPM25()
 
   display.setTextDatum(MC_DATUM);
 
-  // Indoor PM2.5 ring
+  // Indoor
   display.drawSmoothArc(xIndoorPMCircle, yPMCircles, circleRadius, circleInnerRadius, 0, 360, getWarningColor(PM_DATA, totalPM25.getCurrent()), TFT_BLACK);
-
-  // Indoor pm25 value and label inside the circle
-  // display.setFreeFont(&FreeSans18pt7b);
+  // value and label inside the circle
   display.loadFont(Roboto_Bold_36);
   display.setTextColor(getWarningColor(PM_DATA,totalPM25.getCurrent()), TFT_BLACK, true);  // Use highlight color look-up
   display.drawFloat(totalPM25.getCurrent(), 1, xIndoorPMCircle, yPMCircles);
-  // label
-  // display.setTextColor(TFT_WHITE);
-  // display.setFreeFont(&FreeSans9pt7b);
-  // display.drawString("PM25", xIndoorCircleText,yPMCircles+23);
   
   // Outside
-  // do we have OWM Air Quality data to display?
-  if ((OWMAirPollutionRead()) && (owmAirQuality.aqi != 255)) {
-    // Outside PM2.5 ring
+  if (OWMAirPollutionRead()) {
     display.drawSmoothArc(xOutdoorPMCircle, yPMCircles, circleRadius, circleInnerRadius, 0, 360, getWarningColor(PM_DATA,owmAirQuality.pm25), TFT_BLACK);
-
-    // outdoor pm25 value and label inside the circle
-    //display.setFreeFont(&FreeSans18pt7b);
+    // value and label inside the circle
     display.setTextColor(getWarningColor(PM_DATA,owmAirQuality.pm25), TFT_BLACK, true); // Use highlight color look-up 
     display.drawFloat(owmAirQuality.pm25, 1, xOutdoorPMCircle, yPMCircles);
-    //label
-    // display.setTextColor(TFT_WHITE);
-    // display.setFreeFont(&FreeSans9pt7b);
-    // display.drawString("PM25", xOutdoorCircleText,yPMCircles + 23);
   }
   else
   {
@@ -184,7 +131,6 @@ void screenVOC()
 
   // If VOCIndex has no values, alert the user
   if (totalVOCIndex.getStored() == 0) {
-    // display.setFreeFont(&FreeSans18pt7b);
     display.loadFont(Roboto_Regular_18);
     display.setTextColor(TFT_RED, TFT_BLACK, true);
     display.drawString("No data", (display.width() / 2), (display.height() / 2));
@@ -195,11 +141,9 @@ void screenVOC()
 
     // Display VOCIndex value and label inside the arc
     display.loadFont(Roboto_Bold_60);
-    //display.setFreeFont(&FreeSans24pt7b);
     display.setTextColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent()), TFT_BLACK, true);  // Use highlight color look-up 
     display.drawFloat((totalVOCIndex.getCurrent() +.5), 0, xValue, yValue);
     display.loadFont(Roboto_Regular_24);
-    //display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(TFT_WHITE, TFT_BLACK, true);
     display.drawString(getWarningLabel(VOC_DATA,totalVOCIndex.getCurrent()), xValue, yCircle);
   }
@@ -220,7 +164,6 @@ void screenCO2()
   screenHelperHeaderBar(fgcolor,bgcolor,"Recent CO2 Values");
 
   display.loadFont(Roboto_Regular_36);
-  //display.setFreeFont(&FreeSans24pt7b);
 
   // if CO2 values are not yet available, display "NA"
   if (totalCO2.getStored() == 0) {
@@ -235,8 +178,6 @@ void screenCO2()
     display.drawString(getWarningLabel(CO2_DATA,totalCO2.getCurrent()),kXMargins, yValue - 3);
 
     // display current CO₂ value
-    //display.setFreeFont(&FreeSans18pt7b);
-    display.loadFont(Roboto_Regular_36);
     display.setTextDatum(BR_DATUM);
     display.setTextColor(TFT_WHITE, TFT_BLACK, true);
     display.drawString((String(uint16_t(totalCO2.getCurrent())) + "ppm"), (display.width()-(2*kXMargins)), yValue - 3);
@@ -266,7 +207,6 @@ void screenNOX()
   // handle sensors without NOx, e.g. SEN54
   if(isnan(totalNOxIndex.getCurrent())) {
     display.loadFont(Roboto_Bold_36);
-    // display.setFreeFont(&FreeSans24pt7b);
     display.setTextDatum(MC_DATUM);
     display.setTextColor(TFT_RED, TFT_BLACK, true);
     display.drawString("Not Available", xCircle, (display.height()/2));
@@ -277,12 +217,10 @@ void screenNOX()
 
     // NOx value and label inside the arc
     display.loadFont(Roboto_Bold_60);
-    // display.setFreeFont(&FreeSans24pt7b);
     display.setTextDatum(MC_DATUM);
     display.setTextColor(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()), TFT_BLACK, true);  // Use highlight color look-up 
     display.drawFloat((totalNOxIndex.getCurrent() +.5), 0, xValue, yValue);
     display.loadFont(Roboto_Regular_24);
-    // display.setFreeFont(&FreeSans18pt7b);
     display.setTextColor(TFT_WHITE, TFT_BLACK, true);
     display.drawString(getWarningLabel(NOX_DATA,totalNOxIndex.getCurrent()), xValue, yCircle);
   }
@@ -399,27 +337,6 @@ void screenHelperWiFiStatus(uint16_t x, uint16_t y, uint16_t bgColor)
   // Outer signal arc: 4 pixels thick.
   display.drawSmoothArc(cx, cy, 16, 13, 135, 225, arcTwoColor, bgColor, false);
 
-    // uint8_t barCount;
-    // if (hardwareData.rssi < 55) barCount = 5;
-    // if (hardwareData.rssi < 67) barCount = 4;
-    // if (hardwareData.rssi < 70) barCount = 3;
-    // if (hardwareData.rssi < 80) 
-    //   barCount = 2;
-    // else
-    //   barCount = 1;
-
-    // for (uint8_t loop = 1; loop <= barCount; loop++) {
-    //   display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_BLACK);
-    // }
-    // debugMessage(String("WiFi signal strength on screen as ") + barCount + " bars", 2);
-  // }
-  // else {
-  //   // draw bars in red to represent no WiFi signal
-  //   for (uint8_t loop = 1; loop <= 5; loop++) {
-  //     display.fillRect((initialX + (loop * barSpacing)), (initialY - (loop * barHeightIncrement)), barWidth, loop * barHeightIncrement, TFT_RED);
-  //   }
-  //   debugMessage("WiFi signal strength via red bars because no WiFi connection", 1);
-  // }
   debugMessage("screenHelperWiFiStatus() end",1);
 }
 
@@ -447,20 +364,6 @@ void screenHelperPostStatus(uint16_t x, uint16_t y, uint16_t fgColor, uint16_t b
     display.drawSmoothArc(cx,cy-(H/2),H+4,0,360-theta,theta    ,fgColor,bgColor,false);
     display.fillRect(cx-W-1,cy-(H/2),2*(W+1)+1,H,fgColor);
     display.drawSmoothArc(cx,cy-H-4,H+4,H+3,360-theta,theta,bgColor,fgColor,false);
-
-/*
-    // Solid filled cylinder body.
-    display.fillRect(x, yTop, W, yBot - yTop, fgColor);
-
-    // Top cap: fill the lower/front half so the top reads as a filled cap.
-    display.drawSmoothArc(cx, yTop, R_OUT, 0, 90, 270, fgColor, fgColor, false);
-
-    // Bottom cap: filled lower/front half.
-    display.drawSmoothArc(cx, yBot, R_OUT, 0, 270, 90, fgColor, fgColor, false);
-
-    // Interior separator: cut out with bg. 
-    display.drawSmoothArc(cx, yMid, R_OUT, R_IN, 270, 90, bgColor, fgColor, false);
-*/
 
   debugMessage(String("screenHelperPostStatus() end"), 1);   
 }
@@ -566,7 +469,6 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t width, uin
   }
 
   display.loadFont(Roboto_Regular_12);
-  //display.setFreeFont(&FreeSans9pt7b);
   display.setTextDatum(TL_DATUM);
   display.setTextColor(TFT_WHITE, TFT_BLACK, true);
 
@@ -589,7 +491,7 @@ void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t width, uin
 
   // Draw vertical axis
   display.drawFastVLine(graphLineX,initialY,(graphLineY-initialY), TFT_WHITE);
-  // Draw horitzonal axis
+  // Draw horizontal axis
   display.drawFastHLine(graphLineX,graphLineY,(width-graphLineX),TFT_WHITE);
   
   // draw top Y axis label
@@ -659,61 +561,6 @@ String getWarningLabel(uint8_t datatype, float datavalue)
     default:
       return(warningLabel[0]);
   }
-}
-
-/**
- * @brief Maps an OpenWeatherMap (OWM) icon code to a Meteocon font character.
- *
- * Converts the OWM icon identifier (e.g. "01d", "10n") into the corresponding
- * character used by the Meteocon icon font set.
- *
- * OWM icon codes consist of:
- *  - Two digits identifying the weather condition (01, 02, 03, 04, 09, 10, 11, 13, 50)
- *  - A day/night suffix ('d' or 'n')
- *
- * @param icon Null-terminated C string containing the OWM icon code.
- *
- * @return Meteocon font character corresponding to the OWM icon.
- *         Returns ')' if the input is invalid, or '?' if no matching icon
- *         mapping is found.
- *
- * @note Meteocon font reference:
- *       https://demo.alessioatzeni.com/meteocons/
- *
- * @warning The caller must ensure that @p icon points to a string of at least
- *          three characters plus a null terminator.
- */
-char OWMtoMeteoconIcon(const char* icon)
-{
-  if (!icon || icon[0] == '\0' || icon[1] == '\0' || icon[2] == '\0') {
-      debugMessage("OWM icon invalid", 1);
-      return ')';
-    }
-
-  const char a = icon[0];
-  const char b = icon[1];
-  const bool night = (icon[2] == 'n');
-
-  if (a == '0') {
-    switch (b) {
-      case '1': return night ? 'C' : 'B';
-      case '2': return night ? '4' : 'H';
-      case '3': return night ? '5' : 'N';
-      case '4': return night ? '%' : 'Y';
-      case '9': return night ? '8' : 'R';
-    }
-  } else if (a == '1') {
-    switch (b) {
-      case '0': return night ? '7' : 'Q';
-      case '1': return night ? '6' : 'P';
-      case '3': return night ? '#' : 'W';
-    }
-  } else if (a == '5' && b == '0') {
-    return 'M';
-  }
-
-  debugMessage("OWM icon not matched to Meteocon, why?", 1);
-  return '?'; // error handling for calling function
 }
 
 // Draw an "arc meter" to use in portraying the relative quality of an environmental value using a
@@ -1018,10 +865,12 @@ void screenForecast() {
   uint32_t bgcolor;
   int cond;
 
+  String wdayname[7] = {"SUN","MON","TUE","WED","THU","FRI","SAT"};
+
   debugMessage("screenForecast() start",1);
 
   // Retrieve forecast data from OpenWeatherMap
-  if(!OWMFetchForecast()) {
+  if(!OWMForecastRead()) {
     // Unable to fetch forecast from OWM. 
     debugMessage("OWM Forecast - fetch failed!",1); 
     //TODO: What else to do here??
@@ -1033,13 +882,13 @@ void screenForecast() {
   display.setTextColor(TFT_WHITE, TFT_BLACK);  // Adding a background colour erases previous text automatically
 
   // Draw status bar at the top of the screen
-  screenHelperHeaderBar(TFT_WHITE,TFT_DARKGREY,siteForecast.cityName);
+  screenHelperHeaderBar(TFT_WHITE,TFT_DARKGREY,owmSiteForecast.cityName);
   /*
   display.fillRect(0,0,320,30,TFT_DARKGREY);
   display.loadFont(Roboto_Regular_18);
   display.setTextDatum(MC_DATUM);
   display.setTextColor(TFT_WHITE,TFT_DARKGREY,true);
-  display.drawString(siteForecast.cityName,160,15);
+  display.drawString(owmSiteForecast.cityName,160,15);
   */
 
   x0 = 32;
@@ -1053,12 +902,12 @@ void screenForecast() {
     }
     else {
       bgcolor = TFT_BLACK;
-      wxDay(wdayname[siteForecast.forecastData[i].wday],x0,y0,bgcolor);
+      wxDay(wdayname[owmSiteForecast.forecastData[i].wday],x0,y0,bgcolor);
     }
 
     // Add weather condition icon
     y0 = 80;
-    switch(siteForecast.forecastData[i].wxFcst) {
+    switch(owmSiteForecast.forecastData[i].wxFcst) {
       case FCST_NONE:
         // TODO: How to handle?  Ignore? Question mark??
         break;
@@ -1081,17 +930,15 @@ void screenForecast() {
 
     // High and Low temperatures for the day
     y0 = 140;
-    wxTemperatures(siteForecast.forecastData[i].maxTempF,
-      siteForecast.forecastData[i].minTempF,x0,y0,bgcolor);
+    wxTemperatures(owmSiteForecast.forecastData[i].maxTempF,
+      owmSiteForecast.forecastData[i].minTempF,x0,y0,bgcolor);
 
     // Humidity for the day
     y0 = 200;
-    wxHumidity(siteForecast.forecastData[i].humidity,x0,y0,bgcolor);
+    wxHumidity(owmSiteForecast.forecastData[i].humidity,x0,y0,bgcolor);
   }
   debugMessage("screenForecast() end",1);
-
 }
-
 
 // Draw the weather condition icon for "sunny".
 void wxSunnyIcon(uint16_t x0, uint16_t y0, uint32_t bgcolor) {

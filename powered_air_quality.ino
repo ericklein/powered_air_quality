@@ -15,18 +15,13 @@
 #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
 #include <Measure.hpp>            // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
 #include <Preferences.h>          // read-write to ESP32 persistent storage
-#include <TFT_eSPI.h>             // https://github.com/Bodmer/TFT_eSPI
 #include <TimeLib.h>              // https://github.com/PaulStoffregen/Time, used to process OWM Forecast
-#include "ui/fonts/Roboto_Regular_12.h"
+#include <TFT_eSPI.h>             // https://github.com/Bodmer/TFT_eSPI
 #include "ui/fonts/Roboto_Regular_18.h"
 #include "ui/fonts/Roboto_Regular_24.h"
 #include "ui/fonts/Roboto_Regular_36.h"
 
 #ifdef CLIMATRON
-  #define FASTLED_ESP32_MINIMAL_ERROR_HANDLING 1
-  #define FASTLED_RMT_MAX_CHANNELS 1  // Restricts driver to 1 hardware channel instead of 8
-  #define FASTLED_ESP32_NO_LOGGING 1  // Directly removes verbose runtime diagnostic strings
-  #define FASTLED_INTERNAL            // Prevents extra warning string printing
   #include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
   #include <LEDControl.h>           // https://github.com/disquisitioner/LEDControl, multi LED strip async control
   // CYD JC2432W328 -> CST820 capacitive touchscreen controller
@@ -67,7 +62,6 @@
 #endif
 
 Preferences nvConfig;
-
 WiFiClient client;   // WiFiManager loads WiFi.h, which is used by OWM and MQTT
 WiFiManager wfm;
 
@@ -75,13 +69,11 @@ WiFiManager wfm;
 TFT_eSPI display = TFT_eSPI();
 
 // Screen specific functions that reside separately in screens.cpp
-extern void screenSaver();
 extern void screenMain();
 extern void screenVOC();
 extern void screenNOX();
 extern void screenCO2();
 extern void screenPM25();
-extern void screenTempHumidity();
 extern void screenForecast();
 // other functions residing in screens.cpp
 extern uint8_t co2Range(float);
@@ -130,11 +122,8 @@ extern uint8_t noxRange(float);
 // data structures defined in powered_air_quality.h
 networkEndpointConfig endpointPath;
 hdweData hardwareData;
-OpenWeatherMapCurrentData owmCurrentData;
-OpenWeatherMapAirQuality owmAirQuality; 
-
-SiteForecast siteForecast;
-String wkdayname[7] = {"SUN","MON","TUE","WED","THU","FRI","SAT"};
+OpenWeatherMapAirQuality owmAirQuality;
+SiteForecast owmSiteForecast;
 
 // Utility class used to streamline accumulating sensor values, averages, min/max &c.  Each
 // instance contains storage to retain points for subsequent processing, which are used
@@ -145,7 +134,6 @@ Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCInd
 uint32_t timeLastReportMS = 0;  // timestamp for last report to network endpoints
 
 bool saveWFMConfig = false;
-// enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
 enum screenNames screenCurrent = sMain; // Initial screen to display (on startup)
 
 uint32_t alertStartMS, alertLengthMS;
@@ -168,12 +156,13 @@ void setup() {
   display.setRotation(screenRotation);
   display.setTextWrap(false);
   display.fillScreen(TFT_BLACK);
+  // set LED backlight
   ledcAttach(TFT_BL, 5000, 8); // 5000 = pwm frequency, 8 = bit resolution
   ledcWrite(TFT_BL, screenBLMax);
-  //display.setFreeFont(&FreeSans24pt7b);
   display.loadFont(Roboto_Regular_36);
   screenHelperAlert("Initializing",TFT_WHITE,TFT_BLACK,TFT_WHITE);
   display.unloadFont();
+
   // generate truely random numbers
   randomSeed(esp_random());
 
@@ -207,16 +196,10 @@ void setup() {
   // initialize sensor(s)
   if( !sensorInit()) {
     // error often occurs after firmware flash/reset
-    //display.setFreeFont(&FreeSans18pt7b);
     display.loadFont(Roboto_Regular_24);
     deviceReboot("Sensor failure, rebooting", 5000);
     display.unloadFont();
   }
-
-  // initialize variables
-  owmCurrentData.tempF = 255.0f; // 255 indicates no data
-  owmAirQuality.aqi = 255; // 255 indicates no data
-  hardwareData.rssi = 255; // 255 indicates no WiFi connection
 
   networkOpenWiFiManager();
 
@@ -231,7 +214,6 @@ void setup() {
       delay(7000);
     #endif
   #endif
-
 }
 
 void loop() {
@@ -294,7 +276,7 @@ void loop() {
     if (screenCurrent == sMain) {
       if (calibratedY < 122) { // top components
         if (calibratedX < 107) {
-          screenCurrent = sTempHum;
+          screenCurrent = sForecast;
         }
         else {
           screenCurrent = sCO2;
@@ -344,8 +326,7 @@ void loop() {
           stripOne.setOneColor(CRGB::Red);
         #endif
         ledcWriteTone(pinAudio, audioFrequency);
-        // display.setFreeFont(&FreeSans18pt7b);
-        display.loadFont(Roboto_Regular_18);
+        display.loadFont(Roboto_Regular_24);
         screenHelperAlert("CO2 rising rapidly", TFT_WHITE,TFT_BLACK,TFT_RED);
         display.unloadFont();
       }
@@ -355,21 +336,17 @@ void loop() {
       alertScreen = true;
       alertLengthMS = 5000;
       alertStartMS = millis();
-      display.loadFont(Roboto_Regular_18);
-      // display.setFreeFont(&FreeSans18pt7b);
-      screenHelperAlert("AQ sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
+      display.loadFont(Roboto_Regular_24);
+      screenHelperAlert("Sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
       display.unloadFont();
     }
     // Save last sample time
     timeLastSampleMS = millis();
   }
 
-  // is it time to enable the screensaver AND we're not in screen saver mode already?
-  if ((screenCurrent != sSaver) && ((millis() - timeLastInputMS) > timeScreenSaverStartMS)) {
+  // is it time to enable the screensaver?
+  if ((millis() - timeLastInputMS) > timeScreenSaverStartMS) {
     ledcWrite(TFT_BL, screenBLLow);
-    // screenCurrent = sSaver;
-    // debugMessage("loop(): screen saver engaged after timeout in another screen",2);
-    // screenUpdate(screenCurrent);
   }
 
   // is it time to write to the network endpoints?
@@ -382,14 +359,6 @@ void loop() {
 void screenUpdate(uint8_t screenCurrent) 
 {
   switch(screenCurrent) {
-    case sSaver:
-      // update screen
-      screenSaver();
-      // update leds
-      #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(CO2_DATA,totalCO2.getCurrent() )));
-      #endif
-      break;
     case sMain:
       screenMain();
       #ifdef CLIMATRON
@@ -420,7 +389,7 @@ void screenUpdate(uint8_t screenCurrent)
         stripOne.setOneColor(rgb565ToCRGB(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent() ))); 
       #endif
       break;
-    case sTempHum:
+    case sForecast:
       screenForecast();
       #ifdef CLIMATRON
         stripOne.setOneColor(CRGB::Black);
@@ -725,8 +694,7 @@ void samplePost(uint8_t& numSamples)
       stripOne.setOneColor(CRGB::Red);
     #endif
     ledcWriteTone(pinAudio, audioFrequency);
-    // display.setFreeFont(&FreeSans18pt7b);
-    display.loadFont(Roboto_Regular_18);
+    display.loadFont(Roboto_Regular_24);
     screenHelperAlert("No samples available", TFT_WHITE,TFT_BLACK,TFT_RED);
     display.unloadFont();
     debugMessage(String("samplePost() no samples to process this cycle"),1);
@@ -764,7 +732,6 @@ void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
   debugMessage(String("did not connect to stored AP, starting WiFi Manager config portal"),1);
   // This alert is intentionally a UI blocker, handled by WiFiManager, not alertHandle()
   display.fillScreen(TFT_BLACK);
-  // display.setFreeFont(&FreeSans12pt7b);
   display.loadFont(Roboto_Regular_18);
   screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_GREEN);
   display.unloadFont();
@@ -867,6 +834,7 @@ bool networkOpenWiFiManager()
 
   if(!connected) {
     debugMessage("WiFi connection failure; local sensor data ONLY", 1);
+    hardwareData.rssi = 255; // 255 indicates no WiFi connection 
     #ifdef HARDWARE_SIMULATE
       networkRSSISimulate();
     #endif
@@ -914,8 +882,7 @@ bool networkOpenWiFiManager()
 void networkStartWiFiMgrPortal()
 {
   // ALERT handled by WiFiManager, not alertHandle()
-  //display.setFreeFont(&FreeSans18pt7b);
-  display.loadFont(Roboto_Regular_18);
+  display.loadFont(Roboto_Regular_24);
   screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_GREEN);
   display.unloadFont();
   wfm.startWebPortal();
@@ -1124,16 +1091,16 @@ void OWMForecastSimulate()
   float midpoint;
 
   midpoint = (sensorTempFMin + sensorTempFMax)/2.0;
-  siteForecast.cityName = String("Pleasantville (US)");
+  owmSiteForecast.cityName = String("Pleasantville (US)");
   for(i=0;i<5;i++) {
-    siteForecast.forecastData[i].maxTempF = randomFloatRange(midpoint,sensorTempFMax);
-    siteForecast.forecastData[i].minTempF = randomFloatRange(sensorTempFMin,midpoint);
-    siteForecast.forecastData[i].humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-    siteForecast.forecastData[i].wxFcst = random(1,6);  // Confirm consistent with forecast defines FCST_*
-    siteForecast.forecastData[i].count = 40;
-    siteForecast.forecastData[i].wday = i;
+    owmSiteForecast.forecastData[i].maxTempF = randomFloatRange(midpoint,sensorTempFMax);
+    owmSiteForecast.forecastData[i].minTempF = randomFloatRange(sensorTempFMin,midpoint);
+    owmSiteForecast.forecastData[i].humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+    owmSiteForecast.forecastData[i].wxFcst = random(1,6);  // Confirm consistent with forecast defines FCST_*
+    owmSiteForecast.forecastData[i].count = 40;
+    owmSiteForecast.forecastData[i].wday = i;
   }
-  debugMessage(String("SIMULATED OWM Forecast for ") + siteForecast.cityName, 1);
+  debugMessage(String("SIMULATED OWM Forecast for ") + owmSiteForecast.cityName, 1);
 }
 
 /**
@@ -1154,7 +1121,7 @@ void OWMForecastSimulate()
  *
  * @warning 
  */
-boolean OWMFetchForecast()
+boolean OWMForecastRead()
 {
   uint16_t httpResponseCode, wxcond, wxrange;
   uint32_t dt, lt;
@@ -1223,7 +1190,7 @@ boolean OWMFetchForecast()
       humidity = doc["list"][i]["main"]["humidity"];
       wxcond = doc["list"][i]["weather"][0]["id"];
       wxcondname = String(doc["list"][i]["weather"][0]["main"]);
-      siteForecast.cityName = String(doc["city"]["name"]);
+      owmSiteForecast.cityName = String(doc["city"]["name"]);
 
       // Aggregate daily data
       if(i == 0) {
@@ -1233,12 +1200,12 @@ boolean OWMFetchForecast()
       // info, store it for future use, and reset for this new day.
       if(wd != today) {
         // Retain daily forecast elements in the global data structure ***
-        siteForecast.forecastData[forecastday].maxTempF = fcstTemperatureF.getMax();
-        siteForecast.forecastData[forecastday].minTempF = fcstTemperatureF.getMin();
-        siteForecast.forecastData[forecastday].humidity = fcstHumidity.getAverage();
-        siteForecast.forecastData[forecastday].wxFcst   = forecastMap[condflags];
-        siteForecast.forecastData[forecastday].count    = fcstTemperatureF.getCount();
-        siteForecast.forecastData[forecastday].wday     = today-1;
+        owmSiteForecast.forecastData[forecastday].maxTempF = fcstTemperatureF.getMax();
+        owmSiteForecast.forecastData[forecastday].minTempF = fcstTemperatureF.getMin();
+        owmSiteForecast.forecastData[forecastday].humidity = fcstHumidity.getAverage();
+        owmSiteForecast.forecastData[forecastday].wxFcst   = forecastMap[condflags];
+        owmSiteForecast.forecastData[forecastday].count    = fcstTemperatureF.getCount();
+        owmSiteForecast.forecastData[forecastday].wday     = today-1;
 
         //Reset things for the new day, including clearing min/max/avg accumulation
         today = wd;
@@ -1270,125 +1237,14 @@ boolean OWMFetchForecast()
     }  
     // Summarize what we have for the last day
     // Retain daily forecast elements in the global data structure ***
-    siteForecast.forecastData[forecastday].maxTempF = fcstTemperatureF.getMax();
-    siteForecast.forecastData[forecastday].minTempF = fcstTemperatureF.getMin();
-    siteForecast.forecastData[forecastday].humidity = fcstHumidity.getAverage();
-    siteForecast.forecastData[forecastday].wxFcst   = forecastMap[condflags];
-    siteForecast.forecastData[forecastday].count    = fcstTemperatureF.getCount();
-    siteForecast.forecastData[forecastday].wday     = today-1;
+    owmSiteForecast.forecastData[forecastday].maxTempF = fcstTemperatureF.getMax();
+    owmSiteForecast.forecastData[forecastday].minTempF = fcstTemperatureF.getMin();
+    owmSiteForecast.forecastData[forecastday].humidity = fcstHumidity.getAverage();
+    owmSiteForecast.forecastData[forecastday].wxFcst   = forecastMap[condflags];
+    owmSiteForecast.forecastData[forecastday].count    = fcstTemperatureF.getCount();
+    owmSiteForecast.forecastData[forecastday].wday     = today-1;
 
     return true;
-  #endif
-  return true;
-}
-
-void OWMCurrentWeatherSimulate()
-// Description : Simulates Open Weather Map (OWM) Current Weather data
-// Parameters: NA
-// Return : NA
-// Improvement : variable city name and weather condition/icon
-{
-  owmCurrentData.cityName = "Pleasantville";
-  owmCurrentData.tempF = randomFloatRange(sensorTempFMin, sensorTempFMax);
-  owmCurrentData.humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-  strncpy(owmCurrentData.icon, "09d", sizeof(owmCurrentData.icon));
-  debugMessage(String("SIMULATED OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
-}
-
-/**
- * @brief retreives current weather data from Open Weather Maps.
- *
- * If device is in hardware simulation mode, calls OWMCurrentWeatherSimulate() and returns.
- * If not, verifies that more than X minutes have elapsed since last OWM request
- *
- * @param 
- *
- * @return BOOL true if the function has successfully updated current weather data
- *
- * @note 
- *
- * @warning 
- */
-bool OWMCurrentWeatherRead()
-// Gets Open Weather Map Current Weather data
-{
-  #ifdef HARDWARE_SIMULATE
-    OWMCurrentWeatherSimulate();
-    return true;
-  #else
-    static int32_t timeLastOWMUpdateMS = -(timeOWMRenewMS); // forces immediate sample at first run
-    
-    // is it time for new OWM data?
-    if (millis() - timeLastOWMUpdateMS > timeOWMRenewMS)
-    {
-      // attemot to reconnect to WiFi if needed
-      if (WiFi.status() != WL_CONNECTED) {
-        WiFi.reconnect();
-      }
-
-      // OWM latitude + longitude is "lat=xx.xxx&lon=-yyy.yyyy"
-      static String serverPath = OWMServer + OWMWeatherPath +
-        "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&units=imperial&APPID=" + OWMKey;
-
-      HTTPClient http;
-      if (!http.begin(serverPath)) {
-        debugMessage("OWM Current Weather connection failed",1);
-        return false;
-      }
-
-      uint16_t httpResponseCode = http.GET();
-      if (httpResponseCode != HTTP_CODE_OK) {
-        debugMessage(String("OWM Current Weather HTTP GET error code: ") + httpResponseCode,1);
-        http.end();
-        return false;
-      }  
-
-      // Filter: only parse what we need (saves RAM)
-      JsonDocument filter;
-      filter["main"]["temp"] = true;
-      filter["main"]["humidity"] = true;
-      filter["name"] = true;
-      filter["weather"][0]["icon"] = true;
-
-      JsonDocument doc;
-      const DeserializationError error = deserializeJson(
-        doc,
-        http.getStream(),                      // parse directly from stream
-        DeserializationOption::Filter(filter)  // apply filter
-      );
-
-      http.end();
-
-      if (error) {
-        debugMessage(String("OWM Current Weather deserializeJson error message: ") + error.c_str(), 1);
-        return false;
-      }
-
-      // owmCurrentData.lat = doc["coord"]["lat"];
-      // owmCurrentData.lon = doc["coord"]["lon"];
-      // owmCurrentData.main = (const char*) doc["weather"][0]["main"];
-      // owmCurrentData.description = (const char*) doc["weather"][0]["description"];
-      const char* iconStr = doc["weather"][0]["icon"] | "";
-      strlcpy(owmCurrentData.icon, iconStr, sizeof(owmCurrentData.icon));
-      owmCurrentData.cityName = (const char *)(doc["name"] | "");
-      // owmCurrentData.visibility = doc["visibility"];
-      // owmCurrentData.timezone = (time_t) doc["timezone"];
-      // owmCurrentData.country = (const char*) doc["sys"]["country"];
-      // owmCurrentData.observationTime = (time_t) doc["dt"];
-      // owmCurrentData.sunrise = (time_t) doc["sys"]["sunrise"];
-      // owmCurrentData.sunset = (time_t) doc["sys"]["sunset"];
-      owmCurrentData.tempF = doc["main"]["temp"] | NAN;
-      // owmCurrentData.pressure = (uint16_t) doc["main"]["pressure"];
-      owmCurrentData.humidity = doc["main"]["humidity"] | 0;
-      // owmCurrentData.tempMin = (float) doc["main"]["temp_min"];
-      // owmCurrentData.tempMax = (float) doc["main"]["temp_max"];
-      // owmCurrentData.windSpeed = (float) doc["wind"]["speed"];
-      // owmCurrentData.windDeg = (float) doc["wind"]["deg"];
-      debugMessage(String("OWM Current Weather for ") + owmCurrentData.cityName + " is " + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "% RH", 1);
-      
-      timeLastOWMUpdateMS = millis();
-      return true;
-    }
   #endif
   return true;
 }
@@ -2087,7 +1943,6 @@ String deviceGetID(String prefix)
 void deviceReboot(String messageText, uint16_t timeAlertMS)
 {
   debugMessage("deviceReboot() start",1);
-  // display.setFreeFont(&FreeSans18pt7b);
   display.loadFont(Roboto_Regular_18);
   screenHelperAlert(messageText,TFT_WHITE,TFT_BLACK,TFT_RED);
   display.unloadFont();

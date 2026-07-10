@@ -25,6 +25,7 @@ arduino-cli compile --fqbn $BOARD `
   --jobs 0 `
   --libraries $LIB_PATH `
   --build-path $BUILD_DIR `
+  --build-property "compiler.c.elf.extra_flags=-Wl,-Map,$BUILD_DIR/output.map" `
   -v `
   $SKETCH
 

@@ -3,7 +3,7 @@ data/
 private/
 build/
 bin/
-secrets.h
+secrets*.h
 *.sublime-project
 *.sublime-workspace
 __vm/
