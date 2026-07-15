@@ -14,7 +14,7 @@
 
 // Configuration Step 4: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
-#define DEBUG 1
+#define DEBUG 2
 
 // Configuration Step 5: Simulate WiFi and sensor hardware, returning random but plausible values.
 // Comment out to turn off
@@ -33,15 +33,15 @@
 // Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
 // NOX Index).
 // Use the one that corresponds to your device hardware and leave the other commented out.
-// #define SENSOR_SEN66
-#define SENSOR_SEN54SCD40
+#define SENSOR_SEN66
+// #define SENSOR_SEN54SCD40
 
 // Configuration variables that are less likely to require changes
 
 // Open Weather Map (OWM)
-const String OWMServer = "http://api.openweathermap.org/data/2.5/";
-const String OWMWeatherPath =  "weather?";
-const String OWMAQMPath = "air_pollution?";
+const String kOWMServer = "https://api.openweathermap.org/data/2.5/";
+const String kOWMWeatherPath =  "weather?";
+const String kOWMAQMPath = "air_pollution?";
 // OWM Air Pollution scale from https://openweathermap.org/api/air-pollution
 const String OWMPollutionLabel[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 
@@ -71,17 +71,12 @@ constexpr uint16_t warningColor[4] = {
 // Internet and network endpoints
 constexpr uint8_t timeConnectTimeoutSeconds = 10; // how long WFM attempts network connect before failing
 constexpr uint32_t timeOWMRenewMS = 1800000; // min time between OWM calls
-#ifdef DEBUG
-  constexpr uint8_t timeConfigPortalTimeOutSeconds = 120;
-#else
-  constexpr uint8_t timeConfigPortalTimeOutSeconds = 180;
-#endif
-
+constexpr uint32_t timeWebPortalTimeOutMS = 120000; // how long web configuration portal stays active
 
 constexpr uint32_t timeHardwareSleepTimeμS = 10000000;  // sleep time if hardware error occurs
 // button
-constexpr uint16_t timeStartPortalHoldMS = 5000;  // long-press duration to start config portal
-constexpr uint16_t timeDeviceResetHoldMS = 10000; // Long-press duration to wipe config
+constexpr uint32_t timeStartPortalHoldMS = 5000;  // long-press duration to start config portal
+constexpr uint32_t timeDeviceResetHoldMS = 10000; // Long-press duration to wipe config
 
 constexpr uint32_t timeScreenSaverStartMS = 300000; // switch to screen saver if no input after this period
 

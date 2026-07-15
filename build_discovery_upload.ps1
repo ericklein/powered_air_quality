@@ -1,9 +1,17 @@
 # Configuration
 $SKETCH = "."
 $BOARD = "esp32:esp32:esp32:PartitionScheme=min_spiffs"
-$BUILD_DIR = "./build"
+$BUILD_DIR = "c:\arduinobuild"
 $LIB_PATH = "$env:USERPROFILE\Dropbox\make\arduino\libraries"
-$PORT  = "COM9"
+
+Write-Host "Detecting available boards..." -ForegroundColor Cyan
+arduino-cli board list
+
+do {
+    $portNumber = Read-Host "Enter COM port number (e.g., 9)"
+} while (-not ($portNumber -match '^\d+$'))
+
+$PORT = "COM$portNumber"
 
 
 # Ensure directories exist
@@ -17,6 +25,7 @@ arduino-cli compile --fqbn $BOARD `
   --jobs 0 `
   --libraries $LIB_PATH `
   --build-path $BUILD_DIR `
+  --build-property "compiler.c.elf.extra_flags=-Wl,-Map,$BUILD_DIR/output.map" `
   -v `
   $SKETCH
 
