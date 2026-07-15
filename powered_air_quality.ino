@@ -58,11 +58,58 @@
 
 Preferences nvConfig;
 
+// WiFiManager global configuration
 WiFiClient client;   // WiFiManager loads WiFi.h, which is used by OWM and MQTT
 WiFiManager wfm;
 
+// WiFiManager parameter backing buffers
+char wfmLatitudeStr[20];
+char wfmLongitudeStr[20];
+char wfmAltitudeStr[6];
+char wfmMqttPortStr[6];
+char wfmInfluxPortStr[6];
+
+// Persistent WiFiManagerParameter pointers
+WiFiManagerParameter* pHintText = nullptr;
+WiFiManagerParameter* pSeparator = nullptr;
+
+WiFiManagerParameter* pDeviceLatitude = nullptr;
+WiFiManagerParameter* pDeviceLongitude = nullptr;
+WiFiManagerParameter* pDeviceAltitude = nullptr;
+WiFiManagerParameter* pDeviceID = nullptr;
+
+#if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
+  WiFiManagerParameter* pDeviceSite = nullptr;
+  WiFiManagerParameter* pDeviceLocation = nullptr;
+  WiFiManagerParameter* pDeviceRoom = nullptr;
+#endif
+
+#ifdef MQTT
+  WiFiManagerParameter* pMQTTHeader = nullptr;
+  WiFiManagerParameter* pMqttBroker = nullptr;
+  WiFiManagerParameter* pMqttPort = nullptr;
+  WiFiManagerParameter* pMqttUser = nullptr;
+  WiFiManagerParameter* pMqttPassword = nullptr;
+#endif
+
+#ifdef INFLUX
+  WiFiManagerParameter* pInfluxHeader = nullptr;
+  WiFiManagerParameter* pInfluxBroker = nullptr;
+  WiFiManagerParameter* pInfluxPort = nullptr;
+  WiFiManagerParameter* pInfluxOrg = nullptr;
+  WiFiManagerParameter* pInfluxBucket = nullptr;
+  WiFiManagerParameter* pInfluxEnvMeasurement = nullptr;
+  WiFiManagerParameter* pInfluxDevMeasurement = nullptr;
+#endif
+
+bool wfmParametersAdded = false;
+bool wfmPortalRunning = false;
+bool saveWFMConfig = false;
+uint32_t wfmPortalStartMS = 0;
+
 // 2.8″ 320x240 color TFT
 TFT_eSPI display = TFT_eSPI();
+enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
 
 // Screen specific functions that reside separately in screens.cpp
 extern void screenSaver();
@@ -111,8 +158,6 @@ extern uint8_t noxRange(float);
   #endif
 #endif
 
-// global variables
-
 // data structures defined in powered_air_quality.h
 networkEndpointConfig endpointPath;
 hdweData hardwareData;
@@ -129,12 +174,12 @@ Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCInd
 
 uint32_t timeLastReportMS = 0;  // timestamp for last report to network endpoints
 
-enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
-
-uint32_t alertStartMS, alertLengthMS;
-bool alertScreen, alertLED, alertSound = false;
-
-bool saveWFMConfig = false;
+// alert management
+uint32_t alertStartMS = 0;
+uint32_t alertLengthMS = 0;
+bool alertScreen = false;
+bool alertLED = false;
+bool alertSound = false;
 
 void setup() {
   // config Serial first for debugMessage()
@@ -222,10 +267,24 @@ void loop() {
   // update current alerts
   alertHandle();
 
-  // feed processor cycles to those who need it
+  // feed processor cycles to the web portal if needed
   if (wfm.getWebPortalActive()) {
     wfm.process();
+
+    if (saveWFMConfig) {
+      networkWiFiManagerSaveParameterValues();
+      saveWFMConfig = false;
+      networkWiFiManagerRefreshParameterValues();
+    }
+
+    if (wfmPortalRunning &&
+        millis() - wfmPortalStartMS > timeWebPortalTimeOutMS) {
+      wfm.stopWebPortal();
+      wfmPortalRunning = false;
+    }
   }
+
+  // feed processor cycles to fastLED
   #ifdef CLIMATRON
     stripOne.update();
     FastLED.show();
@@ -726,6 +785,274 @@ uint8_t networkRSSISimulate()
   return(rssi);
 }
 
+void networkWiFiManagerBuildParameters()
+{
+  if (wfmParametersAdded) {
+    return;
+  }
+
+  dtostrf(hardwareData.latitude, 0, 5, wfmLatitudeStr);
+  dtostrf(hardwareData.longitude, 0, 5, wfmLongitudeStr);
+  utoa(hardwareData.altitude, wfmAltitudeStr, 10);
+
+  pHintText = new WiFiManagerParameter(
+    "<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>"
+  );
+
+  pSeparator = new WiFiManagerParameter(
+    "<hr style='margin:20px 0; border:0; border-top:1px solid #888;'>"
+  );
+
+  pDeviceLatitude = new WiFiManagerParameter(
+    "deviceLatitude",
+    "What is the latitude where this device is located?",
+    wfmLatitudeStr,
+    16
+  );
+
+  pDeviceLongitude = new WiFiManagerParameter(
+    "deviceLongitude",
+    "What is the longitude where this device is located?",
+    wfmLongitudeStr,
+    16
+  );
+
+  pDeviceAltitude = new WiFiManagerParameter(
+    "deviceAltitude",
+    "What is the altitude where this device is located?",
+    wfmAltitudeStr,
+    sizeof(wfmAltitudeStr)
+  );
+
+  pDeviceID = new WiFiManagerParameter(
+    "deviceID",
+    "Optional: Give this device a unique name",
+    endpointPath.deviceID.c_str(),
+    30
+  );
+
+  wfm.addParameter(pHintText);
+  wfm.addParameter(pSeparator);
+  wfm.addParameter(pDeviceLatitude);
+  wfm.addParameter(pDeviceLongitude);
+  wfm.addParameter(pDeviceAltitude);
+  wfm.addParameter(pDeviceID);
+
+#if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
+  pDeviceSite = new WiFiManagerParameter(
+    "deviceSite",
+    "What is a single number or word to describe the building this device is in?",
+    endpointPath.site.c_str(),
+    20
+  );
+
+  pDeviceLocation = new WiFiManagerParameter(
+    "deviceLocation",
+    "Is the device indoors or outdoors",
+    endpointPath.location.c_str(),
+    20
+  );
+
+  pDeviceRoom = new WiFiManagerParameter(
+    "deviceRoom",
+    "What is a good name for the room this device is in?",
+    endpointPath.room.c_str(),
+    20
+  );
+
+  wfm.addParameter(pDeviceSite);
+  wfm.addParameter(pDeviceLocation);
+  wfm.addParameter(pDeviceRoom);
+#endif
+
+#ifdef MQTT
+  utoa(mqttBrokerConfig.port, wfmMqttPortStr, 10);
+
+  pMQTTHeader = new WiFiManagerParameter(
+    "<h3 style='margin-top:20px;'>MQTT parameters</h3><hr>"
+  );
+
+  pMqttBroker = new WiFiManagerParameter(
+    "mqttBroker",
+    "MQTT broker address",
+    mqttBrokerConfig.host.c_str(),
+    30
+  );
+
+  pMqttPort = new WiFiManagerParameter(
+    "mqttPort",
+    "MQTT broker port",
+    wfmMqttPortStr,
+    sizeof(wfmMqttPortStr)
+  );
+
+  pMqttUser = new WiFiManagerParameter(
+    "mqttUser",
+    "MQTT username",
+    mqttBrokerConfig.user.c_str(),
+    20
+  );
+
+  pMqttPassword = new WiFiManagerParameter(
+    "mqttPassword",
+    "MQTT password for username",
+    mqttBrokerConfig.password.c_str(),
+    20
+  );
+
+  wfm.addParameter(pMQTTHeader);
+  wfm.addParameter(pMqttBroker);
+  wfm.addParameter(pMqttPort);
+  wfm.addParameter(pMqttUser);
+  wfm.addParameter(pMqttPassword);
+#endif
+
+#ifdef INFLUX
+  utoa(influxdbConfig.port, wfmInfluxPortStr, 10);
+
+  pInfluxHeader = new WiFiManagerParameter(
+    "<h3 style='margin-top:20px;'>Influxdb parameters</h3><hr>"
+  );
+
+  pInfluxBroker = new WiFiManagerParameter(
+    "influxBroker",
+    "influxdb server address",
+    influxdbConfig.host.c_str(),
+    30
+  );
+
+  pInfluxPort = new WiFiManagerParameter(
+    "influxPort",
+    "influxdb server port",
+    wfmInfluxPortStr,
+    sizeof(wfmInfluxPortStr)
+  );
+
+  pInfluxOrg = new WiFiManagerParameter(
+    "influxOrg",
+    "influx organization name",
+    influxdbConfig.org.c_str(),
+    20
+  );
+
+  pInfluxBucket = new WiFiManagerParameter(
+    "influxBucket",
+    "influx bucket name",
+    influxdbConfig.bucket.c_str(),
+    20
+  );
+
+  pInfluxEnvMeasurement = new WiFiManagerParameter(
+    "influxEnvment",
+    "influx environment measurement",
+    influxdbConfig.envMeasurement.c_str(),
+    20
+  );
+
+  pInfluxDevMeasurement = new WiFiManagerParameter(
+    "influxDevment",
+    "influx device measurement",
+    influxdbConfig.devMeasurement.c_str(),
+    20
+  );
+
+  wfm.addParameter(pInfluxHeader);
+  wfm.addParameter(pInfluxBroker);
+  wfm.addParameter(pInfluxPort);
+  wfm.addParameter(pInfluxOrg);
+  wfm.addParameter(pInfluxBucket);
+  wfm.addParameter(pInfluxEnvMeasurement);
+  wfm.addParameter(pInfluxDevMeasurement);
+#endif
+
+  wfmParametersAdded = true;
+}
+
+void networkWiFiManagerRefreshParameterValues()
+{
+  dtostrf(hardwareData.latitude, 0, 5, wfmLatitudeStr);
+  dtostrf(hardwareData.longitude, 0, 5, wfmLongitudeStr);
+  utoa(hardwareData.altitude, wfmAltitudeStr, 10);
+
+  if (pDeviceLatitude) {
+    pDeviceLatitude->setValue(wfmLatitudeStr, 16);
+  }
+
+  if (pDeviceLongitude) {
+    pDeviceLongitude->setValue(wfmLongitudeStr, 16);
+  }
+
+  if (pDeviceAltitude) {
+    pDeviceAltitude->setValue(wfmAltitudeStr, sizeof(wfmAltitudeStr));
+  }
+
+  if (pDeviceID) {
+    pDeviceID->setValue(endpointPath.deviceID.c_str(), 30);
+  }
+
+#if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
+  if (pDeviceSite) {
+    pDeviceSite->setValue(endpointPath.site.c_str(), 20);
+  }
+
+  if (pDeviceLocation) {
+    pDeviceLocation->setValue(endpointPath.location.c_str(), 20);
+  }
+
+  if (pDeviceRoom) {
+    pDeviceRoom->setValue(endpointPath.room.c_str(), 20);
+  }
+#endif
+
+#ifdef MQTT
+  utoa(mqttBrokerConfig.port, wfmMqttPortStr, 10);
+
+  if (pMqttBroker) {
+    pMqttBroker->setValue(mqttBrokerConfig.host.c_str(), 30);
+  }
+
+  if (pMqttPort) {
+    pMqttPort->setValue(wfmMqttPortStr, sizeof(wfmMqttPortStr));
+  }
+
+  if (pMqttUser) {
+    pMqttUser->setValue(mqttBrokerConfig.user.c_str(), 20);
+  }
+
+  if (pMqttPassword) {
+    pMqttPassword->setValue(mqttBrokerConfig.password.c_str(), 20);
+  }
+#endif
+
+#ifdef INFLUX
+  utoa(influxdbConfig.port, wfmInfluxPortStr, 10);
+
+  if (pInfluxBroker) {
+    pInfluxBroker->setValue(influxdbConfig.host.c_str(), 30);
+  }
+
+  if (pInfluxPort) {
+    pInfluxPort->setValue(wfmInfluxPortStr, sizeof(wfmInfluxPortStr));
+  }
+
+  if (pInfluxOrg) {
+    pInfluxOrg->setValue(influxdbConfig.org.c_str(), 20);
+  }
+
+  if (pInfluxBucket) {
+    pInfluxBucket->setValue(influxdbConfig.bucket.c_str(), 20);
+  }
+
+  if (pInfluxEnvMeasurement) {
+    pInfluxEnvMeasurement->setValue(influxdbConfig.envMeasurement.c_str(), 20);
+  }
+
+  if (pInfluxDevMeasurement) {
+    pInfluxDevMeasurement->setValue(influxdbConfig.devMeasurement.c_str(), 20);
+  }
+#endif
+}
+
 // callback notifying us to save config from web configuration portal
 void networkWiFiMgrSaveParamsCallback() {
   saveWFMConfig = true;
@@ -756,7 +1083,7 @@ bool networkWiFiManagerOpen()
   wfm.setSaveParamsCallback(networkWiFiMgrSaveParamsCallback);
   wfm.setBreakAfterConfig(true);
   wfm.setConnectTimeout(timeConnectTimeoutSeconds); // how long to try connecting before continuing
-  wfm.setConfigPortalTimeout(timeConfigPortalTimeOutSeconds); // auto close configportal after n seconds
+  wfm.setConfigPortalTimeout(timeWebPortalTimeOutMS/1000); // auto close configportal after n seconds
   // wm.setRemoveDuplicateAPs(false); // do not remove duplicate ap names (true)
   // wm.setMinimumSignalQuality(20);  // set min RSSI (percentage) to show in scans, null = 8%
   // wm.setShowInfoErase(false);      // do not show erase button on info page
@@ -769,115 +1096,19 @@ bool networkWiFiManagerOpen()
       wfm.setDebugOutput(false);
   #endif
 
-  // set WiFiManager portal parameters
-  // note: parameter order determines on-screen order
-
   wfm.setTitle("Climatron Configurator");
-  WiFiManagerParameter hint_text("<small>*If you want to connect to already connected AP, leave SSID and password fields empty</small>");
-  WiFiManagerParameter separator("<hr style='margin:20px 0; border:0; border-top:1px solid #888;'>");
-  
-  wfm.addParameter(&hint_text);
-  wfm.addParameter(&separator);
+  networkWiFiManagerBuildParameters();
+  networkWiFiManagerRefreshParameterValues();
 
-  // prompt for location and name parameters
-  char conversionStr[20];
-  dtostrf(hardwareData.latitude,0,5,conversionStr); // 5 digit accuracy ~ 1.1m precision
-  WiFiManagerParameter deviceLatitude("deviceLatitude", "What is the latitude where this device is located?",conversionStr,16);
-  dtostrf(hardwareData.longitude,0,5,conversionStr);  
-  WiFiManagerParameter deviceLongitude("deviceLongitude", "What is the longitude where this device is located?",conversionStr,16);
-  char altitudeStr[6];  // five digits + '\0'
-  utoa(hardwareData.altitude, altitudeStr, 10);
-  WiFiManagerParameter deviceAltitude("deviceAltitude", "What is the altitude where this device is located?", altitudeStr, sizeof(altitudeStr));
-  WiFiManagerParameter deviceID("deviceID", "Optional: Give this device a unique name", endpointPath.deviceID.c_str(), 30);
-
-  wfm.addParameter(&deviceLatitude);
-  wfm.addParameter(&deviceLongitude);
-  wfm.addParameter(&deviceAltitude);
-  wfm.addParameter(&deviceID);
-
-
-  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
-    // prompt for network endpoint path parameters
-    WiFiManagerParameter deviceSite("deviceSite", "What is a single number or word to describe the building this device is in?", endpointPath.site.c_str(), 20);
-    WiFiManagerParameter deviceLocation("deviceLocation", "Is the device indoors or outdoors", endpointPath.location.c_str(), 20);
-    WiFiManagerParameter deviceRoom("deviceRoom", "What is a a good name for the room this device is in?", endpointPath.room.c_str(), 20);
-
-    wfm.addParameter(&deviceSite);
-    wfm.addParameter(&deviceLocation);
-    wfm.addParameter(&deviceRoom);
-  #endif
-
-  char portStr[6];
-  #ifdef MQTT
-     // collect MQTT parameters in web portal mode
-    WiFiManagerParameter MQTTHeader("<h3 style='margin-top:20px;'>MQTT parameters</h3><hr>");
-    WiFiManagerParameter mqttBroker("mqttBroker","MQTT broker address",mqttBrokerConfig.host.c_str(),30);
-    utoa(mqttBrokerConfig.port, portStr,10);
-    WiFiManagerParameter mqttPort("mqttPort", "MQTT broker port", portStr, sizeof(portStr));
-    WiFiManagerParameter mqttUser("mqttUser", "MQTT username", mqttBrokerConfig.user.c_str(), 20);
-    WiFiManagerParameter mqttPassword("mqttPassword", "MQTT password for username", mqttBrokerConfig.password.c_str(), 20);
-
-    wfm.addParameter(&MQTTHeader);
-    wfm.addParameter(&mqttBroker);
-    wfm.addParameter(&mqttPort);
-    wfm.addParameter(&mqttUser);
-    wfm.addParameter(&mqttPassword);
-  #endif
-
-  #ifdef INFLUX
-    WiFiManagerParameter InfluxHeader("<h3 style='margin-top:20px;'>Influxdb parameters</h3><hr>");
-    WiFiManagerParameter influxBroker("influxBroker","influxdb server address",influxdbConfig.host.c_str(),30);
-    utoa(influxdbConfig.port,portStr,10);
-    WiFiManagerParameter influxPort("influxPort", "influxdb server port", portStr, sizeof(portStr));
-    WiFiManagerParameter influxOrg("influxOrg", "influx organization name", influxdbConfig.org.c_str(),20);
-    WiFiManagerParameter influxBucket("influxBucket", "influx bucket name", influxdbConfig.bucket.c_str(),20);
-    WiFiManagerParameter influxEnvMeasurement("influxEnvMeasurement", "influx environment measurement", influxdbConfig.envMeasurement.c_str(),20);
-    WiFiManagerParameter influxDevMeasurement("influxDevMeasurement", "influx device measurement", influxdbConfig.devMeasurement.c_str(),20);
-
-    wfm.addParameter(&InfluxHeader);
-    wfm.addParameter(&influxBroker);
-    wfm.addParameter(&influxPort);
-    wfm.addParameter(&influxOrg);
-    wfm.addParameter(&influxBucket);
-    wfm.addParameter(&influxEnvMeasurement);
-    wfm.addParameter(&influxDevMeasurement);
-  #endif
+  saveWFMConfig = false;
 
   String parameterText = hardwareDeviceType + " setup";
   bool connected = wfm.autoConnect(parameterText.c_str()); // anonymous ap
   // connected = wfm.autoConnect(hardwareDeviceType + " AP","password"); // password protected AP
 
   if (saveWFMConfig) {
-    // IMPROVEMENT: Need to implement range checking
     debugMessage("getting (new) config parameters from web configuration portal",2);
-    hardwareData.altitude = static_cast<uint16_t>(strtoul(deviceAltitude.getValue(), nullptr, 10));
-    hardwareData.latitude = strtof(deviceLatitude.getValue(), nullptr);
-    hardwareData.longitude = strtof(deviceLongitude.getValue(), nullptr);
-    endpointPath.deviceID = deviceID.getValue();
-
-    #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
-      endpointPath.site = deviceSite.getValue();
-      endpointPath.location = deviceLocation.getValue();
-      endpointPath.room = deviceRoom.getValue();
-    #endif
-
-    #ifdef MQTT
-      mqttBrokerConfig.host     = mqttBroker.getValue();
-      mqttBrokerConfig.port     = (uint16_t)strtoul(mqttPort.getValue(), nullptr, 10);
-      mqttBrokerConfig.user     = mqttUser.getValue();
-      mqttBrokerConfig.password = mqttPassword.getValue();
-    #endif
-
-    #ifdef INFLUX
-      influxdbConfig.host       = influxBroker.getValue();
-      influxdbConfig.port       = (uint16_t)strtoul(influxPort.getValue(), nullptr, 10);
-      influxdbConfig.org        = influxOrg.getValue();
-      influxdbConfig.bucket     = influxBucket.getValue();
-      influxdbConfig.envMeasurement = influxEnvMeasurement.getValue();
-      influxdbConfig.devMeasurement = influxDevMeasurement.getValue();
-    #endif
-
-    nvconfigWrite();
+    networkWiFiManagerSaveParameterValues();
     saveWFMConfig = false;
   }
 
@@ -896,13 +1127,106 @@ bool networkWiFiManagerOpen()
   return (connected);
 }
 
+void networkWiFiManagerSaveParameterValues()
+{
+  // IMPROVEMENT: Need to implement range checking
+  debugMessage("getting (new) config parameters from web configuration portal", 2);
+
+  hardwareData.altitude =
+    static_cast<uint16_t>(strtoul(pDeviceAltitude->getValue(), nullptr, 10));
+
+  hardwareData.latitude =
+    strtof(pDeviceLatitude->getValue(), nullptr);
+
+  hardwareData.longitude =
+    strtof(pDeviceLongitude->getValue(), nullptr);
+
+  endpointPath.deviceID = pDeviceID->getValue();
+
+  #if defined(MQTT) || defined(INFLUX) || defined(HASSIO_MQTT)
+    endpointPath.site = pDeviceSite->getValue();
+    endpointPath.location = pDeviceLocation->getValue();
+    endpointPath.room = pDeviceRoom->getValue();
+  #endif
+
+  #ifdef MQTT
+    mqttBrokerConfig.host = pMqttBroker->getValue();
+    mqttBrokerConfig.port =
+      static_cast<uint16_t>(strtoul(pMqttPort->getValue(), nullptr, 10));
+    mqttBrokerConfig.user = pMqttUser->getValue();
+    mqttBrokerConfig.password = pMqttPassword->getValue();
+  #endif
+
+  #ifdef INFLUX
+    influxdbConfig.host = pInfluxBroker->getValue();
+    influxdbConfig.port =
+      static_cast<uint16_t>(strtoul(pInfluxPort->getValue(), nullptr, 10));
+    influxdbConfig.org = pInfluxOrg->getValue();
+    influxdbConfig.bucket = pInfluxBucket->getValue();
+    influxdbConfig.envMeasurement = pInfluxEnvMeasurement->getValue();
+    influxdbConfig.devMeasurement = pInfluxDevMeasurement->getValue();
+  #endif
+
+  nvconfigWrite();
+}
+
 void networkStartWiFiMgrPortal()
 {
-  display.setFreeFont(&FreeSans18pt7b);
-  // ALERT handled by WiFiManager, not alertHandle()
-  screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_GREEN);
+  debugMessage(String("networkStartWiFiMgrPortal begin()"), 1);
+
+  if (wfm.getWebPortalActive()) {
+    debugMessage("WiFiManager web portal already active", 2);
+    return;
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    debugMessage("Cannot start WiFiManager Web Portal; WiFi not connected", 1);
+    return;
+  }
+
+  alertLengthMS = 5000;
+  alertStartMS = millis();
+  alertScreen = true;
+
+#ifdef CLIMATRON
+  alertLED = true;
+  stripOne.setOneColor(CRGB::Blue);
+#endif
+
+  display.setFreeFont(&FreeSans12pt7b);
+  screenHelperAlert(
+    String("goto http://") + WiFi.localIP().toString() +
+    " for device configuration",
+    TFT_WHITE,
+    TFT_BLACK,
+    TFT_GREEN
+  );
+
+  wfm.setTitle("Climatron Configurator");
+
+  std::vector<const char*> menu = {
+    "wifi",
+    "param",
+    "info",
+    "update",
+    "restart",
+    "exit"
+  };
+
+  wfm.setMenu(menu);
+  wfm.setSaveParamsCallback(networkWiFiMgrSaveParamsCallback);
+
+  networkWiFiManagerBuildParameters();
+  networkWiFiManagerRefreshParameterValues();
+
+  wfm.setConfigPortalBlocking(false);
+  saveWFMConfig = false;
   wfm.startWebPortal();
-  screenUpdate(screenCurrent);
+  wfmPortalRunning = true;
+  wfmPortalStartMS = millis();
+
+  debugMessage(String("web portal active at ") + WiFi.localIP().toString(), 2);
+  debugMessage(String("networkStartWiFiMgrPortal end()"), 1);
 }
 
 uint8_t networkRSSIRead()
@@ -985,9 +1309,9 @@ bool nvconfigRead() {
       debugMessage(String("influxdb org from nvconfig is ") + influxdbConfig.org,2);
       influxdbConfig.bucket = nvConfig.getString("influxBucket");
       debugMessage(String("influxdb bucket from nvconfig is ") + influxdbConfig.bucket,2);
-      influxdbConfig.envMeasurement = nvConfig.getString("influxEnvMeasure");
+      influxdbConfig.envMeasurement = nvConfig.getString("influxEnv");
       debugMessage(String("influxdb environment measurement from nvconfig is ") + influxdbConfig.envMeasurement,2);
-      influxdbConfig.devMeasurement = nvConfig.getString("influxDevMeasure");
+      influxdbConfig.devMeasurement = nvConfig.getString("influxDev");
       debugMessage(String("influxdb device measurement from nvconfig is ") + influxdbConfig.devMeasurement,2);
       success = true;
     }
@@ -1077,8 +1401,8 @@ void nvconfigWrite()
   nvConfig.putUShort("influxPort",  influxdbConfig.port);
   nvConfig.putString("influxOrg",   influxdbConfig.org);
   nvConfig.putString("influxBucket",influxdbConfig.bucket);
-  nvConfig.putString("influxEnvMeasure",influxdbConfig.envMeasurement);
-  nvConfig.putString("influxDevMeasure", influxdbConfig.devMeasurement);
+  nvConfig.putString("influxEnv",influxdbConfig.envMeasurement);
+  nvConfig.putString("influxDev", influxdbConfig.devMeasurement);
 
   nvConfig.end();
   debugMessage("nvconfigWrite() end",1);
@@ -1120,7 +1444,7 @@ void checkButtonPress() {
     else {
       // Not the first press, so how long has the button been down?
       heldMS = now - pressStartMS;
-      debugMessage(String("button pressed for ") + (heldMS / 1000) + " seconds", 2);
+      debugMessage(String("checkButtonPress(): button pressed for ") + (heldMS / 1000) + " seconds", 2);
     }
   } 
   else {
@@ -1128,7 +1452,7 @@ void checkButtonPress() {
     // any reset operation is called for.
     if (pressStartMS != 0) {
       heldMS = now - pressStartMS;
-      debugMessage(String("button released after ") + (heldMS / 1000) + " seconds", 2);
+      debugMessage(String("checkButtonPress(): button released after ") + (heldMS / 1000) + " seconds", 2);
       pressStartMS = 0;  // Reset for next time
 
       // Is a reset needed? If so, launch it.  Check for the longer one first
@@ -1140,7 +1464,7 @@ void checkButtonPress() {
       else {
         // Not the longer one, but long enough to be the shorter one?
         if(heldMS >= timeStartPortalHoldMS) {
-          debugMessage("Relaunching WiFi Manager web portal...",2);
+          debugMessage("checkButtonPress(): starting WiFiManager web portal",2);
           networkStartWiFiMgrPortal();
           return;
         }
@@ -1194,7 +1518,7 @@ bool OWMCurrentWeatherRead()
       }
 
       // OWM latitude + longitude is "lat=xx.xxx&lon=-yyy.yyyy"
-      static String serverPath = OWMServer + OWMWeatherPath +
+      static String serverPath = kOWMServer + kOWMWeatherPath +
         "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&units=imperial&APPID=" + OWMKey;
 
       HTTPClient http;
@@ -1203,7 +1527,7 @@ bool OWMCurrentWeatherRead()
         return false;
       }
 
-      uint16_t httpResponseCode = http.GET();
+      int httpResponseCode = http.GET();
       if (httpResponseCode != HTTP_CODE_OK) {
         debugMessage(String("OWM Current Weather HTTP GET error code: ") + httpResponseCode,1);
         http.end();
@@ -1280,6 +1604,7 @@ bool OWMAirPollutionRead()
   #else
     static int32_t timeLastOWMUpdateMS = -(timeOWMRenewMS); // forces immediate sample at first run
     
+    debugMessage(String("OWMAirPollutionRead() start"),1);
     // is it time for new OWM data?
     if (millis() - timeLastOWMUpdateMS > timeOWMRenewMS)
     {
@@ -1288,18 +1613,19 @@ bool OWMAirPollutionRead()
         WiFi.reconnect();
       }
 
-    String serverPath = OWMServer + OWMAQMPath +
+    // http://api.openweathermap.org/data/2.5/air_pollution?lat={lat}&lon={lon}&appid={API key}
+    String serverPath = kOWMServer + kOWMAQMPath +
      "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&APPID=" + OWMKey;
 
       HTTPClient http;
       if (!http.begin(serverPath)) {
-        debugMessage("OWM Air Pollution connection failed",1);
+        debugMessage("OWM AirPollution URL malformed or HTTP client didn't initialize",1);
         return false;
       }
 
-      uint16_t httpResponseCode = http.GET();
+      int httpResponseCode = http.GET();
       if (httpResponseCode != HTTP_CODE_OK) {
-        debugMessage(String("OWM AirPollution HTTP GET error code: ") + httpResponseCode,1);
+        debugMessage(String("OWM AirPollution HTTP GET error: ") + HTTPClient::errorToString(httpResponseCode),1);
         http.end();
         return false;
       }
@@ -1319,7 +1645,7 @@ bool OWMAirPollutionRead()
       http.end();
 
       if (error) {
-        debugMessage(String("deserializeJson failed with error message: ") + error.c_str(), 1);
+        debugMessage(String("OWM AirPollution deserializeJson error message: ") + error.c_str(), 1);
         return false;
       }
 
@@ -1337,9 +1663,11 @@ bool OWMAirPollutionRead()
       debugMessage(String("OWM Air Pollution PM2.5 is ") + owmAirQuality.pm25 + "μg/m3, AQI is " + owmAirQuality.aqi + " of 5",1);
 
       timeLastOWMUpdateMS = millis();
+      debugMessage(String("OWMAirPollutionRead() end"),1);
       return true;
     }
   #endif
+  debugMessage(String("OWMAirPollutionRead() end"),1);
   return true;
 }
 
