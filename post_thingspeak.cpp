@@ -18,11 +18,9 @@
 
   bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float nox, float aqi)
   {  
-    uint16_t httpcode;
-    extern WiFiClient client;
-
+    static WiFiClient thingSpeakClient;
     // Initialize ThingSpeak
-    ThingSpeak.begin(client);
+    ThingSpeak.begin(thingSpeakClient);
 
     // Set values for the Channel's fields to queue them up for a single batch post to ThingSpeak
     // Note that a channel cannot have more than eight fields (so choose wisely)
@@ -38,14 +36,14 @@
     ThingSpeak.setField(8,endpointPath.deviceID);
 
     // Batch write all the field updates to ThingSpeak and check HTTP return code
-    httpcode = ThingSpeak.writeFields(THINGS_CHANID,THINGS_APIKEY);
+    int16_t httpcode = ThingSpeak.writeFields(THINGS_CHANID,THINGS_APIKEY);
 
     if (httpcode == 200) {
       debugMessage("ThingSpeak update successful",1);
       return true;
     }
     else {
-      debugMessage("ThingSpeak update issue, return code: " + String(httpcode),1);
+      debugMessage("ThingSpeak issue, return code: " + String(httpcode),1);
       return false;
     }
   }
