@@ -114,7 +114,7 @@ uint32_t wfmPortalStartMS = 0;
 
 // 2.8″ 320x240 color TFT
 TFT_eSPI display = TFT_eSPI();
-enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
+enum screenNames screenCurrent = sMain; // Initial screen to display (on startup)
 
 // Screen specific functions that reside separately in screens.cpp
 extern void screenMain();
@@ -243,9 +243,6 @@ void setup() {
     nvconfigDefaultsLoad();
     nvconfigWrite();
   }   
-
-  // initialize variables
-  owmCurrentData.tempF = 255.0f; // 255 indicates no data
 
   // initialize sensor(s)
   if( !sensorInit()) {
@@ -1517,7 +1514,7 @@ boolean OWMForecastRead()
   #else
     HTTPClient http;
     // Attempt to connect to OWM service for 3-hour forecast data
-    static String serverPath = OWMServer + OWMForecastPath + 
+    static String serverPath = kOWMServer + kOWMForecastPath + 
       "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&units=imperial&APPID=" + OWMKey;
     debugMessage("OWM Forecast fetch: " + String(serverPath),1);
     if(!http.begin(serverPath)) {
