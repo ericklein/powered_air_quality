@@ -3,16 +3,21 @@
   Description:  public (non-secret) configuration data
 */
 
+#pragma once
+
 // Configuration Step 1: Create and/or configure secrets.h. Use secrets_template.h as guide to create secrets.h
 
-// Configuration Step 2: Change User_Setup_Select.h to either PAQ or Climatron
+// Configuration Step 2: Set network data endpoints
+// #define MQTT     // log sensor data to MQTT broker
+// #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
+#define INFLUX // Log data to InfluxDB server
+#define THINGSPEAK  // Log data to ThingSpeak
 
-// Configuration Step 3: Base hardware platform
+// Configuration Step 3: Define hardware parameters in device_config.h
 // this is needed until we branch PAQ and Climatron
-// #define PAQ
-#define CLIMATRON
+#include "device_config.h"
 
-// Configuration Step 4: Set debug message output
+// Configuration Step 5: Set debug message output
 // comment out to turn off; 1 = summary, 2 = verbose
 #define DEBUG 2
 
@@ -20,45 +25,28 @@
 // Comment out to turn off
 // #define HARDWARE_SIMULATE
 
-// Configuration Step 6: Set network data endpoints
-// #define MQTT     // log sensor data to MQTT broker
-// #define HASSIO_MQTT  // And, if MQTT enabled, with Home Assistant too?
-#define INFLUX // Log data to InfluxDB server
-#define THINGSPEAK  // Log data to ThingSpeak
-
-// Configuration Step 7: Which sensor configuration do we have?  Later generation devices
-// use Sensirion SEN66 sensor which measures CO2, particulates, VOC, NOX, temperature and humidity
-// in one package.  Earlier generation devices use a combination of the SEN54 particulates
-// sensor and the SCD40 CO2 sensor (which also provides VOC, temperature and humidity readings).
-// Note that only the newer SEN66 configuration provides NOX readings (using Sensirion's 
-// NOX Index).
-// Use the one that corresponds to your device hardware and leave the other commented out.
-#define SENSOR_SEN66
-// #define SENSOR_SEN54SCD40
-
 // Configuration variables that are less likely to require changes
 
 // Open Weather Map (OWM)
 const String kOWMServer = "https://api.openweathermap.org/data/2.5/";
-const String kOWMWeatherPath =  "weather?";
-const String kOWMAQMPath = "air_pollution?";
+const String OWMAQMPath = "air_pollution?";
+const String OWMForecastPath = "forecast?";
 // OWM Air Pollution scale from https://openweathermap.org/api/air-pollution
 const String OWMPollutionLabel[5] = {"Good", "Fair", "Moderate", "Poor", "Very Poor"};
 
 // UI
-enum screenNames {sSaver, sMain, sCO2, sPM25, sVOC, sNOX};
+enum screenNames {sMain, sCO2, sPM25, sVOC, sNOX, sForecast};
 
 // screen layout assists in pixels
 constexpr uint8_t kXMargins = 5;
 constexpr uint8_t kYMargins = 5;
-constexpr uint8_t kLegendHeight =  20;
-constexpr uint8_t kLegendWidth =   10;
+constexpr uint8_t kYStatusRegion = 30; // display.height()/8 assuming 320x240 screen
 
 // How many samples are retained in a FIFO queue
 constexpr uint8_t kSampleCapacity = 10;
 
 // warnings
-// const String warningLabels[4]={"Good", "Fair", "Poor", "Bad"};
+const String warningLabel[4]={"Good", "Fair", "Poor", "Bad"};
 // Subjective color scheme using 16 bit ('565') RGB colors
 constexpr uint16_t warningColor[4] = {
     0x07E0, // Green = "Good"
@@ -66,6 +54,9 @@ constexpr uint16_t warningColor[4] = {
     0xFD20, // Orange = "Poor"
     0xF800  // Red = "Bad"
   };
+
+// The  background color used for the "TODAY" column in the Weather Forecast screen (see screens.cpp)
+#define TFT_TODAYBG 0x41e8
 
 // timers
 // Internet and network endpoints
@@ -163,43 +154,3 @@ constexpr uint16_t sensorNOxFair =  49;
 constexpr uint16_t sensorNOxPoor =  150;
 constexpr uint16_t sensorNOxBad =   300;
 constexpr uint16_t sensorNOxMax =   500;  // per SEN66 datasheet
-
-// CYD variations
-
-#ifdef PAQ
-  // CYD ESP32-2432S028R (2.8" TFT, micro-USB)
-  const String hardwareDeviceType = "AirQuality";
-  constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
-  constexpr uint8_t pinSensorSDA = 22;
-  constexpr uint8_t pinSensorSCL = 27;
-  constexpr uint8_t pinTouchIRQ = 36;
-  constexpr uint8_t pinTouchMOSI = 32;
-  constexpr uint8_t pinTouchMISO = 39;
-  constexpr uint8_t pinTouchCLK = 25;
-  constexpr uint8_t pinTouchCS = 33;
-  constexpr uint8_t pinAudio = 26;
-  constexpr uint32_t audioFrequency = 2000; // Hz
-  constexpr uint8_t  audioResolution = 8;    // bit
-  // touchscreen calibration
-  constexpr uint16_t touchscreenMinX = 200;
-  constexpr uint16_t touchscreenMaxX = 3700;
-  constexpr uint16_t touchscreenMinY = 240;
-  constexpr uint16_t touchscreenMaxY = 3800;
-#endif
-
-#ifdef CLIMATRON
-  // JC2432W328
-  const String hardwareDeviceType = "Climatron";
-  constexpr uint8_t pinButton = 0; // boot button on most ESP32 boards
-  constexpr uint8_t pinSensorSDA = 22;
-  constexpr uint8_t pinSensorSCL = 21;
-  constexpr uint8_t pinTouchSDA = 33;
-  constexpr uint8_t pinTouchSCL = 32;
-  constexpr uint8_t pinTouchRST = 25;
-  constexpr int8_t pinTouchIRQ = -1;
-  constexpr uint8_t pinLEDStripOne = 4;
-  constexpr uint8_t ledStripPixelCount = 3; // number of LEDs on each strip
-  constexpr int8_t pinAudio = 26;
-  constexpr uint32_t audioFrequency = 1000; // Hz
-  constexpr uint8_t  audioResolution = 8;    // bit
-#endif

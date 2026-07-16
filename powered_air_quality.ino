@@ -15,7 +15,12 @@
 #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
 #include <Measure.hpp>            // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
 #include <Preferences.h>          // read-write to ESP32 persistent storage
+#include <TimeLib.h>              // https://github.com/PaulStoffregen/Time, used to process OWM Forecast
 #include <TFT_eSPI.h>             // https://github.com/Bodmer/TFT_eSPI
+#include "ui/fonts/Roboto_Regular_18.h"
+#include "ui/fonts/Roboto_Regular_24.h"
+#include "ui/fonts/Roboto_Regular_36.h"
+
 #ifdef CLIMATRON
   #include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
   #include <LEDControl.h>           // https://github.com/disquisitioner/LEDControl, multi LED strip async control
@@ -112,13 +117,12 @@ TFT_eSPI display = TFT_eSPI();
 enum screenNames screenCurrent = sSaver; // Initial screen to display (on startup)
 
 // Screen specific functions that reside separately in screens.cpp
-extern void screenSaver();
 extern void screenMain();
 extern void screenVOC();
 extern void screenNOX();
 extern void screenCO2();
 extern void screenPM25();
-extern void screenTempHumidity();
+extern void screenForecast();
 // other functions residing in screens.cpp
 extern uint8_t co2Range(float);
 extern uint8_t pm25Range(float);
@@ -152,6 +156,7 @@ extern uint8_t noxRange(float);
   extern bool mqttConnect();
   extern void mqttPublish(const char* topic, const String& payload);
   extern const char* generateMQTTTopic(String key);
+  extern bool mqttPublishValue(String key, const String& payload);
 
   #ifdef HASSIO_MQTT
     extern void hassio_mqtt_publish(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2);
@@ -161,8 +166,8 @@ extern uint8_t noxRange(float);
 // data structures defined in powered_air_quality.h
 networkEndpointConfig endpointPath;
 hdweData hardwareData;
-OpenWeatherMapCurrentData owmCurrentData;
 OpenWeatherMapAirQuality owmAirQuality;
+SiteForecast owmSiteForecast;
 influxConfig influxdbConfig; // available globally for nvconfig use
 MqttConfig mqttBrokerConfig; // available globally for nvconfig use
 
@@ -198,8 +203,12 @@ void setup() {
   display.setRotation(screenRotation);
   display.setTextWrap(false);
   display.fillScreen(TFT_BLACK);
-  display.setFreeFont(&FreeSans24pt7b);
+  // set LED backlight
+  ledcAttach(TFT_BL, 5000, 8); // 5000 = pwm frequency, 8 = bit resolution
+  ledcWrite(TFT_BL, screenBLMax);
+  display.loadFont(Roboto_Regular_36);
   screenHelperAlert("Initializing",TFT_WHITE,TFT_BLACK,TFT_WHITE);
+  display.unloadFont();
 
   // generate truely random numbers
   randomSeed(esp_random());
@@ -241,8 +250,9 @@ void setup() {
   // initialize sensor(s)
   if( !sensorInit()) {
     // error often occurs after firmware flash/reset
-    display.setFreeFont(&FreeSans18pt7b);
+    display.loadFont(Roboto_Regular_24);
     deviceReboot("Sensor failure, rebooting", 5000);
+    display.unloadFont();
   }
   networkWiFiManagerOpen();
 }
@@ -316,30 +326,36 @@ void loop() {
     }
   #endif
   if (touchEvent) {
+    debugMessage(String("touch input x=") + calibratedX + ", y=" + calibratedY,2);
+    ledcWrite(TFT_BL, screenBLMax);
     if (screenCurrent == sMain) {
-      debugMessage(String("input: touchpoint x=") + calibratedX + ", y=" + calibratedY,2);
-      // transition to appropriate component screen
-      if ((calibratedX < display.width()/2) && (calibratedY < display.height()/2)) {
-        // upper left quandrant
-        screenCurrent = sCO2;
+      if (calibratedY < 122) { // top components
+        if (calibratedX < 107) {
+          screenCurrent = sForecast;
+        }
+        else {
+          screenCurrent = sCO2;
+        }
       }
-      else
-        if ((calibratedX < display.width()/2) && (calibratedY > display.height()/2)) {
-          // lower left quandrant
+      else {
+        if (calibratedX < 107) {
           screenCurrent = sVOC;
         }
-        else
-          if ((calibratedX > display.width()/2) && (calibratedY < display.height()/2)) {
-            // upper right quandrant
-            screenCurrent = sPM25;
-          }
-          else
-          // lower right quandrant, either temp/humidity (SCD40/SEN55) or NOx Index (SEN66)
-          screenCurrent = sNOX;
+        else {
+          #ifdef SENSOR_SEN66
+            (calibratedX < 214) ? screenCurrent = sPM25 : screenCurrent = sNOX;
+          #else
+            // only PM25 guage displayed
+            if (calibratedX < 214) {
+              screenCurrent = sPM25;
+            }
+          #endif
+        }
       }
-    else
-      // return to the main screen
+    }
+    else {
       screenCurrent = sMain;
+    }
     screenUpdate(screenCurrent);
     timeLastInputMS = millis();
   }
@@ -365,8 +381,9 @@ void loop() {
           stripOne.setOneColor(CRGB::Red);
         #endif
         ledcWriteTone(pinAudio, audioFrequency);
-        display.setFreeFont(&FreeSans18pt7b);
+        display.loadFont(Roboto_Regular_24);
         screenHelperAlert("CO2 rising rapidly", TFT_WHITE,TFT_BLACK,TFT_RED);
+        display.unloadFont();
       }
     }
     else {
@@ -374,18 +391,17 @@ void loop() {
       alertScreen = true;
       alertLengthMS = 5000;
       alertStartMS = millis();
-      display.setFreeFont(&FreeSans18pt7b);
-      screenHelperAlert("AQ sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
+      display.loadFont(Roboto_Regular_24);
+      screenHelperAlert("Sensor read fail", TFT_WHITE,TFT_BLACK,TFT_YELLOW);
+      display.unloadFont();
     }
     // Save last sample time
     timeLastSampleMS = millis();
   }
 
-  // is it time to enable the screensaver AND we're not in screen saver mode already?
-  if ((screenCurrent != sSaver) && ((millis() - timeLastInputMS) > timeScreenSaverStartMS)) {
-    screenCurrent = sSaver;
-    debugMessage("loop(): screen saver engaged after timeout in another screen",2);
-    screenUpdate(screenCurrent);
+  // is it time to enable the screensaver?
+  if ((millis() - timeLastInputMS) > timeScreenSaverStartMS) {
+    ledcWrite(TFT_BL, screenBLLow);
   }
 
   // is it time to write to the network endpoints?
@@ -398,14 +414,6 @@ void loop() {
 void screenUpdate(uint8_t screenCurrent) 
 {
   switch(screenCurrent) {
-    case sSaver:
-      // update screen
-      screenSaver();
-      // update leds
-      #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(CO2_DATA,totalCO2.getCurrent() )));
-      #endif
-      break;
     case sMain:
       screenMain();
       #ifdef CLIMATRON
@@ -431,16 +439,15 @@ void screenUpdate(uint8_t screenCurrent)
       #endif
       break;
     case sNOX:
-      #ifdef SENSOR_SEN66  
-        screenNOX();
-        #ifdef CLIMATRON
-          stripOne.setOneColor(rgb565ToCRGB(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent() ))); 
-        #endif
-      #else
-        screenTempHumidity();
-        #ifdef CLIMATRON
-          stripOne.setOneColor(CRGB::Black);
-        #endif
+      screenNOX();
+      #ifdef CLIMATRON
+        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent() ))); 
+      #endif
+      break;
+    case sForecast:
+      screenForecast();
+      #ifdef CLIMATRON
+        stripOne.setOneColor(CRGB::Black);
       #endif
       break;
   }
@@ -459,23 +466,17 @@ void screenUpdate(uint8_t screenCurrent)
  * - If one line is drawn, the text itself is centered on the screen.
  *
  * @param messageText Message to render inside the bubble.
- * @param textColor   Text color.
- * @param fillColor   Bubble fill color (also used as text background color).
+ * @param fgColor   Text color.
+ * @param bgColor   Bubble fill color (also used as text background color).
  * @param borderColor Bubble outline color.
  * @param kXMargins    Horizontal safe margin in pixels applied to both left and right edges.
  *
  * @note Set the desired font and text size on @p display before calling this function.
  */
-void screenHelperAlert(
-  const String &messageText,
-  uint16_t textColor,
-  uint16_t fillColor,
-  uint16_t borderColor
-) 
-{
+void screenHelperAlert( const String &messageText, uint16_t fgColor, uint16_t bgColor, uint16_t borderColor) {
   debugMessage(String("screenHelperAlert start()"),1);
 
-  display.setTextColor(textColor, fillColor);
+  display.setTextColor(fgColor, bgColor, true);
   display.setTextPadding(0);
 
   const int16_t screenW = (int16_t)display.width();
@@ -545,7 +546,7 @@ void screenHelperAlert(
 
   const int16_t rectCenterX = rectX + rectW / 2;
 
-  display.fillRoundRect(rectX, rectY, rectW, rectH, radius, fillColor);
+  display.fillRoundRect(rectX, rectY, rectW, rectH, radius, bgColor);
   display.drawRoundRect(rectX, rectY, rectW, rectH, radius, borderColor);
 
   display.setTextDatum(TC_DATUM);
@@ -563,10 +564,6 @@ void screenHelperAlert(
 bool sampleEvaluate()
 {
   debugMessage(String("sampleEvaluate() start"), 1);
-
-  #if (DEBUG==2)
-    totalCO2.printRetained();
-  #endif
 
   static bool trendAlreadyReported = false;
 
@@ -713,22 +710,16 @@ void samplePost(uint8_t& numSamples)
             const char* topic;
 
             // publish hardware data
-            topic = generateMQTTTopic(VALUE_KEY_RSSI);
-            mqttPublish(topic, String(hardwareData.rssi));
+            mqttPublishValue(VALUE_KEY_RSSI, String(hardwareData.rssi));
 
             // publish sensor data
-            topic = generateMQTTTopic(VALUE_KEY_TEMPERATURE);
-            mqttPublish(topic, String(avgTemperatureF));
-            topic = generateMQTTTopic(VALUE_KEY_HUMIDITY);
-            mqttPublish(topic, String(avgHumidity));
-            topic = generateMQTTTopic(VALUE_KEY_PM25);
-            mqttPublish(topic, String(avgPM25));
-            topic = generateMQTTTopic(VALUE_KEY_VOC);
-            mqttPublish(topic, String(avgVOC));
-            topic = generateMQTTTopic(VALUE_KEY_CO2);
-            mqttPublish(topic, String(avgCO2));
-            topic = generateMQTTTopic(VALUE_KEY_NOX);
-            mqttPublish(topic, String(avgNOX));
+            mqttPublishValue(VALUE_KEY_TEMPERATURE, String(avgTemperatureF));
+            mqttPublishValue(VALUE_KEY_HUMIDITY, String(avgHumidity));
+            mqttPublishValue(VALUE_KEY_PM25, String(avgPM25));
+            mqttPublishValue(VALUE_KEY_VOC, String(avgVOC));
+            mqttPublishValue(VALUE_KEY_CO2, String(avgCO2));
+            mqttPublishValue(VALUE_KEY_NOX, String(avgNOX));
+
 
             #ifdef HASSIO_MQTT
               debugMessage("Establishing MQTT for Home Assistant",1);
@@ -758,10 +749,10 @@ void samplePost(uint8_t& numSamples)
       stripOne.setOneColor(CRGB::Red);
     #endif
     ledcWriteTone(pinAudio, audioFrequency);
-    display.setFreeFont(&FreeSans18pt7b);
+    display.loadFont(Roboto_Regular_24);
     screenHelperAlert("No samples available", TFT_WHITE,TFT_BLACK,TFT_RED);
-
-    debugMessage(String("samplePost() warning; no samples to process this cycle"),1);
+    display.unloadFont();
+    debugMessage(String("samplePost() no samples to process this cycle"),1);
   }
   // Reset sample counters
   numSamples = 0;
@@ -1064,8 +1055,9 @@ void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
   debugMessage(String("networkWiFiMgrAPCallback() start"),1);
   // This alert is intentionally a UI blocker, handled by WiFiManager, not alertHandle()
   display.fillScreen(TFT_BLACK);
-  display.setFreeFont(&FreeSans12pt7b);
+  display.loadFont(Roboto_Regular_18);
   screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_GREEN);
+  display.unloadFont();
   debugMessage(String("Did not connect to (stored) AP, WiFiManager web config portal should start"),1);
   debugMessage(String("networkWiFiMgrAPCallback() end"),1);
 }
@@ -1118,7 +1110,7 @@ bool networkWiFiManagerOpen()
   } 
   else {
     debugMessage("WiFi connection failure; local sensor data ONLY", 1);
-    hardwareData.rssi = 255; // 255 indicates no WiFi connection
+    hardwareData.rssi = 255; // 255 indicates no WiFi connection 
     #ifdef HARDWARE_SIMULATE
       networkRSSISimulate();
     #endif
@@ -1188,19 +1180,14 @@ void networkStartWiFiMgrPortal()
   alertStartMS = millis();
   alertScreen = true;
 
-#ifdef CLIMATRON
-  alertLED = true;
-  stripOne.setOneColor(CRGB::Blue);
-#endif
+  #ifdef CLIMATRON
+    alertLED = true;
+    stripOne.setOneColor(CRGB::Blue);
+  #endif
 
-  display.setFreeFont(&FreeSans12pt7b);
-  screenHelperAlert(
-    String("goto http://") + WiFi.localIP().toString() +
-    " for device configuration",
-    TFT_WHITE,
-    TFT_BLACK,
-    TFT_GREEN
-  );
+  display.loadFont(Roboto_Regular_24);
+  screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_GREEN);
+  display.unloadFont();
 
   wfm.setTitle("Climatron Configurator");
 
@@ -1473,113 +1460,170 @@ void checkButtonPress() {
   }
 }
 
-void OWMCurrentWeatherSimulate()
+void OWMForecastSimulate()
 // Description : Simulates Open Weather Map (OWM) Current Weather data
 // Parameters: NA
 // Return : NA
-// Improvement : variable city name and weather condition/icon
+// Improvement : variable city name and days of the week
 {
-  owmCurrentData.cityName = "Pleasantville";
-  owmCurrentData.tempF = randomFloatRange(sensorTempFMin, sensorTempFMax);
-  owmCurrentData.humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-  strncpy(owmCurrentData.icon, "09d", sizeof(owmCurrentData.icon));
-  debugMessage(String("SIMULATED OWM Current Weather: ") + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "%", 1);
+  int i;
+  float midpoint;
+
+  midpoint = (sensorTempFMin + sensorTempFMax)/2.0;
+  owmSiteForecast.cityName = String("Pleasantville (US)");
+  for(i=0;i<5;i++) {
+    owmSiteForecast.forecastData[i].maxTempF = randomFloatRange(midpoint,sensorTempFMax);
+    owmSiteForecast.forecastData[i].minTempF = randomFloatRange(sensorTempFMin,midpoint);
+    owmSiteForecast.forecastData[i].humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
+    owmSiteForecast.forecastData[i].wxFcst = random(1,6);  // Confirm consistent with forecast defines FCST_*
+    owmSiteForecast.forecastData[i].count = 40;
+    owmSiteForecast.forecastData[i].wday = i;
+  }
+  debugMessage(String("SIMULATED OWM Forecast for ") + owmSiteForecast.cityName, 1);
 }
 
 /**
- * @brief retreives current weather data from Open Weather Maps.
+ * @brief Retreives weather forecast data from Open Weather Maps.
+ *
+ * Fetch weather forecast information from OWM using the 3-hour API. Extract
+ * overall daily forecast info from the 3-hour elements as apppropriate and store
+ * those daily aggregates in the global data structure used separately to display
+ * a 5-day forecast information in the UI.
  *
  * If device is in hardware simulation mode, calls OWMCurrentWeatherSimulate() and returns.
- * If not, verifies that more than X minutes have elapsed since last OWM request
  *
  * @param 
  *
- * @return BOOL true if the function has successfully updated current weather data
+ * @return BOOL true if the function has successfully retrieved weather forecast data
  *
  * @note 
  *
  * @warning 
  */
-bool OWMCurrentWeatherRead()
-// Gets Open Weather Map Current Weather data
+boolean OWMForecastRead()
 {
+  uint16_t httpResponseCode, wxcond, wxrange;
+  uint32_t dt, lt;
+  int32_t i, count, tzoffset;
+  uint8_t wd, today, condflags, forecastday;
+  float maxtemp, mintemp, curtemp, humidity;
+  String wxcondname;
+  JsonDocument doc;
+  Measure fcstTemperatureF, fcstHumidity;
+
   #ifdef HARDWARE_SIMULATE
-    OWMCurrentWeatherSimulate();
+    OWMForecastSimulate();
     return true;
   #else
-    static int32_t timeLastOWMUpdateMS = -(timeOWMRenewMS); // forces immediate sample at first run
-    
-    // is it time for new OWM data?
-    if (millis() - timeLastOWMUpdateMS > timeOWMRenewMS)
-    {
-      // attemot to reconnect to WiFi if needed
-      if (WiFi.status() != WL_CONNECTED) {
-        WiFi.reconnect();
-      }
-
-      // OWM latitude + longitude is "lat=xx.xxx&lon=-yyy.yyyy"
-      static String serverPath = kOWMServer + kOWMWeatherPath +
-        "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&units=imperial&APPID=" + OWMKey;
-
-      HTTPClient http;
-      if (!http.begin(serverPath)) {
-        debugMessage("OWM Current Weather connection failed",1);
-        return false;
-      }
-
-      int httpResponseCode = http.GET();
-      if (httpResponseCode != HTTP_CODE_OK) {
-        debugMessage(String("OWM Current Weather HTTP GET error code: ") + httpResponseCode,1);
-        http.end();
-        return false;
-      }  
-
-      // Filter: only parse what we need (saves RAM)
-      JsonDocument filter;
-      filter["main"]["temp"] = true;
-      filter["main"]["humidity"] = true;
-      filter["name"] = true;
-      filter["weather"][0]["icon"] = true;
-
-      JsonDocument doc;
-      const DeserializationError error = deserializeJson(
-        doc,
-        http.getStream(),                      // parse directly from stream
-        DeserializationOption::Filter(filter)  // apply filter
-      );
-
-      http.end();
-
-      if (error) {
-        debugMessage(String("OWM Current Weather deserializeJson error message: ") + error.c_str(), 1);
-        return false;
-      }
-
-      // owmCurrentData.lat = doc["coord"]["lat"];
-      // owmCurrentData.lon = doc["coord"]["lon"];
-      // owmCurrentData.main = (const char*) doc["weather"][0]["main"];
-      // owmCurrentData.description = (const char*) doc["weather"][0]["description"];
-      const char* iconStr = doc["weather"][0]["icon"] | "";
-      strlcpy(owmCurrentData.icon, iconStr, sizeof(owmCurrentData.icon));
-      owmCurrentData.cityName = (const char *)(doc["name"] | "");
-      // owmCurrentData.visibility = doc["visibility"];
-      // owmCurrentData.timezone = (time_t) doc["timezone"];
-      // owmCurrentData.country = (const char*) doc["sys"]["country"];
-      // owmCurrentData.observationTime = (time_t) doc["dt"];
-      // owmCurrentData.sunrise = (time_t) doc["sys"]["sunrise"];
-      // owmCurrentData.sunset = (time_t) doc["sys"]["sunset"];
-      owmCurrentData.tempF = doc["main"]["temp"] | NAN;
-      // owmCurrentData.pressure = (uint16_t) doc["main"]["pressure"];
-      owmCurrentData.humidity = doc["main"]["humidity"] | 0;
-      // owmCurrentData.tempMin = (float) doc["main"]["temp_min"];
-      // owmCurrentData.tempMax = (float) doc["main"]["temp_max"];
-      // owmCurrentData.windSpeed = (float) doc["wind"]["speed"];
-      // owmCurrentData.windDeg = (float) doc["wind"]["deg"];
-      debugMessage(String("OWM Current Weather for ") + owmCurrentData.cityName + " is " + owmCurrentData.tempF + "F, " + owmCurrentData.humidity + "% RH", 1);
-      
-      timeLastOWMUpdateMS = millis();
-      return true;
+    HTTPClient http;
+    // Attempt to connect to OWM service for 3-hour forecast data
+    static String serverPath = OWMServer + OWMForecastPath + 
+      "lat=" + hardwareData.latitude + "&lon=" + hardwareData.longitude + "&units=imperial&APPID=" + OWMKey;
+    debugMessage("OWM Forecast fetch: " + String(serverPath),1);
+    if(!http.begin(serverPath)) {
+          debugMessage("OWM weather forecast connection failed",1);
+      return false;
     }
+
+    // Successfully connected, see if forecast data was returned
+    httpResponseCode = http.GET();
+    if(httpResponseCode != HTTP_CODE_OK) {
+      debugMessage(String("OWM Forecast HTTP GET error code: ") + httpResponseCode,1);
+      http.end();
+      return false;
+    }
+
+    // Retrieved forecast data, so process it
+    debugMessage("OWM HTTP GET success",2);
+
+    // Obtain the HTTP GET result payload and convert to a JSON doc
+    DeserializationError error = deserializeJson(doc,http.getStream());
+    http.end();   
+
+    /*
+    * Print the full payload (to assist in development)
+    Serial.println("**** OWM payload returned *****");
+    serializeJsonPretty(doc,Serial);
+    Serial.println("***** End of Payload *****");
+    */
+    
+    // Extract overall info from OWM forecast payload
+
+    count = doc["cnt"];  // Number of forecasts in the payload list
+    tzoffset = doc["city"]["timezone"];  // Used to adjust UTC forecasts to local time
+
+    condflags = 0;  // Clear out wx condition accumulator
+    forecastday = 0;  // Start storing forecast data on the zeroth day
+    // Clear temperature and humidity accumulation so we start fresh
+    fcstTemperatureF.clear();
+    fcstHumidity.clear();
+
+    // Process all forecasts returned, which are in the "list" element of the JSON doc
+    for(i=0;i<count;i++) {
+      dt = doc["list"][i]["dt"];  // UTC of forecast
+      lt = dt + tzoffset;         // Convert to local time
+      wd = weekday(lt);           // Use Time library to determine day of week
+
+      // Fetch key forecast elements from the payload
+      curtemp = doc["list"][i]["main"]["temp"];
+      humidity = doc["list"][i]["main"]["humidity"];
+      wxcond = doc["list"][i]["weather"][0]["id"];
+      wxcondname = String(doc["list"][i]["weather"][0]["main"]);
+      owmSiteForecast.cityName = String(doc["city"]["name"]);
+
+      // Aggregate daily data
+      if(i == 0) {
+        today = wd;  // Set today based on the first forecast element
+      }
+      // If the forecast info is not for today then we need wrap up today's
+      // info, store it for future use, and reset for this new day.
+      if(wd != today) {
+        // Retain daily forecast elements in the global data structure ***
+        owmSiteForecast.forecastData[forecastday].maxTempF = fcstTemperatureF.getMax();
+        owmSiteForecast.forecastData[forecastday].minTempF = fcstTemperatureF.getMin();
+        owmSiteForecast.forecastData[forecastday].humidity = fcstHumidity.getAverage();
+        owmSiteForecast.forecastData[forecastday].wxFcst   = forecastMap[condflags];
+        owmSiteForecast.forecastData[forecastday].count    = fcstTemperatureF.getCount();
+        owmSiteForecast.forecastData[forecastday].wday     = today-1;
+
+        //Reset things for the new day, including clearing min/max/avg accumulation
+        today = wd;
+        condflags = 0;
+        forecastday++;
+        fcstTemperatureF.clear();
+        fcstHumidity.clear();
+      }
+      // Now process this daily forecast element
+      fcstTemperatureF.include(curtemp);
+      fcstHumidity.include(humidity);
+      // Aggregate conditions across wide range of possible values returned by OWM
+      // See https://openweathermap.org/api/weather-conditions#Weather-Condition-Codes-2 for details
+      wxrange = wxcond / 100; // Identify OWM condition group (hundreds digit)
+      if(wxcond == 800) {
+        condflags |= WX_CLEAR;
+      }
+      // Any 2xx, 3xx, or 5xx code translates to Rainy
+      if(wxrange == 2 || wxrange == 3 || wxrange == 5) {
+        condflags |= WX_RAINY;
+      }
+      // Recognize various cloud cover conditions, and treat Atmospheric as cloudy
+      if(wxcond == 801 || wxcond == 802 || wxcond == 803 || wxcond == 804 || wxrange == 7) {
+        condflags |= WX_CLOUDY;
+      }
+      if(wxrange == 6) {
+        condflags |= WX_SNOWY;
+      }
+    }  
+    // Summarize what we have for the last day
+    // Retain daily forecast elements in the global data structure ***
+    owmSiteForecast.forecastData[forecastday].maxTempF = fcstTemperatureF.getMax();
+    owmSiteForecast.forecastData[forecastday].minTempF = fcstTemperatureF.getMin();
+    owmSiteForecast.forecastData[forecastday].humidity = fcstHumidity.getAverage();
+    owmSiteForecast.forecastData[forecastday].wxFcst   = forecastMap[condflags];
+    owmSiteForecast.forecastData[forecastday].count    = fcstTemperatureF.getCount();
+    owmSiteForecast.forecastData[forecastday].wday     = today-1;
+
+    return true;
   #endif
   return true;
 }
@@ -1598,6 +1642,7 @@ void OWMAirPollutionSimulate()
 bool OWMAirPollutionRead()
 // stores local air pollution info from Open Weather Map in environment global
 {
+  debugMessage(String("OWMAirPollutionRead() start"), 1);
   #ifdef HARDWARE_SIMULATE
     OWMAirPollutionSimulate();
     return true;
@@ -1667,7 +1712,8 @@ bool OWMAirPollutionRead()
       return true;
     }
   #endif
-  debugMessage(String("OWMAirPollutionRead() end"),1);
+
+  debugMessage(String("OWMAirPollutionRead() end"), 1);
   return true;
 }
 
@@ -1726,11 +1772,11 @@ bool sensorRead()
   #ifdef SENSOR_SEN54SCD40
     bool pmSuccess = sensorSEN554Read();
     if (!pmSuccess)
-      debugMessage("PM sensor read failed",1);
+      debugMessage("SEN54 read failed",1);
 
     success = sensorSCD4xRead();
     if (!success)
-      debugMessage("SCD4x read failed",1);
+      debugMessage("SCD40 read failed",1);
     if (!pmSuccess)
       success = false;
   #endif // SENSOR_SEN54SCD40
@@ -1745,6 +1791,8 @@ bool sensorRead()
 // Initialize SEN66 sensor
 bool sensorSEN6xInit()
 {
+  debugMessage ("sensorSEN6xInit() start",1);
+
   #ifdef HARDWARE_SIMULATE
     return true;
   #else
@@ -1810,7 +1858,7 @@ void sensorSEN6xSimulate(float& simulatedTemperatureF, float& simulatedHumidity,
   simulatedNOxIndex = 0.0f;
   simulatedCO2 = 0;
 
-  sensorSCD4xSimulate(3,10, simulatedTemperatureF, simulatedHumidity,simulatedCO2);
+  sensorSCD4xSimulate(1,10, simulatedTemperatureF, simulatedHumidity,simulatedCO2);
   sensorSEN54Simulate(simulatedPM25, simulatedVOCIndex);
   simulatedNOxIndex = randomFloatRange(sensorNOxMin, sensorNOxMax);
   debugMessage(String("returning simulated noxIndex: ") + simulatedNOxIndex,1);
@@ -1832,6 +1880,8 @@ bool sensorSEN6xRead()
   float NOxIndex = 0.0f;
   uint16_t co2 = 0;
 
+  debugMessage ("sensorSEN6xRead() start",1);
+
   #ifdef HARDWARE_SIMULATE
     sensorSEN6xSimulate(temperatureF, humidity, co2, pm25, VOCIndex, NOxIndex);
     success = true;
@@ -1846,7 +1896,7 @@ bool sensorSEN6xRead()
 
       if (error) {
         errorToString(error, errorMessage, 256);
-        debugMessage(String(errorMessage) + " error during SEN6x read",1);
+        debugMessage(String(errorMessage) + " error during SEN6x read",2);
       }
       else {
         success = true;
@@ -1858,32 +1908,32 @@ bool sensorSEN6xRead()
   // range valid returned sensor values, even simulation values can be OOB
   if (co2 < sensorCO2Min || co2 > sensorCO2Max) {
     success = false;
-    debugMessage(String("SEN66 CO2 reading: ") + co2 + " is out of datasheet range",1);
+    debugMessage(String("SEN66 CO2 reading: ") + co2 + " is out of datasheet range",2);
   }
 
   if (temperatureF < sensorTempFMin || temperatureF > sensorTempFMax) {
     success = false;
-    debugMessage(String("SEN66 temperatureF reading: ") + temperatureF + " is out of datasheet range",1);
+    debugMessage(String("SEN66 temperatureF reading: ") + temperatureF + " is out of datasheet range",2);
   }
 
   if (humidity < sensorHumidityMin || humidity > sensorHumidityMax) {
     success = false;
-    debugMessage(String("SEN66 humidity reading: ") + humidity + " is out of datasheet range",1);
+    debugMessage(String("SEN66 humidity reading: ") + humidity + " is out of datasheet range",2);
   }
 
   if (pm25 < sensorPMMin || pm25 > sensorPMMax) {
     success = false;
-    debugMessage(String("SEN66 PM2.5 reading: ") + pm25 + " is out of datasheet range",1);
+    debugMessage(String("SEN66 PM2.5 reading: ") + pm25 + " is out of datasheet range",2);
   }
 
   if (VOCIndex < sensorVOCMin || VOCIndex > sensorVOCMax) {
     success = false;
-    debugMessage(String("SEN66 VOC index reading: ") + VOCIndex + " is out of datasheet range",1);
+    debugMessage(String("SEN66 VOC index reading: ") + VOCIndex + " is out of datasheet range",2);
   }
 
   if (NOxIndex < sensorNOxMin || NOxIndex > sensorNOxMax) {
     success = false;
-    debugMessage(String("SEN66 NOx index reading: ") + NOxIndex + " is out of datasheet range",1);
+    debugMessage(String("SEN66 NOx index reading: ") + NOxIndex + " is out of datasheet range",2);
   }
 
   // valid measurement, update globals
@@ -1903,6 +1953,7 @@ bool sensorSEN6xRead()
     debugMessage(String("SEN66 VOC index ") + totalVOCIndex.getCurrent() + ", total: " + totalVOCIndex.getTotal(),2);
     debugMessage(String("SEN66 NOx index ") + totalNOxIndex.getCurrent() + ", total: " + totalNOxIndex.getTotal(),2);
   }
+  debugMessage ("sensorSEN6xRead() end",1);
   return (success);
 }
 
@@ -1997,7 +2048,7 @@ bool sensorSEN554Read()
       error = pmSensor.readMeasuredValues(pm1, pm25, pm4, pm10, humidity, temperatureC, VOCIndex, NOxIndex);
       if (error) {
         errorToString(error, errorMessage, 256);
-        debugMessage(String(errorMessage) + " error during SEN5x read",1);
+        debugMessage(String(errorMessage) + " error during SEN5x read",2);
       }
       else
         success = true;
@@ -2007,12 +2058,12 @@ bool sensorSEN554Read()
   // range valid returned sensor values, even simulation values can be OOB
   if (pm25 < sensorPMMin || pm25 > sensorPMMax) {
     success = false;
-    debugMessage(String("SEN5x PM2.5 reading: ") + pm25 + " is out of datasheet range",1);
+    debugMessage(String("SEN5x PM2.5 reading: ") + pm25 + " is out of datasheet range",2);
   }
 
   if (VOCIndex < sensorVOCMin || VOCIndex > sensorVOCMax) {
     success = false;
-    debugMessage(String("SEN5x VOC index reading: ") + VOCIndex + " is out of datasheet range",1);
+    debugMessage(String("SEN5x VOC index reading: ") + VOCIndex + " is out of datasheet range",2);
   }
 
   // valid measurement, update globals
@@ -2023,6 +2074,7 @@ bool sensorSEN554Read()
 
     debugMessage(String("sensorSEN554Read() updating pm25: ") + totalPM25.getCurrent() + "ppm, total: " + totalPM25.getTotal(),2);
     debugMessage(String("sensorSEN554Read() updating vocIndex: ") + totalVOCIndex.getCurrent() + ", total: " + totalVOCIndex.getTotal(),2);
+    debugMessage(String("sensorSEN554Read() NOxIndex is NAN"),2);
   }
 
   debugMessage("sensorSEN554Read() end",1);
@@ -2135,7 +2187,7 @@ void sensorSCD4xSimulate(
       // create new base values
       tempF = randomFloatRange(sensorTempFMin,sensorTempFMax);
       humidity = randomFloatRange(sensorHumidityMin,sensorHumidityMax);
-      co2 = random(sensorCO2Min, sensorCO2Max);
+      co2 = random(sensorCO2Min, sensorCO2Bad); // starts values in highly likely scenarios
       cycleCount++;
     }
     else
@@ -2212,7 +2264,7 @@ bool sensorSCD4xRead()
 
   #ifdef HARDWARE_SIMULATE
     success = true;
-    sensorSCD4xSimulate(3, 10, temperatureF, humidity, co2);
+    sensorSCD4xSimulate(1, 10, temperatureF, humidity, co2);
   #else
     #ifdef SENSOR_SEN54SCD40
       uint16_t error;
@@ -2253,17 +2305,17 @@ bool sensorSCD4xRead()
 
   if (co2 < sensorCO2Min || co2 > sensorCO2Max) {
     success = false;
-    debugMessage(String("SCD4x CO2 reading: ") + co2 + " is out of datasheet range",1);
+    debugMessage(String("SCD4x CO2 reading: ") + co2 + " is out of datasheet range",2);
   }
 
   if (temperatureF < sensorTempFMin || temperatureF > sensorTempFMax) {
     success = false;
-    debugMessage(String("SCD4x temperatureF reading: ") + temperatureF + " is out of datasheet range",1);
+    debugMessage(String("SCD4x temperatureF reading: ") + temperatureF + " is out of datasheet range",2);
   }
 
   if (humidity < sensorHumidityMin || humidity > sensorHumidityMax) {
     success = false;
-    debugMessage(String("SCD4x humidity reading: ") + humidity + " is out of datasheet range",1);
+    debugMessage(String("SCD4x humidity reading: ") + humidity + " is out of datasheet range",2);
   }
 
   // valid measurement, update globals
@@ -2295,8 +2347,9 @@ String deviceGetID(String prefix)
 void deviceReboot(String messageText, uint16_t timeAlertMS)
 {
   debugMessage("deviceReboot() start",1);
-  display.setFreeFont(&FreeSans18pt7b);
+  display.loadFont(Roboto_Regular_18);
   screenHelperAlert(messageText,TFT_WHITE,TFT_BLACK,TFT_RED);
+  display.unloadFont();
   networkDisconnect();
 
   uint32_t timeRebootStartMS = millis();
@@ -2491,7 +2544,7 @@ void ledInit()
 {
   debugMessage("ledInit() start",1);  
   #ifdef CLIMATRON
-    FastLED.addLeds<WS2812B, pinLEDStripOne, GRB>(ledsOne,ledStripPixelCount);
+    FastLED.addLeds<WS2812, pinLEDStripOne, GRB>(ledsOne,ledStripPixelCount);
     FastLED.setBrightness(200);
     stripOne.setOneColor(CRGB::Black);
   #endif
@@ -2564,6 +2617,45 @@ uint16_t getWarningColor(uint8_t datatype, float datavalue)
     default:
       return(TFT_WHITE);
   }
+}
+
+// Determine the right text color to use in writing on a region colored according to
+// warning level of the type of data in question.  
+uint16_t getWarningTextColor(uint8_t datatype, float datavalue)
+{
+  uint16_t windex;
+
+  switch(datatype) {
+    case CO2_DATA:
+      windex = co2Range(datavalue);
+      break;
+    case VOC_DATA:
+      windex = vocRange(datavalue);
+      break;
+    case NOX_DATA:
+      windex = noxRange(datavalue);
+      break;
+    case PM_DATA:
+      windex = pm25Range(datavalue);
+      break;
+    case TEMP_DATA:
+      if( (datavalue < sensorTempFComfortMin) || (datavalue > sensorTempFComfortMax) ) windex = 1; // "Fair"
+      else windex = 0;  // "Good"
+      break;
+    case HUM_DATA:
+      if( (datavalue < sensorHumidityComfortMin) || (datavalue > sensorHumidityComfortMax) ) windex = 1; // "Fair"
+      else windex = 0; // "Good"
+      break;
+    default:
+      // Don't know what to do, so just return white
+      return(TFT_WHITE);
+  }
+  // For warning levels 0 (Green) and 1 (Yellow) use black text
+  // For warning levels 2 (Orange) and 3 (Red) use white text
+  if( (windex == 0) || (windex == 1)) {
+    return(TFT_BLACK);
+  }
+  else return(TFT_WHITE);
 }
 
 void debugMessage(String messageText, uint8_t messageLevel)
