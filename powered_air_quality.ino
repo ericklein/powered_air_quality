@@ -22,8 +22,7 @@
 #include "ui/fonts/Roboto_Regular_36.h"
 
 #ifdef CLIMATRON
-  #include <FastLED.h>              // https://github.com/FastLED/FastLED, LED control
-  #include <LEDControl.h>           // https://github.com/disquisitioner/LEDControl, multi LED strip async control
+  #include <Adafruit_NeoPixel.h>  // https://github.com/adafruit/adafruit_neopixel
   // CYD JC2432W328 -> CST820 capacitive touchscreen controller
   #include <CST820.h>               // https://github.com/ericklein/CST820_Arduino_Library
   #include <CST820_Helper.h>        // https://github.com/ericklein/CST820_Arduino_Library
@@ -40,8 +39,7 @@
   TwoWire SensorWire(1);
 
   // Instantiate LED strips
-  CRGB ledsOne[ledStripPixelCount];
-  LEDControl stripOne(ledStripPixelCount,ledsOne); 
+  Adafruit_NeoPixel pixels(ledStripPixelCount, pinLEDStripOne, NEO_GRB + NEO_KHZ800);
 #endif
 
 // environment sensors
@@ -199,6 +197,13 @@ void setup() {
     #endif
   #endif
 
+  // generate truely random numbers
+  randomSeed(esp_random());
+
+  #ifdef CLIMATRON
+    ledInit();
+  #endif
+
   display.begin();
   display.setRotation(screenRotation);
   display.setTextWrap(false);
@@ -206,12 +211,15 @@ void setup() {
   // set LED backlight
   ledcAttach(TFT_BL, 5000, 8); // 5000 = pwm frequency, 8 = bit resolution
   ledcWrite(TFT_BL, screenBLMax);
-  display.loadFont(Roboto_Regular_36);
-  screenHelperAlert("Initializing",TFT_WHITE,TFT_BLACK,TFT_WHITE);
-  display.unloadFont();
 
-  // generate truely random numbers
-  randomSeed(esp_random());
+  #ifdef CLIMATRON
+    // set head leds to blue to indicate configuration state
+    pixels.fill(pixels.Color(0,0,255)); // blue
+    pixels.show();
+  #endif
+  display.loadFont(Roboto_Regular_36);
+  screenHelperAlert("Initializing",TFT_WHITE,TFT_BLACK,TFT_BLUE);
+  display.unloadFont();
 
   #ifdef CLIMATRON
     TouchWire.begin(pinTouchSDA, pinTouchSCL);
@@ -233,10 +241,6 @@ void setup() {
 
   ledcAttach(pinAudio, audioFrequency, audioResolution);
 
-  #ifdef CLIMATRON
-    ledInit();
-  #endif
-
   // get configuration data before calling sensorInit() to load altitude value
   if(!nvconfigRead()) {
     // no configuration parameters in non-volatile storage, so write defaults
@@ -252,6 +256,12 @@ void setup() {
     display.unloadFont();
   }
   networkWiFiManagerOpen();
+  
+  #ifdef CLIMATRON
+    // reset the head leds
+    pixels.fill(pixels.Color(0,0,0)); //black
+    pixels.show();
+  #endif
 }
 
 void loop() {
@@ -290,13 +300,6 @@ void loop() {
       wfmPortalRunning = false;
     }
   }
-
-  // feed processor cycles to fastLED
-  #ifdef CLIMATRON
-    stripOne.update();
-    FastLED.show();
-    delay(100); // 10Hz clock for driving animations
-  #endif
 
   // is there user input to process?
   bool touchEvent = false;
@@ -375,7 +378,8 @@ void loop() {
         alertSound = true;
         #ifdef CLIMATRON
           alertLED = true;
-          stripOne.setOneColor(CRGB::Red);
+          pixels.fill(pixels.Color(255,0,0)); // red
+          pixels.show();
         #endif
         ledcWriteTone(pinAudio, audioFrequency);
         display.loadFont(Roboto_Regular_24);
@@ -414,37 +418,43 @@ void screenUpdate(uint8_t screenCurrent)
     case sMain:
       screenMain();
       #ifdef CLIMATRON
-        stripOne.setOneColor(CRGB::Black);
+        pixels.fill(pixels.Color(0,0,0)); // Black
+        pixels.show();
       #endif
       break;
     case sVOC:
       screenVOC();
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent() )));
+        pixels.fill(rgb565ToNeopixelColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent())));
+        pixels.show();
       #endif
       break;
     case sCO2:
       screenCO2();
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(CO2_DATA,totalCO2.getCurrent() ))); 
+        pixels.fill(rgb565ToNeopixelColor(getWarningColor(CO2_DATA,totalCO2.getCurrent())));
+        pixels.show();
       #endif
       break;
     case sPM25:
       screenPM25();
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(PM_DATA,totalPM25.getCurrent() )));
+        pixels.fill(rgb565ToNeopixelColor(getWarningColor(PM_DATA,totalPM25.getCurrent())));
+        pixels.show();
       #endif
       break;
     case sNOX:
       screenNOX();
       #ifdef CLIMATRON
-        stripOne.setOneColor(rgb565ToCRGB(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent() ))); 
+        pixels.fill(rgb565ToNeopixelColor(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent())));
+        pixels.show();
       #endif
       break;
     case sForecast:
       screenForecast();
       #ifdef CLIMATRON
-        stripOne.setOneColor(CRGB::Black);
+        pixels.fill(pixels.Color(0,0,0)); // Black
+        pixels.show();
       #endif
       break;
   }
@@ -743,7 +753,8 @@ void samplePost(uint8_t& numSamples)
     alertSound = true;
     #ifdef CLIMATRON
       alertLED = true;
-      stripOne.setOneColor(CRGB::Red);
+      pixels.fill(pixels.Color(255,0,0)); // Red
+      pixels.show();
     #endif
     ledcWriteTone(pinAudio, audioFrequency);
     display.loadFont(Roboto_Regular_24);
@@ -1053,7 +1064,7 @@ void networkWiFiMgrAPCallback(WiFiManager *myWiFiManager) {
   // This alert is intentionally a UI blocker, handled by WiFiManager, not alertHandle()
   display.fillScreen(TFT_BLACK);
   display.loadFont(Roboto_Regular_18);
-  screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_GREEN);
+  screenHelperAlert(String("Setup device at http://") + WiFi.softAPIP().toString(),TFT_WHITE,TFT_BLACK,TFT_BLUE);
   display.unloadFont();
   debugMessage(String("Did not connect to (stored) AP, WiFiManager web config portal should start"),1);
   debugMessage(String("networkWiFiMgrAPCallback() end"),1);
@@ -1179,11 +1190,13 @@ void networkStartWiFiMgrPortal()
 
   #ifdef CLIMATRON
     alertLED = true;
-    stripOne.setOneColor(CRGB::Blue);
+    // set head leds to blue to indicate configuration state
+    pixels.fill(pixels.Color(0,0,255)); // blue
+    pixels.show();
   #endif
 
   display.loadFont(Roboto_Regular_24);
-  screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_GREEN);
+  screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_BLUE);
   display.unloadFont();
 
   wfm.setTitle("Climatron Configurator");
@@ -2355,17 +2368,14 @@ void deviceReboot(String messageText, uint16_t timeAlertMS)
   {
     #ifndef HARDWARE_SIMULATE
       #ifdef CLIMATRON
-          stripOne.setOneColor(CRGB::Red);
-          stripOne.update();
-          FastLED.show();
+        pixels.fill(pixels.Color(255,0,0)); // red
+        pixels.show();
       #endif
       ledcWriteTone(pinAudio, audioFrequency);
       delay(500);
       #ifdef CLIMATRON
-        // ledsOne[0] = CRGB::Black;
-        stripOne.setOneColor(CRGB::Black);
-        stripOne.update();
-        FastLED.show();
+        pixels.fill(pixels.Color(0,0,0)); // black
+        pixels.show();
       #endif
       ledcWriteTone(pinAudio,0);
       delay(500);
@@ -2541,26 +2551,26 @@ void ledInit()
 {
   debugMessage("ledInit() start",1);  
   #ifdef CLIMATRON
-    FastLED.addLeds<WS2812, pinLEDStripOne, GRB>(ledsOne,ledStripPixelCount);
-    FastLED.setBrightness(200);
-    stripOne.setOneColor(CRGB::Black);
+    pixels.begin();
+    pixels.setBrightness(200);
+    pixels.show();
   #endif
   debugMessage("ledInit() end",1);
 }
 
 #ifdef CLIMATRON
-  CRGB rgb565ToCRGB(uint16_t c)
+  uint32_t rgb565ToNeopixelColor(uint16_t c)
   {
-      uint8_t r5 = (c >> 11) & 0x1F;
-      uint8_t g6 = (c >> 5)  & 0x3F;
-      uint8_t b5 =  c        & 0x1F;
+      uint8_t r = (c >> 11) & 0x1F;
+      r = (r << 3) | (r >> 2);
 
-      // Scale to 8-bit
-      uint8_t r8 = (r5 * 255) / 31;
-      uint8_t g8 = (g6 * 255) / 63;
-      uint8_t b8 = (b5 * 255) / 31;
+      uint8_t g = (c >> 5) & 0x3F;
+      g = (g << 2) | (g >> 4);
 
-      return CRGB(r8, g8, b8);
+      uint8_t b = c & 0x1F;
+      b = (b << 3) | (b >> 2);
+
+      return pixels.Color(r, g, b);
   }
 #endif
 
