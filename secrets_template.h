@@ -6,8 +6,8 @@
 // Configuration Step 1: Set default device latitude, longitude, altitude.
 // These values will populate the web configuration portal until replaced by the user
 // const String kDefaultAltitude = "0"; // meters
-// const String kdefaultLatitude = "0";
-// const String kdefaultLongitude = "0";
+// const String kDefaultLatitude = "0";
+// const String kDefaultLongitude = "0";
 
 // Configuration Step 2: Set Open Weather Map credential
 //	const String OWMKey =		"keyvalue";
