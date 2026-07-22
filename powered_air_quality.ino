@@ -157,7 +157,7 @@ extern uint8_t noxRange(float);
   extern bool mqttPublishValue(String key, const String& payload);
 
   #ifdef HASSIO_MQTT
-    extern void hassio_mqtt_publish(float pm25, float temperatureF, float vocIndex, float humidity, uint16_t co2);
+    extern bool hassio_mqtt_publish(float pm25, float co2, float temperatureF, float humidity, float vocIndex, float noxIndex, float aqi);
   #endif
 #endif
 
@@ -692,6 +692,7 @@ void samplePost(uint8_t& numSamples)
         float avgVOC = totalVOCIndex.getAverage();
         float avgPM25 = totalPM25.getAverage();
         float avgNOX = totalNOxIndex.getAverage();
+        float aqi = pm25toAQI_US(avgPM25);
 
         debugMessage(String("Averages being sent to endpoints for the last ") + (timeReportMS/60000) + " minutes",2);
         debugMessage(String("PM2.5: ") + avgPM25 + "ppm, CO2: " + avgCO2 + "ppm, VOC index: " + avgVOC + ", NOx index: " + avgNOX + ", " + 
@@ -733,7 +734,7 @@ void samplePost(uint8_t& numSamples)
               // Either configure sensors in Home Assistant's configuration.yaml file
               // directly or attempt to do it via MQTT auto-discovery
               // hassio_mqtt_setup();  // Config for MQTT auto-discovery
-              hassio_mqtt_publish(avgPM25, avgTemperatureF, avgVOC, avgHumidity);
+              hassio_mqtt_publish(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, aqi);
             #endif
 
             mqtt.disconnect();
