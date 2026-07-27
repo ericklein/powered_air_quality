@@ -18,9 +18,6 @@
 #ifndef USER_SETUP_LOADE //  Lets PlatformIO users define settings in
                           //  platformio.ini, see notes in "Tools" folder.
 
-     #pragma once
-     #include "device_config.h"
-
 // Comment out the #defines below with // to stop that font being loaded
 // The ESP8366 and ESP32 have plenty of memory so commenting out fonts is not
 // normally necessary. If all fonts are loaded the extra FLASH space required is
@@ -50,17 +47,13 @@
      //#define FNK0102A_1P14_135x240_ST7789 
      //#define FNK0103B_2P8_240x320_ST7789
      // define for PAQ
-     #ifdef PAQ
-          #define FNK0103F_2P8_240x320_ILI9341
-     #endif
+     //#define FNK0103F_2P8_240x320_ILI9341
 
      //#define FNK0103L_3P2_240x320_ST7789  
      //#define FNK0103N_3P5_320x480_ST7796  
      //#define FNK0103S_4P0_320x480_ST7796
      // define for Climatron
-     #ifdef CLIMATRON
-          #define JC2432W328_2P8_240x320_ST7789
-     #endif
+     #define JC2432W328_2P8_240x320_ST7789
 
      #ifdef FNK0086A_2P8_240x320_ST7789
           #include "/TFT_eSPI_Setups/FNK0086A_2.8_240x320_ST7789.h"

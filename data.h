@@ -1,6 +1,6 @@
 /*
-  Project:      Powered Air Quality
-  Description:  data pair configuration
+  Project:      Climatron and Powered Air Quality
+  Description:  Data pair configuration
 */
 
 #ifndef DATA_H

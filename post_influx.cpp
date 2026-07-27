@@ -1,6 +1,6 @@
 /*
-  Project:      Powered Air Quality
-  Description:  write sensor data to InfluxDB
+  Project:      Climatron - Your personal air quality monitoring robot
+  Description:  Write sensor data to InfluxDB
 
   See README.md for target information and revision history
 */

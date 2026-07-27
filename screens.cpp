@@ -1,5 +1,5 @@
 /*
-  Project:      Powered Air Quality
+  Project:      Climatron - Your personal air quality monitoring robot
   Description:  screen related routines
 */
 
@@ -686,25 +686,23 @@ void screenMain() {
   display.drawString("PM25",mx,my+14);
   display.drawSmoothRoundRect(x0,y0,8,6,ws,hs,TFT_WHITE);
 
-  #ifdef SENSOR_SEN66
-    // NOX gauge
-    // y0 and my don't change (all in the same horizontal row)
-    x0 = me + (2*ws) + (2*mm);
-    mx = x0 + (ws/2);
-    wcolor = getWarningColor(NOX_DATA,totalNOxIndex.getCurrent());
-    windex = noxRange(totalNOxIndex.getCurrent());
-    display.fillRoundRect(x0,y0,ws,hs,8,wcolor);  // Panel background
-    arcGauge(mx,my,ws,windex);  // Gauge
-    display.loadFont(Roboto_Regular_24);
-    if((windex == 1) || (windex == 0)) {
-      display.setTextColor(TFT_BLACK,wcolor,true);
-    }
-    else {
-      display.setTextColor(TFT_WHITE,wcolor,true);
-    }
-    display.drawString("NOX",mx,my+14);
-    display.drawSmoothRoundRect(x0,y0,8,6,ws,hs,TFT_WHITE);
-  #endif
+  // NOX gauge
+  // y0 and my don't change (all in the same horizontal row)
+  x0 = me + (2*ws) + (2*mm);
+  mx = x0 + (ws/2);
+  wcolor = getWarningColor(NOX_DATA,totalNOxIndex.getCurrent());
+  windex = noxRange(totalNOxIndex.getCurrent());
+  display.fillRoundRect(x0,y0,ws,hs,8,wcolor);  // Panel background
+  arcGauge(mx,my,ws,windex);  // Gauge
+  display.loadFont(Roboto_Regular_24);
+  if((windex == 1) || (windex == 0)) {
+    display.setTextColor(TFT_BLACK,wcolor,true);
+  }
+  else {
+    display.setTextColor(TFT_WHITE,wcolor,true);
+  }
+  display.drawString("NOX",mx,my+14);
+  display.drawSmoothRoundRect(x0,y0,8,6,ws,hs,TFT_WHITE);
 
   // Now the wide CO2 panel on the right side of the top row
 

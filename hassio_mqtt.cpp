@@ -1,6 +1,6 @@
 /*
-  Project:      Powered Air Quality & Climatron
-  Description:  write sensor data to hassio_mqtt
+  Project:      Climatron - Your personal air quality monitoring robot
+  Description:  Publish sensor data to Home Assistant via MQTT
 */
 
 /*

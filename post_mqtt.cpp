@@ -1,6 +1,6 @@
 /*
-  Project Name:   Powered Air Quality
-  Description:    MQTT functions for Powered Air Quality
+  Project Name:   Climatron - Your personal air quality monitoring robot
+  Description:    MQTT endpoint support functions
 */
 
 #include "Arduino.h"

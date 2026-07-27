@@ -1,6 +1,6 @@
 /*
-  Project:      Powered Air Quality
-  Description:  core data structures
+  Project:      Climatron - Your personal air quality monitoring robot
+  Description:  Core data structures
 */
 
 #ifndef PAQ_H
