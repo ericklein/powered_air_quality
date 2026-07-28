@@ -17,47 +17,20 @@
 #include <Preferences.h>          // read-write to ESP32 persistent storage
 #include <TimeLib.h>              // https://github.com/PaulStoffregen/Time, used to process OWM Forecast
 #include <TFT_eSPI.h>             // https://github.com/Bodmer/TFT_eSPI
+#include <XPT2046_Touchscreen.h>  // https://github.com/PaulStoffregen/XPT2046_Touchscreen
+#include <ArduinoJson.h>          // https://github.com/bblanchon/ArduinoJson, used by OWM retrieval routines
+
 #include "ui/fonts/Roboto_Regular_18.h"
 #include "ui/fonts/Roboto_Regular_24.h"
 #include "ui/fonts/Roboto_Regular_36.h"
 
-#ifdef CLIMATRON
-  #include <Adafruit_NeoPixel.h>  // https://github.com/adafruit/adafruit_neopixel
-  // CYD JC2432W328 -> CST820 capacitive touchscreen controller
-  #include <CST820.h>               // https://github.com/ericklein/CST820_Arduino_Library
-  #include <CST820_Helper.h>        // https://github.com/ericklein/CST820_Arduino_Library
-#endif
-#ifdef PAQ
-  // CYD 2432S028R -> XPT2046 resistive touchscreen controller
-  #include <XPT2046_Touchscreen.h>  // https://github.com/PaulStoffregen/XPT2046_Touchscreen
-#endif
-#include <ArduinoJson.h>          // https://github.com/bblanchon/ArduinoJson, used by OWM retrieval routines
+// instanstiate SEN5X hardware object
+#include <SensirionI2CSen5x.h>
+SensirionI2CSen5x pmSensor;
 
-#ifdef CLIMATRON
-  // CYD JC2432W328 i2c setup
-  TwoWire TouchWire(0);
-  TwoWire SensorWire(1);
-
-  // Instantiate LED strips
-  Adafruit_NeoPixel pixels(ledStripPixelCount, pinLEDStripOne, NEO_GRB + NEO_KHZ800);
-#endif
-
-// environment sensors
-#ifdef SENSOR_SEN66
-  // Instanstiate SEN66 hardware object, if being used
-  #include <SensirionI2cSen66.h>
-  SensirionI2cSen66 paqSensor;
-#endif
-
-#ifdef SENSOR_SEN54SCD40
-  // instanstiate SEN5X hardware object
-  #include <SensirionI2CSen5x.h>
-  SensirionI2CSen5x pmSensor;
-
-  // instanstiate SCD4X hardware object
-  #include <SensirionI2cScd4x.h>
-  SensirionI2cScd4x co2Sensor;
-#endif
+// instanstiate SCD4X hardware object
+#include <SensirionI2cScd4x.h>
+SensirionI2cScd4x co2Sensor;
 
 Preferences nvConfig;
 
@@ -117,7 +90,6 @@ enum screenNames screenCurrent = sMain; // Initial screen to display (on startup
 // Screen specific functions that reside separately in screens.cpp
 extern void screenMain();
 extern void screenVOC();
-extern void screenNOX();
 extern void screenCO2();
 extern void screenPM25();
 extern void screenForecast();
@@ -125,18 +97,10 @@ extern void screenForecast();
 extern uint8_t co2Range(float);
 extern uint8_t pm25Range(float);
 extern uint8_t vocRange(float);
-extern uint8_t noxRange(float);
 
-#ifdef PAQ
-  // CYD 2432S028R -> XPT2046
-  SPIClass touchscreenSPI = SPIClass(VSPI);
-  XPT2046_Touchscreen touchscreen(pinTouchCS,pinTouchIRQ);
-#endif
-#ifdef CLIMATRON
-  // CYD JC2432W328 -> CST820
-  CST820 touchscreen(pinTouchSDA, pinTouchSCL, pinTouchRST, pinTouchIRQ);
-  CST820Helper touchHelper(touchscreen);
-#endif
+// CYD 2432S028R -> XPT2046
+SPIClass touchscreenSPI = SPIClass(VSPI);
+XPT2046_Touchscreen touchscreen(pinTouchCS,pinTouchIRQ);
 
 #ifdef THINGSPEAK
   extern bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, 
@@ -200,10 +164,6 @@ void setup() {
   // generate truely random numbers
   randomSeed(esp_random());
 
-  #ifdef CLIMATRON
-    ledInit();
-  #endif
-
   display.begin();
   display.setRotation(screenRotation);
   display.setTextWrap(false);
@@ -212,29 +172,15 @@ void setup() {
   ledcAttach(TFT_BL, 5000, 8); // 5000 = pwm frequency, 8 = bit resolution
   ledcWrite(TFT_BL, screenBLMax);
 
-  #ifdef CLIMATRON
-    // set head leds to blue to indicate configuration state
-    pixels.fill(pixels.Color(0,0,255)); // blue
-    pixels.show();
-  #endif
   display.loadFont(Roboto_Regular_36);
   screenHelperAlert("Initializing",TFT_WHITE,TFT_BLACK,TFT_BLUE);
   display.unloadFont();
 
-  #ifdef CLIMATRON
-    TouchWire.begin(pinTouchSDA, pinTouchSCL);
-    SensorWire.begin(pinSensorSDA, pinSensorSCL);
-    // CST820
-    touchscreen.begin(&TouchWire);
-  #endif
-
-  #ifdef PAQ
-    // CYD 2432S028R -> XPT2046
-    Wire.begin(pinSensorSDA, pinSensorSCL);
-    touchscreenSPI.begin(pinTouchCLK, pinTouchMISO, pinTouchMOSI, pinTouchCS); // setup the VSPI to use CYD touchscreen pins
-    touchscreen.begin(touchscreenSPI);
-    touchscreen.setRotation(screenRotation);
-  #endif
+  // CYD 2432S028R -> XPT2046
+  Wire.begin(pinSensorSDA, pinSensorSCL);
+  touchscreenSPI.begin(pinTouchCLK, pinTouchMISO, pinTouchMOSI, pinTouchCS); // setup the VSPI to use CYD touchscreen pins
+  touchscreen.begin(touchscreenSPI);
+  touchscreen.setRotation(screenRotation);
 
   // initialize GPIO
   pinMode(pinButton, INPUT_PULLUP);
@@ -256,12 +202,6 @@ void setup() {
     display.unloadFont();
   }
   networkWiFiManagerOpen();
-  
-  #ifdef CLIMATRON
-    // reset the head leds
-    pixels.fill(pixels.Color(0,0,0)); //black
-    pixels.show();
-  #endif
 }
 
 void loop() {
@@ -303,28 +243,17 @@ void loop() {
 
   // is there user input to process?
   bool touchEvent = false;
-  #ifdef PAQ
-    // CYD 2432S028R -> XPT2046
-    if (touchscreen.tirqTouched() && touchscreen.touched()) {
-      // get raw 12bit touchscreen x,y and then calibrate to screen size
-      TS_Point p = touchscreen.getPoint();
-      calibratedX = map(p.x, touchscreenMinX, touchscreenMaxX, 1, display.width());
-      calibratedY = map(p.y, touchscreenMinY, touchscreenMaxY, 1, display.height());
-      // alternate conversion
-      // uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
-      // uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
-      touchEvent = true;
-    }
-  #endif
-  #ifdef CLIMATRON
-    // CYD JC2432W328 -> CST820
-    CST820TouchEvent ev = touchHelper.poll(display.width(), display.height(), screenRotation);
-    if (ev.valid) {
-      calibratedX = ev.end.x;
-      calibratedY = ev.end.y;
-      touchEvent = true;
-    }
-  #endif
+  // CYD 2432S028R -> XPT2046
+  if (touchscreen.tirqTouched() && touchscreen.touched()) {
+    // get raw 12bit touchscreen x,y and then calibrate to screen size
+    TS_Point p = touchscreen.getPoint();
+    calibratedX = map(p.x, touchscreenMinX, touchscreenMaxX, 1, display.width());
+    calibratedY = map(p.y, touchscreenMinY, touchscreenMaxY, 1, display.height());
+    // alternate conversion
+    // uint16_t calibratedX = (uint16_t)((p.x - touchscreenMinX) * display.width() / (touchscreenMaxX - touchscreenMinX));
+    // uint16_t calibratedY = (uint16_t)((p.y - touchscreenMinY) * display.height() / (touchscreenMaxY - touchscreenMinY));
+    touchEvent = true;
+  }
   if (touchEvent) {
     debugMessage(String("touch input x=") + calibratedX + ", y=" + calibratedY,2);
     ledcWrite(TFT_BL, screenBLMax);
@@ -342,14 +271,10 @@ void loop() {
           screenCurrent = sVOC;
         }
         else {
-          #ifdef SENSOR_SEN66
-            (calibratedX < 214) ? screenCurrent = sPM25 : screenCurrent = sNOX;
-          #else
             // only PM25 guage displayed
             if (calibratedX < 214) {
               screenCurrent = sPM25;
             }
-          #endif
         }
       }
     }
@@ -376,11 +301,6 @@ void loop() {
         alertStartMS = millis();
         alertScreen = true;
         alertSound = true;
-        #ifdef CLIMATRON
-          alertLED = true;
-          pixels.fill(pixels.Color(255,0,0)); // red
-          pixels.show();
-        #endif
         ledcWriteTone(pinAudio, audioFrequency);
         display.loadFont(Roboto_Regular_24);
         screenHelperAlert("CO2 rising rapidly", TFT_WHITE,TFT_BLACK,TFT_RED);
@@ -417,45 +337,18 @@ void screenUpdate(uint8_t screenCurrent)
   switch(screenCurrent) {
     case sMain:
       screenMain();
-      #ifdef CLIMATRON
-        pixels.fill(pixels.Color(0,0,0)); // Black
-        pixels.show();
-      #endif
       break;
     case sVOC:
       screenVOC();
-      #ifdef CLIMATRON
-        pixels.fill(rgb565ToNeopixelColor(getWarningColor(VOC_DATA,totalVOCIndex.getCurrent())));
-        pixels.show();
-      #endif
       break;
     case sCO2:
       screenCO2();
-      #ifdef CLIMATRON
-        pixels.fill(rgb565ToNeopixelColor(getWarningColor(CO2_DATA,totalCO2.getCurrent())));
-        pixels.show();
-      #endif
       break;
     case sPM25:
       screenPM25();
-      #ifdef CLIMATRON
-        pixels.fill(rgb565ToNeopixelColor(getWarningColor(PM_DATA,totalPM25.getCurrent())));
-        pixels.show();
-      #endif
-      break;
-    case sNOX:
-      screenNOX();
-      #ifdef CLIMATRON
-        pixels.fill(rgb565ToNeopixelColor(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent())));
-        pixels.show();
-      #endif
       break;
     case sForecast:
       screenForecast();
-      #ifdef CLIMATRON
-        pixels.fill(pixels.Color(0,0,0)); // Black
-        pixels.show();
-      #endif
       break;
   }
 }
@@ -752,11 +645,6 @@ void samplePost(uint8_t& numSamples)
     alertStartMS = millis();
     alertScreen = true;
     alertSound = true;
-    #ifdef CLIMATRON
-      alertLED = true;
-      pixels.fill(pixels.Color(255,0,0)); // Red
-      pixels.show();
-    #endif
     ledcWriteTone(pinAudio, audioFrequency);
     display.loadFont(Roboto_Regular_24);
     screenHelperAlert("No samples available", TFT_WHITE,TFT_BLACK,TFT_RED);
@@ -1188,13 +1076,6 @@ void networkStartWiFiMgrPortal()
   alertLengthMS = 5000;
   alertStartMS = millis();
   alertScreen = true;
-
-  #ifdef CLIMATRON
-    alertLED = true;
-    // set head leds to blue to indicate configuration state
-    pixels.fill(pixels.Color(0,0,255)); // blue
-    pixels.show();
-  #endif
 
   display.loadFont(Roboto_Regular_24);
   screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_BLUE);
@@ -1734,37 +1615,21 @@ bool sensorInit()
   // Conditionally compiled based on the sensor configuration as defined in config.h
   bool success = false;
 
-  #ifdef SENSOR_SEN66
-    success = sensorSEN6xInit();
-    if (success) {
-      #ifndef HARDWARE_SIMULATE
-        // Explicit delay as SEN66 takes 10-11 seconds for valid NOx index values
-        delay(12000);
-      #endif
-    }
-  #endif
-
-  #ifdef SENSOR_SEN54SCD40
-    bool pmSuccess = sensorSEN54Init();
-    success = sensorSCD4xInit();
-    if (!success) {
-      debugMessage("SCD4x init failed",1);
-    }
-    if (!pmSuccess) {
-      debugMessage("PM sensor init failed",1);
-      success = false;
-    }
-    if (success) {
-      #ifndef HARDWARE_SIMULATE
-        // Explicit delay as SEN54 takes 6-7 seconds for valid NOx index values
-        delay(7000);
-      #endif
-    }
-  #endif // SENSOR_SEN54SCD40
-
-  #if !defined(SENSOR_SEN66) && !defined(SENSOR_SEN54SCD40)
-    debugMessage("Sensor init failed: no sensor(s) defined",1);
-  #endif
+  bool pmSuccess = sensorSEN54Init();
+  success = sensorSCD4xInit();
+  if (!success) {
+    debugMessage("SCD4x init failed",1);
+  }
+  if (!pmSuccess) {
+    debugMessage("PM sensor init failed",1);
+    success = false;
+  }
+  if (success) {
+    #ifndef HARDWARE_SIMULATE
+      // Explicit delay as SEN54 takes 6-7 seconds for valid NOx index values
+      delay(7000);
+    #endif
+  }
 
   return success;
 }
@@ -1774,198 +1639,17 @@ bool sensorRead()
 {
   bool success = false;  // default setting for the final #ifndef
 
-  #ifdef SENSOR_SEN66
-    success = sensorSEN6xRead();
-    if (!success)
-      debugMessage("SEN66 read failed",1);
-  #endif // SENSOR_SEN66
+  bool pmSuccess = sensorSEN554Read();
+  if (!pmSuccess)
+    debugMessage("SEN54 read failed",1);
 
-  #ifdef SENSOR_SEN54SCD40
-    bool pmSuccess = sensorSEN554Read();
-    if (!pmSuccess)
-      debugMessage("SEN54 read failed",1);
-
-    success = sensorSCD4xRead();
-    if (!success)
-      debugMessage("SCD40 read failed",1);
-    if (!pmSuccess)
-      success = false;
-  #endif // SENSOR_SEN54SCD40
-
-  #if !defined(SENSOR_SEN66) && !defined(SENSOR_SEN54SCD40)
-    debugMessage("Sensor read failed: no sensor(s) defined",1);
-  #endif
+  success = sensorSCD4xRead();
+  if (!success)
+    debugMessage("SCD40 read failed",1);
+  if (!pmSuccess)
+    success = false;
 
   return success;
-}
-
-// Initialize SEN66 sensor
-bool sensorSEN6xInit()
-{
-  debugMessage ("sensorSEN6xInit() start",1);
-
-  #ifdef HARDWARE_SIMULATE
-    return true;
-  #else
-    #ifdef SENSOR_SEN66
-      static char errorMessage[64];
-      static int16_t error;
-
-      #ifdef PAQ
-        // CYD 2432S028R 
-        paqSensor.begin(Wire, SEN66_I2C_ADDR_6B);
-      #endif
-      #ifdef CLIMATRON
-        // CYD JC2432W328
-        paqSensor.begin(SensorWire, SEN66_I2C_ADDR_6B); // DJB-TODO
-      #endif
-
-      error = paqSensor.deviceReset();
-      if (error != 0) {
-          debugMessage("sensorSEN6xInit(): error msg from deviceReset() is",1);
-          errorToString(error, errorMessage, sizeof errorMessage);
-          debugMessage(errorMessage,1);
-          return false;
-      }
-
-      delay(1200);  // explicit delay per Sensirion docs
-
-      // modify configuration settings while not in active measurement mode
-      error = paqSensor.setSensorAltitude(hardwareData.altitude);  // optimizes return values
-      if (!error)
-        debugMessage(String("SEN66 altitude set to ") + hardwareData.altitude + " meters",2);
-      else {
-        errorToString(error, errorMessage, 256);
-        debugMessage(String(errorMessage) + " executing SEN66 setSensorAltitude()",1);
-      }
-
-      error = paqSensor.startContinuousMeasurement();
-      if (error != 0) {
-          debugMessage("sensorSEN6xInit(): error msg from startContinuousMeasurement() is",1);
-          errorToString(error, errorMessage, sizeof errorMessage);
-          debugMessage(errorMessage,1);
-          return false;
-      }
-
-      // TODO: Add support for setting custom temperature offset for SEN66
-      return true;
-    #endif
-  #endif
-}
-
-void sensorSEN6xSimulate(float& simulatedTemperatureF, float& simulatedHumidity, uint16_t& simulatedCO2, float& simulatedPM25, float& simulatedVOCIndex, float& simulatedNOxIndex)
-// Description: Simulates sensor reading from SEN66 sensor
-//  leveraging other sensor simulations
-// Parameters: NA
-// Return: simulated values
-// Improvement: implement mode passthrough for other sensorSimulate APIs
-{
-  debugMessage ("sensorSEN6xSimulate() start",1);
-
-  simulatedPM25 = 0.0f;
-  simulatedTemperatureF = 0.0f;
-  simulatedHumidity = 0.0f;
-  simulatedVOCIndex = 0.0f;
-  simulatedNOxIndex = 0.0f;
-  simulatedCO2 = 0;
-
-  sensorSCD4xSimulate(1,10, simulatedTemperatureF, simulatedHumidity,simulatedCO2);
-  sensorSEN54Simulate(simulatedPM25, simulatedVOCIndex);
-  simulatedNOxIndex = randomFloatRange(sensorNOxMin, sensorNOxMax);
-  debugMessage(String("returning simulated noxIndex: ") + simulatedNOxIndex,1);
-  
-  debugMessage("sensorSEN6xSimulate() end",1);
-}
-
-bool sensorSEN6xRead()
-// Description: Retrieves values from SEN66 sensor
-// Parameters: none
-// Output : range validated pm25 and VOCIndex values, NAN NOxIndex value from SEN54
-// Improvement : Add support for checking isDataReady flag (see SCD40 read)
-{
-  bool success = false;
-  float pm25 = 0.0f;
-  float temperatureF = 0.0f;
-  float humidity = 0.0f;
-  float VOCIndex = 0.0f;
-  float NOxIndex = 0.0f;
-  uint16_t co2 = 0;
-
-  debugMessage ("sensorSEN6xRead() start",1);
-
-  #ifdef HARDWARE_SIMULATE
-    sensorSEN6xSimulate(temperatureF, humidity, co2, pm25, VOCIndex, NOxIndex);
-    success = true;
-  #else
-    #ifdef SENSOR_SEN66
-      uint16_t error;
-      char errorMessage[256];
-      float pm1, pm4, pm10, temperatureC = 0.0f; // read and discard
-
-      error = paqSensor.readMeasuredValues(pm1, pm25, pm4, pm10, humidity, temperatureC , VOCIndex,
-        NOxIndex, co2);
-
-      if (error) {
-        errorToString(error, errorMessage, 256);
-        debugMessage(String(errorMessage) + " error during SEN6x read",2);
-      }
-      else {
-        success = true;
-        temperatureF = (temperatureC*1.8)+32;
-      }
-    #endif
-  #endif
-
-  // range valid returned sensor values, even simulation values can be OOB
-  if (co2 < sensorCO2Min || co2 > sensorCO2Max) {
-    success = false;
-    debugMessage(String("SEN66 CO2 reading: ") + co2 + " is out of datasheet range",2);
-  }
-
-  if (temperatureF < sensorTempFMin || temperatureF > sensorTempFMax) {
-    success = false;
-    debugMessage(String("SEN66 temperatureF reading: ") + temperatureF + " is out of datasheet range",2);
-  }
-
-  if (humidity < sensorHumidityMin || humidity > sensorHumidityMax) {
-    success = false;
-    debugMessage(String("SEN66 humidity reading: ") + humidity + " is out of datasheet range",2);
-  }
-
-  if (pm25 < sensorPMMin || pm25 > sensorPMMax) {
-    success = false;
-    debugMessage(String("SEN66 PM2.5 reading: ") + pm25 + " is out of datasheet range",2);
-  }
-
-  if (VOCIndex < sensorVOCMin || VOCIndex > sensorVOCMax) {
-    success = false;
-    debugMessage(String("SEN66 VOC index reading: ") + VOCIndex + " is out of datasheet range",2);
-  }
-
-  if (NOxIndex < sensorNOxMin || NOxIndex > sensorNOxMax) {
-    success = false;
-    debugMessage(String("SEN66 NOx index reading: ") + NOxIndex + " is out of datasheet range",2);
-  }
-
-  // valid measurement, update globals
-  if (success) {
-    // Incorporate (and retain) validated measurements for further processing & reporting
-    totalTemperatureF.include(temperatureF);
-    totalHumidity.include(humidity);
-    totalCO2.include(co2);
-    totalPM25.include(pm25);
-    totalVOCIndex.include(VOCIndex);
-    totalNOxIndex.include(NOxIndex);
-
-    debugMessage(String("SEN66 temp ") + totalTemperatureF.getCurrent() + "F, total across samples: " + totalTemperatureF.getTotal(),2);
-    debugMessage(String("SEN66 humidity ") + totalHumidity.getCurrent() + ", total across samples: " + totalHumidity.getTotal(),2);
-    debugMessage(String("SEN66 CO2 ") + totalCO2.getCurrent() + "ppm, total across samples: " + totalCO2.getTotal(),2);
-    debugMessage(String("SEN66 PM25 ") + totalPM25.getCurrent() + "ppm, total: " + totalPM25.getTotal(),2);
-    debugMessage(String("SEN66 VOC index ") + totalVOCIndex.getCurrent() + ", total: " + totalVOCIndex.getTotal(),2);
-    debugMessage(String("SEN66 NOx index ") + totalNOxIndex.getCurrent() + ", total: " + totalNOxIndex.getTotal(),2);
-  }
-  debugMessage ("sensorSEN6xRead() end",1);
-  return (success);
 }
 
 bool sensorSEN54Init()
@@ -1977,37 +1661,29 @@ bool sensorSEN54Init()
   #ifdef HARDWARE_SIMULATE
     success = true;
   #else
-    #ifdef SENSOR_SEN54SCD40
-      uint16_t error;
-      char errorMessage[256];
+    uint16_t error;
+    char errorMessage[256];
 
-      #ifdef PAQ
-        // CYD 2432S028R 
-        pmSensor.begin(Wire);
-      #endif
-      #ifdef CLIMATRON
-        // CYD JC2432W328
-        pmSensor.begin(SensorWire);
-      #endif
+    // CYD 2432S028R 
+    pmSensor.begin(Wire);
 
-      error = pmSensor.deviceReset();
+    error = pmSensor.deviceReset();
+    if (error) {
+      errorToString(error, errorMessage, 256);
+      debugMessage(String(errorMessage) + " error during SEN5x reset", 1);
+    }
+    else {
+      // start measurement
+      error = pmSensor.startMeasurement();
       if (error) {
         errorToString(error, errorMessage, 256);
-        debugMessage(String(errorMessage) + " error during SEN5x reset", 1);
+        debugMessage(String(errorMessage) + " error during SEN5x startMeasurement", 2);
       }
       else {
-        // start measurement
-        error = pmSensor.startMeasurement();
-        if (error) {
-          errorToString(error, errorMessage, 256);
-          debugMessage(String(errorMessage) + " error during SEN5x startMeasurement", 2);
-        }
-        else {
-          debugMessage("SEN5X starting periodic measurements",2);
-          success = true;
-        }
+        debugMessage("SEN5X starting periodic measurements",2);
+        success = true;
       }
-    #endif
+    }
   #endif
   debugMessage("sensorSEN54Init() end",1);
   return success;
@@ -2051,19 +1727,17 @@ bool sensorSEN554Read()
     sensorSEN54Simulate(pm25, VOCIndex);
     success = true;
   #else
-    #ifdef SENSOR_SEN54SCD40
-      uint16_t error;
-      char errorMessage[256];
-      float pm1, pm4, pm10, temperatureC, humidity = 0.0f; // read and discard
+    uint16_t error;
+    char errorMessage[256];
+    float pm1, pm4, pm10, temperatureC, humidity = 0.0f; // read and discard
 
-      error = pmSensor.readMeasuredValues(pm1, pm25, pm4, pm10, humidity, temperatureC, VOCIndex, NOxIndex);
-      if (error) {
-        errorToString(error, errorMessage, 256);
-        debugMessage(String(errorMessage) + " error during SEN5x read",2);
-      }
-      else
-        success = true;
-    #endif
+    error = pmSensor.readMeasuredValues(pm1, pm25, pm4, pm10, humidity, temperatureC, VOCIndex, NOxIndex);
+    if (error) {
+      errorToString(error, errorMessage, 256);
+      debugMessage(String(errorMessage) + " error during SEN5x read",2);
+    }
+    else
+      success = true;
   #endif
 
   // range valid returned sensor values, even simulation values can be OOB
@@ -2102,50 +1776,42 @@ bool sensorSCD4xInit()
   #ifdef HARDWARE_SIMULATE
     success = true;
   #else
-    #ifdef SENSOR_SEN54SCD40
-      uint16_t error;
-      char errorMessage[256];
+    uint16_t error;
+    char errorMessage[256];
 
-      #ifdef PAQ
-        // CYD 2432S028R 
-        co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
-      #endif
-      #ifdef CLIMATRON
-        // CYD JC2432W328
-        co2Sensor.begin(SensorWire, SCD41_I2C_ADDR_62);
-      #endif
+    // CYD 2432S028R 
+    co2Sensor.begin(Wire, SCD41_I2C_ADDR_62);
 
-      // stop potentially previously started measurement
-      error = co2Sensor.stopPeriodicMeasurement();
+    // stop potentially previously started measurement
+    error = co2Sensor.stopPeriodicMeasurement();
+    if (error) {
+      errorToString(error, errorMessage, 256);
+      debugMessage(String(errorMessage) + " executing SCD4X stopPeriodicMeasurement()",1);
+    }
+    else {
+      // modify configuration settings while not in active measurement mode
+      error = co2Sensor.setSensorAltitude(hardwareData.altitude);  // optimizes CO2 reading
+      if (!error)
+        debugMessage(String("SCD4X altitude set to ") + hardwareData.altitude + " meters",2);
+      else {
+        errorToString(error, errorMessage, 256);
+        debugMessage(String(errorMessage) + " executing SCD4X setSensorAltitude()",1);
+      }
+      // Start Measurement.  For high power mode, with a fixed update interval of 5 seconds
+      // (the typical usage mode), use startPeriodicMeasurement().  For low power mode, with
+      // a longer fixed sample interval of 30 seconds, use startLowPowerPeriodicMeasurement()
+      // uint16_t error = co2Sensor.startPeriodicMeasurement();
+      error = co2Sensor.startLowPowerPeriodicMeasurement();
       if (error) {
         errorToString(error, errorMessage, 256);
-        debugMessage(String(errorMessage) + " executing SCD4X stopPeriodicMeasurement()",1);
+        debugMessage(String(errorMessage) + " executing SCD4X startLowPowerPeriodicMeasurement()",2);
       }
-      else {
-        // modify configuration settings while not in active measurement mode
-        error = co2Sensor.setSensorAltitude(hardwareData.altitude);  // optimizes CO2 reading
-        if (!error)
-          debugMessage(String("SCD4X altitude set to ") + hardwareData.altitude + " meters",2);
-        else {
-          errorToString(error, errorMessage, 256);
-          debugMessage(String(errorMessage) + " executing SCD4X setSensorAltitude()",1);
-        }
-        // Start Measurement.  For high power mode, with a fixed update interval of 5 seconds
-        // (the typical usage mode), use startPeriodicMeasurement().  For low power mode, with
-        // a longer fixed sample interval of 30 seconds, use startLowPowerPeriodicMeasurement()
-        // uint16_t error = co2Sensor.startPeriodicMeasurement();
-        error = co2Sensor.startLowPowerPeriodicMeasurement();
-        if (error) {
-          errorToString(error, errorMessage, 256);
-          debugMessage(String(errorMessage) + " executing SCD4X startLowPowerPeriodicMeasurement()",2);
-        }
-        else
-        {
-          debugMessage("SCD4X starting low power periodic measurements",2);
-          success = true;
-        }
+      else
+      {
+        debugMessage("SCD4X starting low power periodic measurements",2);
+        success = true;
       }
-    #endif
+    }
   #endif
 
   debugMessage("sensorSCD4xInit() end",1);
@@ -2277,39 +1943,37 @@ bool sensorSCD4xRead()
     success = true;
     sensorSCD4xSimulate(1, 10, temperatureF, humidity, co2);
   #else
-    #ifdef SENSOR_SEN54SCD40
-      uint16_t error;
-      uint8_t errorCount = 0;
-      char errorMessage[256];
-      float temperatureC = 0.0f;
+    uint16_t error;
+    uint8_t errorCount = 0;
+    char errorMessage[256];
+    float temperatureC = 0.0f;
 
-      // Loop attempting to read Measurement
-      while((errorCount < co2SensorReadFailureLimit) && (!success)) {
-        delay(100);
-        errorCount++;
-        // Is data ready to be read?
-        bool isDataReady = false;
-        error = co2Sensor.getDataReadyStatus(isDataReady);
-        if (error) {
-            errorToString(error, errorMessage, 256);
-            debugMessage(String("Error trying to execute getDataReadyStatus(): ") + errorMessage,1);
-            continue; // Back to the top of the loop
-        }
-        if (!isDataReady) {
-            continue; // Back to the top of the loop
-        }
-
-        error = co2Sensor.readMeasurement(co2, temperatureC, humidity);
-        if (error) {
-            errorToString(error, errorMessage, 256);
-            debugMessage(String("SCD40 executing readMeasurement(): ") + errorMessage,1);
-        }
-        else {
-          success = true;
-          temperatureF = (temperatureC*1.8)+32;
-        }
+    // Loop attempting to read Measurement
+    while((errorCount < co2SensorReadFailureLimit) && (!success)) {
+      delay(100);
+      errorCount++;
+      // Is data ready to be read?
+      bool isDataReady = false;
+      error = co2Sensor.getDataReadyStatus(isDataReady);
+      if (error) {
+          errorToString(error, errorMessage, 256);
+          debugMessage(String("Error trying to execute getDataReadyStatus(): ") + errorMessage,1);
+          continue; // Back to the top of the loop
       }
-    #endif
+      if (!isDataReady) {
+          continue; // Back to the top of the loop
+      }
+
+      error = co2Sensor.readMeasurement(co2, temperatureC, humidity);
+      if (error) {
+          errorToString(error, errorMessage, 256);
+          debugMessage(String("SCD40 executing readMeasurement(): ") + errorMessage,1);
+      }
+      else {
+        success = true;
+        temperatureF = (temperatureC*1.8)+32;
+      }
+    }
   #endif
 
   // validate returned sensor values, even simulation can generate OOB values
@@ -2368,16 +2032,8 @@ void deviceReboot(String messageText, uint16_t timeAlertMS)
   while (millis() - timeRebootStartMS < timeAlertMS)
   {
     #ifndef HARDWARE_SIMULATE
-      #ifdef CLIMATRON
-        pixels.fill(pixels.Color(255,0,0)); // red
-        pixels.show();
-      #endif
       ledcWriteTone(pinAudio, audioFrequency);
       delay(500);
-      #ifdef CLIMATRON
-        pixels.fill(pixels.Color(0,0,0)); // black
-        pixels.show();
-      #endif
       ledcWriteTone(pinAudio,0);
       delay(500);
     #endif
@@ -2548,33 +2204,6 @@ float randomFloatRange(uint16_t min, uint16_t max) {
   return min + (randomFixed / 100.0f);
 }
 
-void ledInit()
-{
-  debugMessage("ledInit() start",1);  
-  #ifdef CLIMATRON
-    pixels.begin();
-    pixels.setBrightness(200);
-    pixels.show();
-  #endif
-  debugMessage("ledInit() end",1);
-}
-
-#ifdef CLIMATRON
-  uint32_t rgb565ToNeopixelColor(uint16_t c)
-  {
-      uint8_t r = (c >> 11) & 0x1F;
-      r = (r << 3) | (r >> 2);
-
-      uint8_t g = (c >> 5) & 0x3F;
-      g = (g << 2) | (g >> 4);
-
-      uint8_t b = c & 0x1F;
-      b = (b << 3) | (b >> 2);
-
-      return pixels.Color(r, g, b);
-  }
-#endif
-
 void alertHandle() {
   // is there an alert to handle?
   if (alertLengthMS) {
@@ -2609,8 +2238,6 @@ uint16_t getWarningColor(uint8_t datatype, float datavalue)
       return(warningColor[co2Range(datavalue)]);
     case VOC_DATA:
       return(warningColor[vocRange(datavalue)]);
-    case NOX_DATA:
-      return(warningColor[noxRange(datavalue)]);
     case PM_DATA:
       return(warningColor[pm25Range(datavalue)]);
     case TEMP_DATA:
@@ -2639,9 +2266,6 @@ uint16_t getWarningTextColor(uint8_t datatype, float datavalue)
       break;
     case VOC_DATA:
       windex = vocRange(datavalue);
-      break;
-    case NOX_DATA:
-      windex = noxRange(datavalue);
       break;
     case PM_DATA:
       windex = pm25Range(datavalue);
