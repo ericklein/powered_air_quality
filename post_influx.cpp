@@ -20,7 +20,7 @@
   extern void debugMessage(String messageText, uint8_t messageLevel);
 
   // Post data to Influx DB using the connection established during setup
-  boolean post_influx(float temperatureF, float humidity, uint16_t co2, float pm25, float vocIndex, float noxIndex, uint8_t rssi)
+  boolean post_influx(float temperatureF, float humidity, uint16_t co2, float pm25, float vocIndex, uint8_t rssi)
   {
     bool success = false;
 
@@ -63,7 +63,6 @@
       dbenvdata.addField(VALUE_KEY_HUMIDITY, humidity);
       dbenvdata.addField(VALUE_KEY_VOC, vocIndex);
       dbenvdata.addField(VALUE_KEY_CO2, co2);
-      dbenvdata.addField(VALUE_KEY_NOX, noxIndex);
       // Write point to InfluxDB host
       if (dbclient.writePoint(dbenvdata)) {
         debugMessage(String("InfluxDB environment update success"), 1);

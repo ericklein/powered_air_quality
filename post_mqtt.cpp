@@ -18,7 +18,7 @@
   extern void debugMessage(String messageText, uint8_t messageLevel);
 
   #ifdef HASSIO_MQTT
-    extern bool hassio_mqtt_publish(float pm25, float co2, float temperatureF, float humidity, float vocIndex, float noxIndex, float aqi);
+    extern bool hassio_mqtt_publish(float pm25, float co2, float temperatureF, float humidity, float vocIndex, float aqi);
   #endif
 
   bool mqttConnect() {

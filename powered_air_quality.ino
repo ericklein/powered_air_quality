@@ -104,11 +104,11 @@ XPT2046_Touchscreen touchscreen(pinTouchCS,pinTouchIRQ);
 
 #ifdef THINGSPEAK
   extern bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, 
-    float vocIndex, float noxIndex, float aqi);
+    float vocIndex, float aqi);
 #endif
 
 #ifdef INFLUX
-  extern bool post_influx(float temperatureF, float humidity, uint16_t co2, float pm25, float vocIndex, float noxIndex, uint8_t rssi);
+  extern bool post_influx(float temperatureF, float humidity, uint16_t co2, float pm25, float vocIndex, uint8_t rssi);
 #endif
 
 #ifdef MQTT
@@ -121,7 +121,7 @@ XPT2046_Touchscreen touchscreen(pinTouchCS,pinTouchIRQ);
   extern bool mqttPublishValue(String key, const String& payload);
 
   #ifdef HASSIO_MQTT
-    extern bool hassio_mqtt_publish(float pm25, float co2, float temperatureF, float humidity, float vocIndex, float noxIndex, float aqi);
+    extern bool hassio_mqtt_publish(float pm25, float co2, float temperatureF, float humidity, float aqi);
   #endif
 #endif
 
@@ -137,7 +137,7 @@ MqttConfig mqttBrokerConfig; // available globally for nvconfig use
 // instance contains storage to retain points for subsequent processing, which are used
 // here to graph recent data. The size of that retatined data is based on the
 // kSampleCapacity value defined in config.h.
-Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25, totalNOxIndex;
+Measure<kSampleCapacity> totalTemperatureF, totalHumidity, totalCO2, totalVOCIndex, totalPM25;
 
 uint32_t timeLastReportMS = 0;  // timestamp for last report to network endpoints
 
@@ -584,24 +584,22 @@ void samplePost(uint8_t& numSamples)
         uint16_t avgCO2 = totalCO2.getAverage();
         float avgVOC = totalVOCIndex.getAverage();
         float avgPM25 = totalPM25.getAverage();
-        float avgNOX = totalNOxIndex.getAverage();
         float aqi = pm25toAQI_US(avgPM25);
 
         debugMessage(String("Averages being sent to endpoints for the last ") + (timeReportMS/60000) + " minutes",2);
-        debugMessage(String("PM2.5: ") + avgPM25 + "ppm, CO2: " + avgCO2 + "ppm, VOC index: " + avgVOC + ", NOx index: " + avgNOX + ", " + 
-          avgTemperatureF + "F, humidity: " + avgHumidity + "%", 2);
+        debugMessage(String("PM2.5: ") + avgPM25 + "ppm, CO2: " + avgCO2 + "ppm, " + avgTemperatureF + "F, humidity: " + avgHumidity + "%", 2);
 
         // update RSSI before publishing
         hardwareData.rssi = networkRSSIRead();
 
         #ifdef THINGSPEAK
-          if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, pm25toAQI_US(avgPM25)) ) {
+          if (!post_thingspeak(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, pm25toAQI_US(avgPM25)) ) {
             debugMessage(String("ERROR: Did not write to ThingSpeak"),1);
           }
         #endif
 
         #ifdef INFLUX
-          if (!post_influx(avgTemperatureF, avgHumidity, avgCO2 , avgPM25, avgVOC, avgNOX, hardwareData.rssi))
+          if (!post_influx(avgTemperatureF, avgHumidity, avgCO2 , avgPM25, avgVOC, hardwareData.rssi))
             debugMessage(String("ERROR: Did not write to InfluxDB"),1);
         #endif
 
@@ -619,15 +617,13 @@ void samplePost(uint8_t& numSamples)
             mqttPublishValue(VALUE_KEY_PM25, String(avgPM25));
             mqttPublishValue(VALUE_KEY_VOC, String(avgVOC));
             mqttPublishValue(VALUE_KEY_CO2, String(avgCO2));
-            mqttPublishValue(VALUE_KEY_NOX, String(avgNOX));
-
 
             #ifdef HASSIO_MQTT
               debugMessage("Establishing MQTT for Home Assistant",1);
               // Either configure sensors in Home Assistant's configuration.yaml file
               // directly or attempt to do it via MQTT auto-discovery
               // hassio_mqtt_setup();  // Config for MQTT auto-discovery
-              hassio_mqtt_publish(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, avgNOX, aqi);
+              hassio_mqtt_publish(avgPM25, avgCO2, avgTemperatureF, avgHumidity, avgVOC, aqi);
             #endif
 
             mqtt.disconnect();
@@ -658,7 +654,6 @@ void samplePost(uint8_t& numSamples)
   totalCO2.clear();
   totalVOCIndex.clear();
   totalPM25.clear();
-  totalNOxIndex.clear();
   debugMessage(String("samplePost() end"), 1);
 }
 
@@ -1626,7 +1621,7 @@ bool sensorInit()
   }
   if (success) {
     #ifndef HARDWARE_SIMULATE
-      // Explicit delay as SEN54 takes 6-7 seconds for valid NOx index values
+      // Explicit delay as SEN54 takes 6-7 seconds for valid VOC index values
       delay(7000);
     #endif
   }
@@ -1755,7 +1750,6 @@ bool sensorSEN554Read()
   if (success) {
     totalPM25.include(pm25);
     totalVOCIndex.include(VOCIndex);
-    totalNOxIndex.include(NOxIndex);
 
     debugMessage(String("sensorSEN554Read() updating pm25: ") + totalPM25.getCurrent() + "ppm, total: " + totalPM25.getTotal(),2);
     debugMessage(String("sensorSEN554Read() updating vocIndex: ") + totalVOCIndex.getCurrent() + ", total: " + totalVOCIndex.getTotal(),2);
