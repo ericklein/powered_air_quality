@@ -1,6 +1,6 @@
 /*
   Project:        Powered Air Quality
-  Description:    Sample and log indoor air quality via AC powered device
+  Description:    Sample and log indoor air quality
 
   See README.md for target information
 */

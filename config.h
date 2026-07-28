@@ -61,7 +61,7 @@ constexpr uint8_t screenBLLow  = 52;   // 255 * 0.20
 // Internet and network endpoints
 constexpr uint8_t timeConnectTimeoutSeconds = 10; // how long WFM attempts network connect before failing
 constexpr uint32_t timeOWMRenewMS = 1800000; // min time between OWM calls
-constexpr uint32_t timeWebPortalTimeOutMS = 120000; // how long web configuration portal stays active
+constexpr uint32_t timeWebPortalTimeOutMS = 180000; // how long web configuration portal stays active
 
 constexpr uint32_t timeHardwareSleepTimeμS = 10000000;  // sleep time if hardware error occurs
 // button
