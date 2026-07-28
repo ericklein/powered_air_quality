@@ -10,7 +10,7 @@
 #include "secrets.h"              // private credentials for network, MQTT
 #include "data.h"
 
-#include <math.h>
+// #include <math.h>
 #include <HTTPClient.h>           // used to access Open Weather Map
 #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager
 #include <Measure.hpp>            // https://github.com/disquisitioner/Measure, utility class for collecting, processing, and reporting periodic data
@@ -211,14 +211,12 @@ void loop() {
 
   // order of operation
   // 0 - update current alerts
-  // 1 - feed cycles to LEDControl
-  // 2 - feed cycles to web portal
-  // 3 - handle touchscreen input
-  // 4 - handle button press
-  // ------------------------- interupts and cycles fed
-  // 5 - read sensor
-  // 6 - update screen saver
-  // 7 - network endpoint(s) write?
+  // 1 - feed cycles to web portal
+  // 2 - handle touchscreen input
+  // 3 - handle button press
+  // 4 - read sensor
+  // 5 - update screen saver
+  // 6 - network endpoint(s) write?
 
   // update current alerts
   alertHandle();
@@ -979,7 +977,7 @@ bool networkWiFiManagerOpen()
       wfm.setDebugOutput(false);
   #endif
 
-  wfm.setTitle("Climatron Configurator");
+  wfm.setTitle("PAQ Configurator");
   networkWiFiManagerBuildParameters();
   networkWiFiManagerRefreshParameterValues();
 
@@ -1075,7 +1073,7 @@ void networkStartWiFiMgrPortal()
   screenHelperAlert(String("goto http://") + WiFi.localIP().toString() + " for device configuration",TFT_WHITE,TFT_BLACK,TFT_BLUE);
   display.unloadFont();
 
-  wfm.setTitle("Climatron Configurator");
+  wfm.setTitle("PAQ Configurator");
 
   std::vector<const char*> menu = {
     "wifi",
@@ -2221,7 +2219,7 @@ void alertHandle() {
 
 // Determine the right warning color to use for an arbitrary sensor data value given
 // the type of data in question.  This utility is used heavily in various screen drawing
-// routines (see screens.cpp) but also for managing the notification LEDs in Climatron.
+// routines (see screens.cpp).
 uint16_t getWarningColor(uint8_t datatype, float datavalue)
 {
   switch(datatype) {

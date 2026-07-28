@@ -109,7 +109,7 @@ constexpr uint8_t sensorTempFComfortMax = 80;
 #ifdef SCD40
   constexpr uint16_t sensorTempFMax =       140; // 60C per SCD4X datasheet
 #else
-  constexpr uint16_t sensorTempFMax =       122; // 50C per SEN66 datasheet
+  constexpr uint16_t sensorTempFMax =       122;
 #endif
 
 // humidity value thresholds
@@ -126,7 +126,7 @@ constexpr uint16_t sensorCO2Bad =   1600;
 #ifdef SCD40
   constexpr uint16_t sensorCO2Max =   2000; // SCD4x raw up to 40000
 #else 
-  constexpr uint16_t sensorCO2Max =   5000; // SEN6x raw up to 40000
+  constexpr uint16_t sensorCO2Max =   5000;
 #endif
 constexpr uint8_t co2SensorReadFailureLimit = 20;
 constexpr uint8_t sensorCO2VariabilityRange = 30;
