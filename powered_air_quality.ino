@@ -145,7 +145,6 @@ uint32_t timeLastReportMS = 0;  // timestamp for last report to network endpoint
 uint32_t alertStartMS = 0;
 uint32_t alertLengthMS = 0;
 bool alertScreen = false;
-bool alertLED = false;
 bool alertSound = false;
 
 void setup() {
@@ -2204,13 +2203,11 @@ void alertHandle() {
     // has the alert ended
     if (millis() - alertStartMS > alertLengthMS) {
       // clear the alert and reset alert variables
-      if ((alertScreen) || (alertLED)) {
+      if (alertScreen) {
         debugMessage("alertHandle() : alert being cleared",2);
         // return screen to previous state
         screenUpdate(screenCurrent);
         alertScreen = false;
-        // this only works because screenUpdate also changes LED status
-        alertLED = false;
       }
       if (alertSound) {
         ledcWriteTone(pinAudio, 0);
