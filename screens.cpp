@@ -556,7 +556,7 @@ void fillSmoothRoundRectWithBorder(int32_t x, int32_t y, int32_t w, int32_t h, i
 }
 
 
-// Display Climatron main screen
+// Display main screen
 void screenMain() {
   int32_t i, me, mt, mm, ws, hs, wl;
   int32_t x0, y0, w, h, mx, my;
