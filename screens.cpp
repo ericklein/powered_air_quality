@@ -41,7 +41,6 @@ void screenHelperPostStatus(uint16_t, uint16_t, uint16_t, uint16_t);
 uint8_t co2Range(float); 
 uint8_t pm25Range(float);
 uint8_t vocRange(float);
-uint8_t noxRange(float);
 void arcMeter(uint16_t, uint16_t, uint16_t, uint16_t);
 void arcGauge(uint16_t, uint16_t, uint16_t, uint16_t);
 uint16_t arcGaugeHeight(uint16_t);
@@ -187,45 +186,6 @@ void screenCO2()
   }
   display.unloadFont();
   debugMessage("screenCO2() end",1);
-}
-
-void screenNOX()
-{
-  // screen layout assists in pixels
-  const uint16_t xCircle = (display.width()/2);
-  const uint16_t yCircle = (display.height()*4/5);
-  const uint16_t xValue = xCircle;
-  const uint16_t yValue = yCircle - 50;
-  uint16_t fgcolor, bgcolor;
-
-  debugMessage("screenNOX() start",1);
-
-  bgcolor = getWarningColor(NOX_DATA,totalNOxIndex.getCurrent());
-  fgcolor = getWarningTextColor(NOX_DATA,totalNOxIndex.getCurrent());
-  screenHelperHeaderBar(fgcolor,bgcolor,"NOx Level");
-
-  // handle sensors without NOx, e.g. SEN54
-  if(isnan(totalNOxIndex.getCurrent())) {
-    display.loadFont(Roboto_Bold_36);
-    display.setTextDatum(MC_DATUM);
-    display.setTextColor(TFT_RED, TFT_BLACK, true);
-    display.drawString("Not Available", xCircle, (display.height()/2));
-  }
-  else {
-     // Draw segmented arc showing color ranges and current NOxIndex in one of those ranges
-    arcMeter(xCircle,yCircle,display.width(),noxRange(totalNOxIndex.getCurrent()) );
-
-    // NOx value and label inside the arc
-    display.loadFont(Roboto_Bold_60);
-    display.setTextDatum(MC_DATUM);
-    display.setTextColor(getWarningColor(NOX_DATA,totalNOxIndex.getCurrent()), TFT_BLACK, true);  // Use highlight color look-up 
-    display.drawFloat((totalNOxIndex.getCurrent() +.5), 0, xValue, yValue);
-    display.loadFont(Roboto_Regular_24);
-    display.setTextColor(TFT_WHITE, TFT_BLACK, true);
-    display.drawString(getWarningLabel(NOX_DATA,totalNOxIndex.getCurrent()), xValue, yCircle);
-  }
-  display.unloadFont();
-  debugMessage("screenNOX() end",1);
 }
 
 void screenHelperHeaderBar(uint16_t fgcolor, uint16_t bgcolor, String header)
@@ -405,18 +365,6 @@ uint8_t vocRange(float vocIndex)
   return vocRange;
 }
 
-uint8_t noxRange(float noxIndex)
-// converts noxIndex value to index value for labeling and color
-{
-  uint8_t noxRange =
-  (noxIndex <= sensorNOxFair) ? 0 :
-  (noxIndex <= sensorNOxPoor) ? 1 :
-  (noxIndex <= sensorNOxBad)  ? 2 : 3;
-
-  debugMessage(String("NOx index input of ") + noxIndex + " yields NOx band " + noxRange,2);
-  return noxRange;
-}
-
 void screenHelperGraph(uint16_t initialX, uint16_t initialY, uint16_t width, uint16_t height, Measure<kSampleCapacity> measure, uint8_t datatype, String xLabel)
 {
   uint8_t stored, capacity;
@@ -545,8 +493,6 @@ String getWarningLabel(uint8_t datatype, float datavalue)
       return(warningLabel[co2Range(datavalue)]);
     case VOC_DATA:
       return(warningLabel[vocRange(datavalue)]);
-    case NOX_DATA:
-      return(warningLabel[noxRange(datavalue)]);
     case PM_DATA:
       return(warningLabel[pm25Range(datavalue)]);
     case TEMP_DATA:
@@ -610,7 +556,7 @@ void fillSmoothRoundRectWithBorder(int32_t x, int32_t y, int32_t w, int32_t h, i
 }
 
 
-// Display Climatron main screen
+// Display main screen
 void screenMain() {
   int32_t i, me, mt, mm, ws, hs, wl;
   int32_t x0, y0, w, h, mx, my;
@@ -685,26 +631,6 @@ void screenMain() {
   }
   display.drawString("PM25",mx,my+14);
   display.drawSmoothRoundRect(x0,y0,8,6,ws,hs,TFT_WHITE);
-
-  #ifdef SENSOR_SEN66
-    // NOX gauge
-    // y0 and my don't change (all in the same horizontal row)
-    x0 = me + (2*ws) + (2*mm);
-    mx = x0 + (ws/2);
-    wcolor = getWarningColor(NOX_DATA,totalNOxIndex.getCurrent());
-    windex = noxRange(totalNOxIndex.getCurrent());
-    display.fillRoundRect(x0,y0,ws,hs,8,wcolor);  // Panel background
-    arcGauge(mx,my,ws,windex);  // Gauge
-    display.loadFont(Roboto_Regular_24);
-    if((windex == 1) || (windex == 0)) {
-      display.setTextColor(TFT_BLACK,wcolor,true);
-    }
-    else {
-      display.setTextColor(TFT_WHITE,wcolor,true);
-    }
-    display.drawString("NOX",mx,my+14);
-    display.drawSmoothRoundRect(x0,y0,8,6,ws,hs,TFT_WHITE);
-  #endif
 
   // Now the wide CO2 panel on the right side of the top row
 

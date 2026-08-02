@@ -16,7 +16,7 @@
   // Shared helper function(s)
   extern void debugMessage(String messageText, uint8_t messageLevel);
 
-  bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float nox, float aqi)
+  bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float aqi)
   {  
     static WiFiClient thingSpeakClient;
     // Initialize ThingSpeak
@@ -29,7 +29,6 @@
     ThingSpeak.setField(3,temperatureF);
     ThingSpeak.setField(4,humidity);
     ThingSpeak.setField(5,voc);
-    ThingSpeak.setField(6,nox);
     ThingSpeak.setField(7,aqi);
 
     // Identify the publishing unit via its internal deviceID
