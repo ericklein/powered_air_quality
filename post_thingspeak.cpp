@@ -4,46 +4,63 @@
 */
 
 #include "Arduino.h"
-#include <WiFi.h>
+#include <HTTPClient.h>
 
 #include "config.h"               // hardware and internet configuration parameters
-#include "powered_air_quality.h"  // overall header info for Powered Air Quality
-#include "secrets.h"              // private credentials for network, MQTT, weather provider
+#include "powered_air_quality.h"  // PAQ main header
+#include "secrets.h"              // ThingSpeak private credentials
 
 #ifdef THINGSPEAK
-  #include <ThingSpeak.h>         // https://github.com/mathworks/thingspeak-arduino
-
   // Shared helper function(s)
   extern void debugMessage(String messageText, uint8_t messageLevel);
 
-  bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float aqi)
-  {  
-    static WiFiClient thingSpeakClient;
-    // Initialize ThingSpeak
-    ThingSpeak.begin(thingSpeakClient);
+  bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float nox, float aqi) {  
+    
+    HTTPClient http;
 
-    // Set values for the Channel's fields to queue them up for a single batch post to ThingSpeak
-    // Note that a channel cannot have more than eight fields (so choose wisely)
-    ThingSpeak.setField(1,pm25);
-    ThingSpeak.setField(2,co2);
-    ThingSpeak.setField(3,temperatureF);
-    ThingSpeak.setField(4,humidity);
-    ThingSpeak.setField(5,voc);
-    ThingSpeak.setField(7,aqi);
+    // explicitly use unencrypted HTTP on port 80
+    const char* serverURL = "http://api.thingspeak.com/update";
 
-    // Identify the publishing unit via its internal deviceID
-    ThingSpeak.setField(8,endpointPath.deviceID);
-
-    // Batch write all the field updates to ThingSpeak and check HTTP return code
-    int16_t httpcode = ThingSpeak.writeFields(THINGS_CHANID,THINGS_APIKEY);
-
-    if (httpcode == 200) {
-      debugMessage("ThingSpeak update successful",1);
-      return true;
+    if (!http.begin(serverURL)) {
+        debugMessage("ThingSpeak HTTP initialization failed", 1);
+        return false;
     }
-    else {
-      debugMessage("ThingSpeak issue, return code: " + String(httpcode),1);
+
+    http.addHeader("Content-Type","application/x-www-form-urlencoded");
+
+    String requestBody;
+    requestBody.reserve(256);
+
+    requestBody =
+      "api_key=" + String(THINGS_APIKEY) +
+      "&field1=" + String(pm25) +
+      "&field2=" + String(co2) +
+      "&field3=" + String(temperatureF) +
+      "&field4=" + String(humidity) +
+      "&field5=" + String(voc) +
+      "&field6=" + String(nox) +
+      "&field7=" + String(aqi) +
+      "&field8=" + String(endpointPath.deviceID);
+
+    int httpCode = http.POST(requestBody);
+
+    if (httpCode <= 0) {
+      debugMessage("ThingSpeak connection issue: " + String(HTTPClient::errorToString(httpCode)),1);
+      http.end();
       return false;
     }
+
+    String response = http.getString();
+    http.end();
+
+    // ThingSpeak returns HTTP 200 and the new entry ID
+    // A body of "0" indicates that the update was not accepted
+    if (httpCode == HTTP_CODE_OK && response.toInt() > 0) {
+        debugMessage("ThingSpeak update successful, entry ID: " + response,1);
+        return true;
+    }
+
+    debugMessage("ThingSpeak issue, HTTP code: " + String(httpCode) + ", response: " + response,1);
+    return false;
   }
 #endif
