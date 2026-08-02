@@ -14,7 +14,7 @@
   // Shared helper function(s)
   extern void debugMessage(String messageText, uint8_t messageLevel);
 
-  bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float nox, float aqi) {  
+  bool post_thingspeak(float pm25, float co2, float temperatureF, float humidity, float voc, float aqi) {  
     
     HTTPClient http;
 
@@ -38,7 +38,6 @@
       "&field3=" + String(temperatureF) +
       "&field4=" + String(humidity) +
       "&field5=" + String(voc) +
-      "&field6=" + String(nox) +
       "&field7=" + String(aqi) +
       "&field8=" + String(endpointPath.deviceID);
 
